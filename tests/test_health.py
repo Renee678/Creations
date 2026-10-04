@@ -1,7 +1,2 @@
-from fastapi.testclient import TestClient
-
-from stylebuddy.main import app
-
-
-def test_healthz():
-    assert TestClient(app).get("/healthz").json() == {"status": "ok"}
+def test_healthz(client):
+    assert client.get("/healthz").json() == {"status": "ok"}

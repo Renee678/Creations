@@ -1,0 +1,1482 @@
+[
+ {
+  "id": "seed-0001",
+  "name": "Fine-knit V-neck cardigan",
+  "product_type": "Cardigan",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Soft fine-knit cardigan with a V-neck, buttons down the front and ribbed cuffs. Relaxed fit, cropped length. Old money, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0002",
+  "name": "Fine-knit V-neck cardigan",
+  "product_type": "Cardigan",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Soft fine-knit cardigan with a V-neck, buttons down the front and ribbed cuffs. Relaxed fit, cropped length. Old money, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0003",
+  "name": "Fine-knit V-neck cardigan",
+  "product_type": "Cardigan",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Soft fine-knit cardigan with a V-neck, buttons down the front and ribbed cuffs. Relaxed fit, cropped length. Old money, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0004",
+  "name": "Fine-knit V-neck cardigan",
+  "product_type": "Cardigan",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Soft fine-knit cardigan with a V-neck, buttons down the front and ribbed cuffs. Relaxed fit, cropped length. Old money, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0005",
+  "name": "Cable-knit sweater",
+  "product_type": "Sweater",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Chunky cable-knit sweater with a round neck and dropped shoulders. Oversized fit. Preppy, cosy.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0006",
+  "name": "Cable-knit sweater",
+  "product_type": "Sweater",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Chunky cable-knit sweater with a round neck and dropped shoulders. Oversized fit. Preppy, cosy.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0007",
+  "name": "Cable-knit sweater",
+  "product_type": "Sweater",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Chunky cable-knit sweater with a round neck and dropped shoulders. Oversized fit. Preppy, cosy.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0008",
+  "name": "Cable-knit sweater",
+  "product_type": "Sweater",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Chunky cable-knit sweater with a round neck and dropped shoulders. Oversized fit. Preppy, cosy.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0009",
+  "name": "Satin bow blouse",
+  "product_type": "Blouse",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flowing satin blouse with a tie bow at the neck and long puff sleeves. Coquette, feminine.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0010",
+  "name": "Satin bow blouse",
+  "product_type": "Blouse",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flowing satin blouse with a tie bow at the neck and long puff sleeves. Coquette, feminine.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0011",
+  "name": "Satin bow blouse",
+  "product_type": "Blouse",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flowing satin blouse with a tie bow at the neck and long puff sleeves. Coquette, feminine.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0012",
+  "name": "Satin bow blouse",
+  "product_type": "Blouse",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flowing satin blouse with a tie bow at the neck and long puff sleeves. Coquette, feminine.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0013",
+  "name": "Oversized poplin shirt",
+  "product_type": "Shirt",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Crisp cotton poplin shirt with a collar, buttons and a boxy oversized fit. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0014",
+  "name": "Oversized poplin shirt",
+  "product_type": "Shirt",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Crisp cotton poplin shirt with a collar, buttons and a boxy oversized fit. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0015",
+  "name": "Oversized poplin shirt",
+  "product_type": "Shirt",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Crisp cotton poplin shirt with a collar, buttons and a boxy oversized fit. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0016",
+  "name": "Oversized poplin shirt",
+  "product_type": "Shirt",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Crisp cotton poplin shirt with a collar, buttons and a boxy oversized fit. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0017",
+  "name": "Fitted rib tee",
+  "product_type": "T-shirt",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Fitted ribbed jersey T-shirt with a round neck and short sleeves. Basic, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0018",
+  "name": "Fitted rib tee",
+  "product_type": "T-shirt",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Fitted ribbed jersey T-shirt with a round neck and short sleeves. Basic, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0019",
+  "name": "Fitted rib tee",
+  "product_type": "T-shirt",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Fitted ribbed jersey T-shirt with a round neck and short sleeves. Basic, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0020",
+  "name": "Fitted rib tee",
+  "product_type": "T-shirt",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Fitted ribbed jersey T-shirt with a round neck and short sleeves. Basic, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0021",
+  "name": "Lace-trim cami top",
+  "product_type": "Top",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cami top in satin with lace trim and thin adjustable straps. Coquette, ballet core.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0022",
+  "name": "Lace-trim cami top",
+  "product_type": "Top",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cami top in satin with lace trim and thin adjustable straps. Coquette, ballet core.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0023",
+  "name": "Lace-trim cami top",
+  "product_type": "Top",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cami top in satin with lace trim and thin adjustable straps. Coquette, ballet core.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0024",
+  "name": "Lace-trim cami top",
+  "product_type": "Top",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cami top in satin with lace trim and thin adjustable straps. Coquette, ballet core.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0025",
+  "name": "Cropped baby tee",
+  "product_type": "Top",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cropped short-sleeved T-shirt with a printed graphic. Y2K, streetwear.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0026",
+  "name": "Cropped baby tee",
+  "product_type": "Top",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cropped short-sleeved T-shirt with a printed graphic. Y2K, streetwear.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0027",
+  "name": "Cropped baby tee",
+  "product_type": "Top",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cropped short-sleeved T-shirt with a printed graphic. Y2K, streetwear.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0028",
+  "name": "Cropped baby tee",
+  "product_type": "Top",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cropped short-sleeved T-shirt with a printed graphic. Y2K, streetwear.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0029",
+  "name": "Oversized hoodie",
+  "product_type": "Hoodie",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Oversized sweatshirt hoodie with a kangaroo pocket and drawstring hood. Streetwear, athleisure.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0030",
+  "name": "Oversized hoodie",
+  "product_type": "Hoodie",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Oversized sweatshirt hoodie with a kangaroo pocket and drawstring hood. Streetwear, athleisure.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0031",
+  "name": "Oversized hoodie",
+  "product_type": "Hoodie",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Oversized sweatshirt hoodie with a kangaroo pocket and drawstring hood. Streetwear, athleisure.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0032",
+  "name": "Oversized hoodie",
+  "product_type": "Hoodie",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Oversized sweatshirt hoodie with a kangaroo pocket and drawstring hood. Streetwear, athleisure.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0033",
+  "name": "Wide-leg tailored trousers",
+  "product_type": "Trousers",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "High-waisted tailored trousers with pressed pleats and wide straight legs. Old money, office.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0034",
+  "name": "Wide-leg tailored trousers",
+  "product_type": "Trousers",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "High-waisted tailored trousers with pressed pleats and wide straight legs. Old money, office.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0035",
+  "name": "Wide-leg tailored trousers",
+  "product_type": "Trousers",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "High-waisted tailored trousers with pressed pleats and wide straight legs. Old money, office.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0036",
+  "name": "Wide-leg tailored trousers",
+  "product_type": "Trousers",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "High-waisted tailored trousers with pressed pleats and wide straight legs. Old money, office.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0037",
+  "name": "Straight-leg jeans",
+  "product_type": "Trousers",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Five-pocket jeans in rigid denim with a high waist and straight legs. Casual, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0038",
+  "name": "Straight-leg jeans",
+  "product_type": "Trousers",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Five-pocket jeans in rigid denim with a high waist and straight legs. Casual, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0039",
+  "name": "Straight-leg jeans",
+  "product_type": "Trousers",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Five-pocket jeans in rigid denim with a high waist and straight legs. Casual, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0040",
+  "name": "Straight-leg jeans",
+  "product_type": "Trousers",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Five-pocket jeans in rigid denim with a high waist and straight legs. Casual, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0041",
+  "name": "Low-rise cargo trousers",
+  "product_type": "Trousers",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Low-rise cargo trousers with flap pockets and a baggy fit. Y2K, streetwear.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0042",
+  "name": "Low-rise cargo trousers",
+  "product_type": "Trousers",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Low-rise cargo trousers with flap pockets and a baggy fit. Y2K, streetwear.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0043",
+  "name": "Low-rise cargo trousers",
+  "product_type": "Trousers",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Low-rise cargo trousers with flap pockets and a baggy fit. Y2K, streetwear.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0044",
+  "name": "Low-rise cargo trousers",
+  "product_type": "Trousers",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Low-rise cargo trousers with flap pockets and a baggy fit. Y2K, streetwear.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0045",
+  "name": "Satin midi slip skirt",
+  "product_type": "Skirt",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Bias-cut satin midi skirt with an elasticated waist. Minimalist, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0046",
+  "name": "Satin midi slip skirt",
+  "product_type": "Skirt",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Bias-cut satin midi skirt with an elasticated waist. Minimalist, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0047",
+  "name": "Satin midi slip skirt",
+  "product_type": "Skirt",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Bias-cut satin midi skirt with an elasticated waist. Minimalist, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0048",
+  "name": "Satin midi slip skirt",
+  "product_type": "Skirt",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Bias-cut satin midi skirt with an elasticated waist. Minimalist, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0049",
+  "name": "Pleated mini skirt",
+  "product_type": "Skirt",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Pleated mini skirt with a high waist and concealed zip. Preppy, y2k.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0050",
+  "name": "Pleated mini skirt",
+  "product_type": "Skirt",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Pleated mini skirt with a high waist and concealed zip. Preppy, y2k.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0051",
+  "name": "Pleated mini skirt",
+  "product_type": "Skirt",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Pleated mini skirt with a high waist and concealed zip. Preppy, y2k.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0052",
+  "name": "Pleated mini skirt",
+  "product_type": "Skirt",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Pleated mini skirt with a high waist and concealed zip. Preppy, y2k.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0053",
+  "name": "Tiered maxi skirt",
+  "product_type": "Skirt",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flowing tiered maxi skirt in cotton with an elasticated waist. Boho, beach.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0054",
+  "name": "Tiered maxi skirt",
+  "product_type": "Skirt",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flowing tiered maxi skirt in cotton with an elasticated waist. Boho, beach.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0055",
+  "name": "Tiered maxi skirt",
+  "product_type": "Skirt",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flowing tiered maxi skirt in cotton with an elasticated waist. Boho, beach.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0056",
+  "name": "Tiered maxi skirt",
+  "product_type": "Skirt",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flowing tiered maxi skirt in cotton with an elasticated waist. Boho, beach.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0057",
+  "name": "Linen shorts",
+  "product_type": "Shorts",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Relaxed linen-blend shorts with a drawstring waist. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0058",
+  "name": "Linen shorts",
+  "product_type": "Shorts",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Relaxed linen-blend shorts with a drawstring waist. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0059",
+  "name": "Linen shorts",
+  "product_type": "Shorts",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Relaxed linen-blend shorts with a drawstring waist. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0060",
+  "name": "Linen shorts",
+  "product_type": "Shorts",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Relaxed linen-blend shorts with a drawstring waist. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0061",
+  "name": "Linen maxi dress",
+  "product_type": "Dress",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Sleeveless linen maxi dress with a square neckline and a flared skirt. Beach wedding, resort, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0062",
+  "name": "Linen maxi dress",
+  "product_type": "Dress",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Sleeveless linen maxi dress with a square neckline and a flared skirt. Beach wedding, resort, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0063",
+  "name": "Linen maxi dress",
+  "product_type": "Dress",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Sleeveless linen maxi dress with a square neckline and a flared skirt. Beach wedding, resort, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0064",
+  "name": "Linen maxi dress",
+  "product_type": "Dress",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Sleeveless linen maxi dress with a square neckline and a flared skirt. Beach wedding, resort, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0065",
+  "name": "Floral tea dress",
+  "product_type": "Dress",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Midi tea dress in a floral print with puff sleeves and a sweetheart neckline. Coquette, cottagecore.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0066",
+  "name": "Floral tea dress",
+  "product_type": "Dress",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Midi tea dress in a floral print with puff sleeves and a sweetheart neckline. Coquette, cottagecore.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0067",
+  "name": "Floral tea dress",
+  "product_type": "Dress",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Midi tea dress in a floral print with puff sleeves and a sweetheart neckline. Coquette, cottagecore.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0068",
+  "name": "Floral tea dress",
+  "product_type": "Dress",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Midi tea dress in a floral print with puff sleeves and a sweetheart neckline. Coquette, cottagecore.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0069",
+  "name": "Knitted midi dress",
+  "product_type": "Dress",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Fitted rib-knit midi dress with long sleeves and a round neck. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0070",
+  "name": "Knitted midi dress",
+  "product_type": "Dress",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Fitted rib-knit midi dress with long sleeves and a round neck. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0071",
+  "name": "Knitted midi dress",
+  "product_type": "Dress",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Fitted rib-knit midi dress with long sleeves and a round neck. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0072",
+  "name": "Knitted midi dress",
+  "product_type": "Dress",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Fitted rib-knit midi dress with long sleeves and a round neck. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0073",
+  "name": "Satin slip dress",
+  "product_type": "Dress",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Bias-cut satin slip dress with thin straps and a cowl neckline. Evening, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0074",
+  "name": "Satin slip dress",
+  "product_type": "Dress",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Bias-cut satin slip dress with thin straps and a cowl neckline. Evening, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0075",
+  "name": "Satin slip dress",
+  "product_type": "Dress",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Bias-cut satin slip dress with thin straps and a cowl neckline. Evening, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0076",
+  "name": "Satin slip dress",
+  "product_type": "Dress",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Bias-cut satin slip dress with thin straps and a cowl neckline. Evening, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0077",
+  "name": "Wide-leg jumpsuit",
+  "product_type": "Jumpsuit/Playsuit",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Sleeveless jumpsuit with a belted waist and wide legs. Office, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0078",
+  "name": "Wide-leg jumpsuit",
+  "product_type": "Jumpsuit/Playsuit",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Sleeveless jumpsuit with a belted waist and wide legs. Office, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0079",
+  "name": "Wide-leg jumpsuit",
+  "product_type": "Jumpsuit/Playsuit",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Sleeveless jumpsuit with a belted waist and wide legs. Office, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0080",
+  "name": "Wide-leg jumpsuit",
+  "product_type": "Jumpsuit/Playsuit",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Sleeveless jumpsuit with a belted waist and wide legs. Office, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0081",
+  "name": "Oversized blazer",
+  "product_type": "Blazer",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Single-breasted oversized blazer with notch lapels and padded shoulders. Old money, office.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0082",
+  "name": "Oversized blazer",
+  "product_type": "Blazer",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Single-breasted oversized blazer with notch lapels and padded shoulders. Old money, office.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0083",
+  "name": "Oversized blazer",
+  "product_type": "Blazer",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Single-breasted oversized blazer with notch lapels and padded shoulders. Old money, office.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0084",
+  "name": "Oversized blazer",
+  "product_type": "Blazer",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Single-breasted oversized blazer with notch lapels and padded shoulders. Old money, office.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0085",
+  "name": "Wool-blend coat",
+  "product_type": "Coat",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Long double-breasted coat in a wool blend with notch lapels. Old money, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0086",
+  "name": "Wool-blend coat",
+  "product_type": "Coat",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Long double-breasted coat in a wool blend with notch lapels. Old money, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0087",
+  "name": "Wool-blend coat",
+  "product_type": "Coat",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Long double-breasted coat in a wool blend with notch lapels. Old money, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0088",
+  "name": "Wool-blend coat",
+  "product_type": "Coat",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Long double-breasted coat in a wool blend with notch lapels. Old money, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0089",
+  "name": "Cropped denim jacket",
+  "product_type": "Jacket",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cropped jacket in washed denim with chest pockets. Casual, y2k.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0090",
+  "name": "Cropped denim jacket",
+  "product_type": "Jacket",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cropped jacket in washed denim with chest pockets. Casual, y2k.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0091",
+  "name": "Cropped denim jacket",
+  "product_type": "Jacket",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cropped jacket in washed denim with chest pockets. Casual, y2k.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0092",
+  "name": "Cropped denim jacket",
+  "product_type": "Jacket",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Cropped jacket in washed denim with chest pockets. Casual, y2k.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0093",
+  "name": "Faux leather biker jacket",
+  "product_type": "Jacket",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Biker jacket in faux leather with an asymmetric zip. Streetwear, edgy.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0094",
+  "name": "Faux leather biker jacket",
+  "product_type": "Jacket",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Biker jacket in faux leather with an asymmetric zip. Streetwear, edgy.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0095",
+  "name": "Faux leather biker jacket",
+  "product_type": "Jacket",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Biker jacket in faux leather with an asymmetric zip. Streetwear, edgy.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0096",
+  "name": "Faux leather biker jacket",
+  "product_type": "Jacket",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Biker jacket in faux leather with an asymmetric zip. Streetwear, edgy.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0097",
+  "name": "Quilted puffer jacket",
+  "product_type": "Jacket",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Short puffer jacket with a stand-up collar. Streetwear, gorpcore.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0098",
+  "name": "Quilted puffer jacket",
+  "product_type": "Jacket",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Short puffer jacket with a stand-up collar. Streetwear, gorpcore.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0099",
+  "name": "Quilted puffer jacket",
+  "product_type": "Jacket",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Short puffer jacket with a stand-up collar. Streetwear, gorpcore.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0100",
+  "name": "Quilted puffer jacket",
+  "product_type": "Jacket",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Short puffer jacket with a stand-up collar. Streetwear, gorpcore.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0101",
+  "name": "Mary Jane ballet flats",
+  "product_type": "Ballerinas",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Ballet flats with a strap and buckle and a rounded toe. Coquette, ballet core.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0102",
+  "name": "Mary Jane ballet flats",
+  "product_type": "Ballerinas",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Ballet flats with a strap and buckle and a rounded toe. Coquette, ballet core.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0103",
+  "name": "Mary Jane ballet flats",
+  "product_type": "Ballerinas",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Ballet flats with a strap and buckle and a rounded toe. Coquette, ballet core.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0104",
+  "name": "Mary Jane ballet flats",
+  "product_type": "Ballerinas",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Ballet flats with a strap and buckle and a rounded toe. Coquette, ballet core.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0105",
+  "name": "Leather court sneakers",
+  "product_type": "Sneakers",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Low-profile court sneakers in faux leather. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0106",
+  "name": "Leather court sneakers",
+  "product_type": "Sneakers",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Low-profile court sneakers in faux leather. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0107",
+  "name": "Leather court sneakers",
+  "product_type": "Sneakers",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Low-profile court sneakers in faux leather. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0108",
+  "name": "Leather court sneakers",
+  "product_type": "Sneakers",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Low-profile court sneakers in faux leather. Minimalist, clean girl.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0109",
+  "name": "Knee-high boots",
+  "product_type": "Boots",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Knee-high boots with a block heel and pointed toe. Old money, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0110",
+  "name": "Knee-high boots",
+  "product_type": "Boots",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Knee-high boots with a block heel and pointed toe. Old money, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0111",
+  "name": "Knee-high boots",
+  "product_type": "Boots",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Knee-high boots with a block heel and pointed toe. Old money, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0112",
+  "name": "Knee-high boots",
+  "product_type": "Boots",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Knee-high boots with a block heel and pointed toe. Old money, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0113",
+  "name": "Strappy flat sandals",
+  "product_type": "Sandals",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flat sandals with thin straps. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0114",
+  "name": "Strappy flat sandals",
+  "product_type": "Sandals",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flat sandals with thin straps. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0115",
+  "name": "Strappy flat sandals",
+  "product_type": "Sandals",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flat sandals with thin straps. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0116",
+  "name": "Strappy flat sandals",
+  "product_type": "Sandals",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Flat sandals with thin straps. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0117",
+  "name": "Slingback kitten heels",
+  "product_type": "Pumps",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Slingback pumps with a low kitten heel and pointed toe. Office, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0118",
+  "name": "Slingback kitten heels",
+  "product_type": "Pumps",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Slingback pumps with a low kitten heel and pointed toe. Office, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0119",
+  "name": "Slingback kitten heels",
+  "product_type": "Pumps",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Slingback pumps with a low kitten heel and pointed toe. Office, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0120",
+  "name": "Slingback kitten heels",
+  "product_type": "Pumps",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Slingback pumps with a low kitten heel and pointed toe. Office, quiet luxury.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0121",
+  "name": "Mini shoulder bag",
+  "product_type": "Shoulder bag",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Small structured shoulder bag with a flap and a short strap. Y2K, old money.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0122",
+  "name": "Mini shoulder bag",
+  "product_type": "Shoulder bag",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Small structured shoulder bag with a flap and a short strap. Y2K, old money.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0123",
+  "name": "Mini shoulder bag",
+  "product_type": "Shoulder bag",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Small structured shoulder bag with a flap and a short strap. Y2K, old money.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0124",
+  "name": "Mini shoulder bag",
+  "product_type": "Shoulder bag",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Small structured shoulder bag with a flap and a short strap. Y2K, old money.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0125",
+  "name": "Canvas tote bag",
+  "product_type": "Tote bag",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Large canvas tote bag with long handles. Casual, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0126",
+  "name": "Canvas tote bag",
+  "product_type": "Tote bag",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Large canvas tote bag with long handles. Casual, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0127",
+  "name": "Canvas tote bag",
+  "product_type": "Tote bag",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Large canvas tote bag with long handles. Casual, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0128",
+  "name": "Canvas tote bag",
+  "product_type": "Tote bag",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Large canvas tote bag with long handles. Casual, minimalist.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0129",
+  "name": "Woven straw cross-body bag",
+  "product_type": "Cross-body bag",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Woven straw cross-body bag with an adjustable strap. Beach, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0130",
+  "name": "Woven straw cross-body bag",
+  "product_type": "Cross-body bag",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Woven straw cross-body bag with an adjustable strap. Beach, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0131",
+  "name": "Woven straw cross-body bag",
+  "product_type": "Cross-body bag",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Woven straw cross-body bag with an adjustable strap. Beach, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0132",
+  "name": "Woven straw cross-body bag",
+  "product_type": "Cross-body bag",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Woven straw cross-body bag with an adjustable strap. Beach, boho.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0133",
+  "name": "Leather waist belt",
+  "product_type": "Belt",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Narrow belt in faux leather with a gold-tone buckle. Old money.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0134",
+  "name": "Leather waist belt",
+  "product_type": "Belt",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Narrow belt in faux leather with a gold-tone buckle. Old money.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0135",
+  "name": "Leather waist belt",
+  "product_type": "Belt",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Narrow belt in faux leather with a gold-tone buckle. Old money.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0136",
+  "name": "Leather waist belt",
+  "product_type": "Belt",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Narrow belt in faux leather with a gold-tone buckle. Old money.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0137",
+  "name": "Straw sun hat",
+  "product_type": "Hat/brim",
+  "colour": "Dark Blue",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Wide-brimmed straw hat with a ribbon band. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0138",
+  "name": "Straw sun hat",
+  "product_type": "Hat/brim",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Wide-brimmed straw hat with a ribbon band. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0139",
+  "name": "Straw sun hat",
+  "product_type": "Hat/brim",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Wide-brimmed straw hat with a ribbon band. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0140",
+  "name": "Straw sun hat",
+  "product_type": "Hat/brim",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Wide-brimmed straw hat with a ribbon band. Beach, resort.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0141",
+  "name": "Satin hair bow",
+  "product_type": "Hair clip",
+  "colour": "Greige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Satin hair bow on a clip. Coquette.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0142",
+  "name": "Satin hair bow",
+  "product_type": "Hair clip",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Satin hair bow on a clip. Coquette.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0143",
+  "name": "Satin hair bow",
+  "product_type": "Hair clip",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Satin hair bow on a clip. Coquette.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0144",
+  "name": "Satin hair bow",
+  "product_type": "Hair clip",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Satin hair bow on a clip. Coquette.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0145",
+  "name": "Pearl necklace",
+  "product_type": "Necklace",
+  "colour": "Black",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Necklace with faux pearls. Old money, coquette.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0146",
+  "name": "Pearl necklace",
+  "product_type": "Necklace",
+  "colour": "White",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Necklace with faux pearls. Old money, coquette.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0147",
+  "name": "Pearl necklace",
+  "product_type": "Necklace",
+  "colour": "Beige",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Necklace with faux pearls. Old money, coquette.",
+  "image_url": ""
+ },
+ {
+  "id": "seed-0148",
+  "name": "Pearl necklace",
+  "product_type": "Necklace",
+  "colour": "Light Pink",
+  "pattern": "Solid",
+  "section": "Womens",
+  "description": "Necklace with faux pearls. Old money, coquette.",
+  "image_url": ""
+ }
+]
