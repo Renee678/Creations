@@ -2,7 +2,7 @@
 
 up:            ## build and start everything; open http://localhost:8080
 	docker compose up --build -d
-	@echo "StyleBuddy is starting on http://localhost:8080"
+	@echo "Lookmate is starting on http://localhost:8080"
 
 down:
 	docker compose down

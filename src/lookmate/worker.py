@@ -1,6 +1,6 @@
 """Background worker: turns queued look uploads into look-alike results.
 
-Run with `python -m stylebuddy.worker`. Each job is handled idempotently, since
+Run with `python -m lookmate.worker`. Each job is handled idempotently, since
 the queue delivers at least once.
 """
 
@@ -17,7 +17,7 @@ from .services.dupes import find_dupes
 from .services.style_memory import record_look, user_context
 from .services.trends import refresh_if_due
 
-log = logging.getLogger("stylebuddy.worker")
+log = logging.getLogger("lookmate.worker")
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_S = 2.0

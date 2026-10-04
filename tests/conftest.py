@@ -25,12 +25,12 @@ def fake_redis(monkeypatch):
 
 @pytest.fixture
 def client():
-    from stylebuddy.main import app
+    from lookmate.main import app
 
     with TestClient(app) as c:
         yield c
     # Tests share one in-memory database; clear per-test data (the catalog is read-only and kept).
-    from stylebuddy.db import Base, engine
+    from lookmate.db import Base, engine
 
     with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):

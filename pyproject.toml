@@ -1,5 +1,5 @@
 [project]
-name = "stylebuddy"
+name = "lookmate"
 version = "0.1.0"
 description = "Turn outfit inspiration into affordable, personalised look-alikes"
 requires-python = ">=3.11"
@@ -31,7 +31,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-stylebuddy = ["templates/*.html", "static/*"]
+lookmate = ["templates/*.html", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

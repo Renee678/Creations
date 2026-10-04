@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="StyleBuddy", lifespan=lifespan)
+app = FastAPI(title="Lookmate", lifespan=lifespan)
 app.include_router(profiles.router)
 app.include_router(looks.router)
 app.include_router(style.router)

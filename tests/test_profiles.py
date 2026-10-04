@@ -1,4 +1,4 @@
-from stylebuddy.services.body import fit_adjustment
+from lookmate.services.body import fit_adjustment
 
 PROFILE = {
     "nickname": "Renee", "height_cm": 165, "weight_kg": 55, "age": 26,

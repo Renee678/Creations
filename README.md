@@ -1,4 +1,4 @@
-# 平替搭子 StyleBuddy
+# Lookmate
 
 Turn outfit inspiration from Xiaohongshu, TikTok or Instagram into **affordable look-alikes that suit you**.
 Upload a screenshot: the app identifies each garment, then finds cheaper alternatives in a product catalog,
@@ -50,12 +50,12 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
 | Component | Role |
 |---|---|
 | `gateway/nginx.conf` | Single entrypoint. Per-IP rate limits (tighter on uploads, which cost LLM money), 8 MB upload cap, request IDs, timeouts |
-| `src/stylebuddy/api/` | REST API: profiles, looks, style memory, trends; also serves the web app |
-| `src/stylebuddy/worker.py` | Processes look jobs; schedules the weekly trend refresh |
-| `src/stylebuddy/jobqueue.py` | Reliable Redis queue: atomic reserve (BLMOVE), ack, delayed retries, crash recovery |
-| `src/stylebuddy/llm/` | Claude vision client with structured output, plus the offline fake |
-| `src/stylebuddy/catalog/` | Catalog import, embeddings, exact vector search |
-| `src/stylebuddy/services/` | Ranking, body-shape rules, style memory, trend radar |
+| `src/lookmate/api/` | REST API: profiles, looks, style memory, trends; also serves the web app |
+| `src/lookmate/worker.py` | Processes look jobs; schedules the weekly trend refresh |
+| `src/lookmate/jobqueue.py` | Reliable Redis queue: atomic reserve (BLMOVE), ack, delayed retries, crash recovery |
+| `src/lookmate/llm/` | Claude vision client with structured output, plus the offline fake |
+| `src/lookmate/catalog/` | Catalog import, embeddings, exact vector search |
+| `src/lookmate/services/` | Ranking, body-shape rules, style memory, trend radar |
 
 ## Key design decisions
 

@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir ".[ml]"
 
 COPY data ./data
 EXPOSE 8000
-CMD ["uvicorn", "stylebuddy.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "lookmate.main:app", "--host", "0.0.0.0", "--port", "8000"]

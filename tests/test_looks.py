@@ -2,8 +2,8 @@
 
 import pytest
 
-from stylebuddy.llm.client import FakeVision, LLMError, LLMTransientError
-from stylebuddy.worker import process_look
+from lookmate.llm.client import FakeVision, LLMError, LLMTransientError
+from lookmate.worker import process_look
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"look-one"
 
@@ -37,8 +37,8 @@ def test_upload_is_processed_into_per_item_lookalikes(client, runtime, user):
 
 
 def test_photo_is_deleted_after_processing(client, runtime, user):
-    from stylebuddy.db import SessionLocal
-    from stylebuddy.models import Look
+    from lookmate.db import SessionLocal
+    from lookmate.models import Look
 
     look_id = upload(client, user["id"]).json()["id"]
     run_next_job(runtime)

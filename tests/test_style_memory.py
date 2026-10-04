@@ -22,9 +22,9 @@ def test_saving_unknown_product_is_404(client, user):
 
 
 def test_learned_styles_change_ranking_weights(client, runtime, user):
-    from stylebuddy.db import SessionLocal
-    from stylebuddy.models import User
-    from stylebuddy.services.style_memory import user_context
+    from lookmate.db import SessionLocal
+    from lookmate.models import User
+    from lookmate.services.style_memory import user_context
 
     upload(client, user["id"])
     run_next_job(runtime)

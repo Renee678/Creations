@@ -15,7 +15,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://stylebuddy:stylebuddy@postgres:5432/stylebuddy
+      DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
       # Real H&M catalog + semantic embeddings by default; set to seed/hash for a fully offline run.
       CATALOG_SOURCE: ${CATALOG_SOURCE:-hm}
@@ -37,12 +37,12 @@ services:
 
   worker:
     build: .
-    command: ["python", "-m", "stylebuddy.worker"]
+    command: ["python", "-m", "lookmate.worker"]
     env_file:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://stylebuddy:stylebuddy@postgres:5432/stylebuddy
+      DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
       CATALOG_SOURCE: ${CATALOG_SOURCE:-hm}
       EMBEDDER: ${EMBEDDER:-bge}
@@ -56,13 +56,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: stylebuddy
-      POSTGRES_PASSWORD: stylebuddy
-      POSTGRES_DB: stylebuddy
+      POSTGRES_USER: lookmate
+      POSTGRES_PASSWORD: lookmate
+      POSTGRES_DB: lookmate
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stylebuddy"]
+      test: ["CMD-SHELL", "pg_isready -U lookmate"]
       interval: 3s
       retries: 20
 

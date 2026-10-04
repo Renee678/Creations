@@ -1,4 +1,4 @@
-// StyleBuddy front end: plain JS over the JSON API. The user id lives in localStorage.
+// Lookmate front end: plain JS over the JSON API. The user id lives in localStorage.
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const store = {

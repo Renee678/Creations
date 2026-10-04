@@ -1,4 +1,4 @@
-"""Force a trend refresh now: `python -m stylebuddy.trends_cli`."""
+"""Force a trend refresh now: `python -m lookmate.trends_cli`."""
 
 import logging
 

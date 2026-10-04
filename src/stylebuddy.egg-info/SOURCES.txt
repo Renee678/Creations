@@ -1,7 +1,0 @@
-README.md
-pyproject.toml
-src/stylebuddy.egg-info/PKG-INFO
-src/stylebuddy.egg-info/SOURCES.txt
-src/stylebuddy.egg-info/dependency_links.txt
-src/stylebuddy.egg-info/requires.txt
-src/stylebuddy.egg-info/top_level.txt

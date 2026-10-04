@@ -4,7 +4,7 @@
 
 ## What the project does
 
-StyleBuddy (平替搭子) turns outfit inspiration from social media into affordable look-alikes. A user uploads
+Lookmate turns outfit inspiration from social media into affordable look-alikes. A user uploads
 a screenshot from Xiaohongshu, TikTok or Instagram. A vision model breaks the outfit into items, and the
 app finds cheaper alternatives in a product catalog. Results are ranked by similarity, the user's body
 shape, budget and a style memory that learns from every upload and save. A weekly job researches current

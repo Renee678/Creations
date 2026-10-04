@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from stylebuddy.catalog.categories import category_for
-from stylebuddy.catalog.embedder import HashEmbedder
-from stylebuddy.catalog.index import VectorIndex
-from stylebuddy.catalog.pricing import synthetic_price
+from lookmate.catalog.categories import category_for
+from lookmate.catalog.embedder import HashEmbedder
+from lookmate.catalog.index import VectorIndex
+from lookmate.catalog.pricing import synthetic_price
 
 
 def test_hash_embedder_is_normalised_and_deterministic():

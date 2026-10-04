@@ -1,6 +1,6 @@
-from stylebuddy.catalog.service import ProductView, SearchResult
-from stylebuddy.llm.schemas import DetectedItem
-from stylebuddy.services.ranking import UserContext, price_score, rank
+from lookmate.catalog.service import ProductView, SearchResult
+from lookmate.llm.schemas import DetectedItem
+from lookmate.services.ranking import UserContext, price_score, rank
 
 ITEM = DetectedItem(category="bottom", name="wide-leg trousers", colour="beige", fit="wide-leg", details=[],
                     style_tags=["old_money"], search_query="beige wide-leg trousers")

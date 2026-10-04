@@ -4,7 +4,7 @@ def test_healthz(client):
 
 def test_web_app_and_vocab_are_served(client):
     page = client.get("/")
-    assert page.status_code == 200 and "平替搭子" in page.text
+    assert page.status_code == 200 and "Lookmate" in page.text
     assert client.get("/static/app.js").status_code == 200
     vocab = client.get("/api/vocab").json()
     assert "old_money" in vocab["styles"] and "pear" in vocab["body_shapes"]

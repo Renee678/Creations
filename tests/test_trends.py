@@ -1,9 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from stylebuddy.db import SessionLocal
-from stylebuddy.services import trends
-from stylebuddy.services.trends import TrendItem
+from lookmate.db import SessionLocal
+from lookmate.services import trends
+from lookmate.services.trends import TrendItem
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 
