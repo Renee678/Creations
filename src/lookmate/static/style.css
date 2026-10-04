@@ -12,7 +12,8 @@ body { margin: 0; background: var(--bg); color: var(--ink);
        font: 15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; }
 .topbar { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line);
           padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
-.brand { font-weight: 700; font-size: 18px; }
+.brand { font-weight: 700; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+.logo { width: 28px; height: 28px; }
 .brand span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 4px; }
 nav { display: flex; gap: 4px; overflow-x: auto; }
 nav button { border: 0; background: none; color: var(--muted); padding: 6px 10px; border-radius: 999px; cursor: pointer; font: inherit; white-space: nowrap; }
