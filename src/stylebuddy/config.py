@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     anthropic_api_key: str = ""
-    llm_model: str = "claude-sonnet-5-5"
+    llm_model: str = "claude-opus-5-5"
     llm_timeout_s: float = 60.0
 
     embedder: str = "hash"  # "hash" (offline) or "bge" (fastembed)
