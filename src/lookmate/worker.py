@@ -6,6 +6,7 @@ the queue delivers at least once.
 
 import logging
 import signal
+import threading
 import time
 
 from .config import get_settings
@@ -77,21 +78,17 @@ def _finish(session, look: Look, status: str, result: dict | None = None, error:
     session.commit()
 
 
-def run_forever(rt: Runtime) -> None:
-    stopping = False
-
-    def _stop(*_):
-        nonlocal stopping
-        stopping = True
-
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+def run_forever(rt: Runtime, stop_event: threading.Event | None = None) -> None:
+    stop_event = stop_event or threading.Event()
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
+        signal.signal(signal.SIGINT, lambda *_: stop_event.set())
     recovered = rt.queue.recover()
     if recovered:
         log.warning("re-queued %d jobs left over from a previous run", recovered)
     log.info("worker started (llm=%s, catalog=%d products)", rt.llm.name, len(rt.catalog.index))
     next_trend_check = 0.0
-    while not stopping:
+    while not stop_event.is_set():
         if time.monotonic() >= next_trend_check:
             next_trend_check = time.monotonic() + TREND_CHECK_EVERY_S
             try:

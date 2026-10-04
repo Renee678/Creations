@@ -15,6 +15,18 @@ from .llm.client import VisionLLM, make_vision_llm
 from .services.trends import ClaudeTrendResearcher
 
 LOOK_QUEUE = "looks"
+_memory_server = None
+
+
+def make_redis(url: str) -> redis.Redis:
+    """`memory://` gives an in-process Redis (fakeredis) for the no-Docker local mode."""
+    global _memory_server
+    if url.startswith("memory://"):
+        import fakeredis
+
+        _memory_server = _memory_server or fakeredis.FakeServer()
+        return fakeredis.FakeRedis(server=_memory_server)
+    return redis.Redis.from_url(url)
 
 
 @dataclass
@@ -34,7 +46,7 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
         if import_catalog:
             ensure_catalog(session, embedder, settings.catalog_source, Path(settings.data_dir), settings.catalog_size)
         catalog = Catalog.load(session, embedder)
-    client = redis_client or redis.Redis.from_url(settings.redis_url)
+    client = redis_client or make_redis(settings.redis_url)
     researcher = (
         ClaudeTrendResearcher(settings.anthropic_api_key, settings.llm_model) if settings.anthropic_api_key else None
     )

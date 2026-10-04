@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from pathlib import Path
@@ -11,6 +12,7 @@ from .api import looks, profiles, style, trends
 from .config import get_settings
 from .runtime import Runtime, build_runtime
 from .services.vocab import BODY_SHAPES, STYLES
+from .worker import run_forever
 
 STATIC = Path(__file__).parent / "static"
 
@@ -19,8 +21,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.runtime = build_runtime(get_settings())
+    settings = get_settings()
+    app.state.runtime = build_runtime(settings)
+    stop = threading.Event()
+    if settings.inline_worker:
+        threading.Thread(target=run_forever, args=(app.state.runtime, stop), daemon=True, name="worker").start()
     yield
+    stop.set()
 
 
 app = FastAPI(title="Lookmate", lifespan=lifespan)

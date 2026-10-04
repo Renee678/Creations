@@ -28,6 +28,14 @@ open http://localhost:8080
 CATALOG_SOURCE=seed EMBEDDER=hash docker compose up --build -d
 ```
 
+**No Docker** (e.g. a laptop without virtualisation): one process with SQLite, an in-memory Redis and
+the worker as a thread. Same app and API, without the Nginx gateway:
+
+```bash
+python -m venv .venv && .venv/bin/pip install -e ".[ml]"   # Windows: .venv\Scripts\pip
+python scripts/run_local.py                                   # http://localhost:8000
+```
+
 ## Tests
 
 ```bash

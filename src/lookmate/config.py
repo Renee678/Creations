@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     catalog_size: int = 5000
     data_dir: str = "data"
 
+    # No-Docker local mode: run the worker as a thread inside the API process.
+    inline_worker: bool = False
+
     max_upload_bytes: int = 8 * 1024 * 1024
 
     # Cost guardrails for a public deployment.

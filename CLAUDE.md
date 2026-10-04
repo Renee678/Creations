@@ -10,6 +10,7 @@ FastAPI + Redis job queue + worker + Postgres behind an Nginx gateway. See READM
 - Install: `make install` (creates `.venv`, installs `.[dev]`)
 - Tests: `make test` — offline; uses SQLite, fakeredis, the hash embedder and the fake vision model
 - Full stack: `docker compose up --build -d`, then `./scripts/smoke_test.sh`
+- No Docker: `python scripts/run_local.py` (SQLite + in-memory Redis + inline worker, port 8000)
 - Offline stack: `CATALOG_SOURCE=seed EMBEDDER=hash docker compose up --build -d`
 - Force a trend refresh: `python -m lookmate.trends_cli`
 
