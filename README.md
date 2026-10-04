@@ -93,3 +93,5 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
 | `CATALOG_SOURCE` | `hm` (compose) | `hm` or `seed` |
 | `EMBEDDER` | `bge` (compose) | `bge` or `hash` (offline lexical) |
 | `CATALOG_SIZE` | `5000` | Products sampled from the H&M dataset |
+| `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
+| `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |

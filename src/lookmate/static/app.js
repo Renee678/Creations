@@ -91,8 +91,16 @@ async function handleFile(file) {
   $("#results").innerHTML = "";
   setStatus("上传中…");
   const form = new FormData(); form.append("user_id", userId); form.append("image", file);
+  let code = store.get("accessCode") || "";
+  if (vocab.access_code_required && !code) {
+    code = prompt("请输入体验码") || "";
+    store.set("accessCode", code);
+  }
   try {
-    const look = await api("/api/looks", { method: "POST", body: form });
+    const look = await api("/api/looks", { method: "POST", body: form, headers: { "X-Access-Code": code } }).catch((err) => {
+      if (err.message === "需要体验码") store.set("accessCode", "");
+      throw err;
+    });
     pollLook(look.id, 0);
   } catch (err) { setStatus(err.message, true); }
 }

@@ -40,7 +40,7 @@ def index() -> FileResponse:
 
 @app.get("/api/vocab")
 def vocab() -> dict:
-    return {"styles": STYLES, "body_shapes": BODY_SHAPES}
+    return {"styles": STYLES, "body_shapes": BODY_SHAPES, "access_code_required": bool(get_settings().access_code)}
 
 
 @app.get("/healthz")

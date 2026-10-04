@@ -20,6 +20,10 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 8 * 1024 * 1024
 
+    # Cost guardrails for a public deployment.
+    access_code: str = ""          # if set, uploads need the X-Access-Code header
+    daily_look_limit: int = 200    # new image analyses per UTC day across all users (0 = unlimited)
+
 
 @lru_cache
 def get_settings() -> Settings:
