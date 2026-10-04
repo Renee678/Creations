@@ -15,11 +15,13 @@ from .models import Look, User, utcnow
 from .runtime import Runtime, build_runtime
 from .services.dupes import find_dupes
 from .services.style_memory import record_look, user_context
+from .services.trends import refresh_if_due
 
 log = logging.getLogger("stylebuddy.worker")
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_S = 2.0
+TREND_CHECK_EVERY_S = 600
 
 
 def process_look(rt: Runtime, look_id: int) -> str:
@@ -88,7 +90,16 @@ def run_forever(rt: Runtime) -> None:
     if recovered:
         log.warning("re-queued %d jobs left over from a previous run", recovered)
     log.info("worker started (llm=%s, catalog=%d products)", rt.llm.name, len(rt.catalog.index))
+    next_trend_check = 0.0
     while not stopping:
+        if time.monotonic() >= next_trend_check:
+            next_trend_check = time.monotonic() + TREND_CHECK_EVERY_S
+            try:
+                with SessionLocal() as session:
+                    if refresh_if_due(session, rt.redis, rt.trend_researcher, rt.data_dir):
+                        log.info("trends refreshed")
+            except Exception:
+                log.exception("trend refresh check failed")
         rt.queue.promote_due()
         job = rt.queue.reserve(timeout_s=1.0)
         if job is None:

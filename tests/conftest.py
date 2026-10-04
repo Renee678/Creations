@@ -29,6 +29,13 @@ def client():
 
     with TestClient(app) as c:
         yield c
+    # Tests share one in-memory database; clear per-test data (the catalog is read-only and kept).
+    from stylebuddy.db import Base, engine
+
+    with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            if table.name != "products":
+                conn.execute(table.delete())
 
 
 @pytest.fixture

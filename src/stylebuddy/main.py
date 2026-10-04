@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, Request
 
-from .api import looks, profiles, style
+from .api import looks, profiles, style, trends
 from .config import get_settings
 from .runtime import Runtime, build_runtime
 
@@ -20,6 +20,7 @@ app = FastAPI(title="StyleBuddy", lifespan=lifespan)
 app.include_router(profiles.router)
 app.include_router(looks.router)
 app.include_router(style.router)
+app.include_router(trends.router)
 
 
 @app.get("/healthz")

@@ -1,0 +1,8 @@
+[
+ {"style_id": "old_money", "label_zh": "老钱风", "description_zh": "低调的高级感：针织开衫、西装裤、乐福鞋，颜色以米白、驼色、海军蓝为主，几乎看不到 logo。", "keywords": ["old money", "quiet luxury", "针织开衫", "阔腿西裤", "珍珠"], "example_query": "beige knit cardigan tailored wide-leg trousers pearl necklace"},
+ {"style_id": "coquette", "label_zh": "千金风 / 蝴蝶结甜美", "description_zh": "蝴蝶结、蕾丝、缎面和粉色系，甜美但不幼稚，常配玛丽珍鞋或芭蕾平底鞋。", "keywords": ["coquette", "蝴蝶结", "蕾丝", "缎面", "玛丽珍"], "example_query": "light pink satin bow blouse lace cami mary jane ballet flats"},
+ {"style_id": "clean_girl", "label_zh": "白女风 / Clean girl", "description_zh": "干净利落的基础款：修身罗纹上衣、直筒牛仔裤、简约运动鞋，强调状态感而不是单品。", "keywords": ["clean girl", "that girl", "罗纹", "直筒牛仔裤", "极简"], "example_query": "fitted rib tee straight-leg jeans minimalist white sneakers"},
+ {"style_id": "minimalist", "label_zh": "裸色系 / 裸装风", "description_zh": "肤色、奶油色和灰褐色的同色系叠穿，靠质感和层次取胜，显得温柔高级。", "keywords": ["nude tones", "greige", "同色系", "奶油色", "层次感"], "example_query": "greige beige knitted midi dress satin slip skirt neutral tones"},
+ {"style_id": "boho", "label_zh": "波西米亚回潮", "description_zh": "层层叠叠的长裙、流苏、草编包和皮靴，自由松弛，适合度假和音乐节。", "keywords": ["boho", "tiered skirt", "草编包", "长靴", "印花"], "example_query": "tiered maxi skirt floral straw bag knee-high boots"},
+ {"style_id": "streetwear", "label_zh": "街头 Y2K", "description_zh": "低腰工装裤、短款 T 恤、oversize 卫衣和厚底运动鞋，偏辣妹和千禧年复古。", "keywords": ["y2k", "低腰", "工装裤", "baby tee", "oversize"], "example_query": "low-rise cargo trousers cropped baby tee oversized hoodie"}
+]
