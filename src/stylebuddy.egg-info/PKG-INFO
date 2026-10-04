@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: stylebuddy
+Version: 0.1.0
+Summary: Turn outfit inspiration into affordable, personalised look-alikes
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.115
+Requires-Dist: uvicorn[standard]>=0.30
+Requires-Dist: sqlalchemy>=2.0
+Requires-Dist: psycopg[binary]>=3.2
+Requires-Dist: pydantic-settings>=2.4
+Requires-Dist: jinja2>=3.1
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: redis>=5.0
+Requires-Dist: numpy>=1.26
+Requires-Dist: anthropic>=0.40
+Requires-Dist: pyarrow>=16
+Requires-Dist: httpx>=0.27
+Requires-Dist: prometheus-client>=0.20
+Provides-Extra: ml
+Requires-Dist: fastembed>=0.4; extra == "ml"
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: fakeredis>=2.23; extra == "dev"
