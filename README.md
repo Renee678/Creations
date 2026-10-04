@@ -95,3 +95,11 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
 | `CATALOG_SIZE` | `5000` | Products sampled from the H&M dataset |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
 | `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |
+
+## Deploying to a server
+
+`docker-compose.prod.yml` adds Caddy for automatic HTTPS and hides the gateway's dev port.
+On a fresh Ubuntu server with the project copied to it (`scripts/deploy-from-windows.ps1 <ip>` does the
+copy from Windows), run `bash scripts/deploy.sh`. It installs Docker if needed, fills in
+`SITE_ADDRESS` (`<ip>.sslip.io` if you have no domain) and a random `ACCESS_CODE`, starts the stack,
+and prints the URL and access code.
