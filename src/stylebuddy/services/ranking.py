@@ -88,4 +88,20 @@ def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, 
             reasons.append("在你的单品预算内")
         picks.append(RankedPick(p.id, round(score, 4), reasons))
     picks.sort(key=lambda r: r.score, reverse=True)
-    return picks[:k]
+    return diversify(picks, candidates, k)
+
+
+def diversify(picks: list[RankedPick], candidates: list[SearchResult], k: int) -> list[RankedPick]:
+    """Prefer distinct designs: the same garment in four colours is one option, not four.
+
+    Colour variants are only used to fill the list when there aren't enough distinct designs.
+    """
+    names = {c.product.id: c.product.name.lower() for c in candidates}
+    chosen, seen, spare = [], set(), []
+    for p in picks:
+        if names[p.product_id] in seen:
+            spare.append(p)
+        else:
+            seen.add(names[p.product_id])
+            chosen.append(p)
+    return (chosen + spare)[:k]

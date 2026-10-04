@@ -17,6 +17,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://stylebuddy:stylebuddy@postgres:5432/stylebuddy
       REDIS_URL: redis://redis:6379/0
+      # Real H&M catalog + semantic embeddings by default; set to seed/hash for a fully offline run.
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-hm}
+      EMBEDDER: ${EMBEDDER:-bge}
+      FASTEMBED_CACHE_PATH: /app/data/cache/models
     volumes:
       - catalog-cache:/app/data/cache
     depends_on:
@@ -28,8 +32,8 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 5s
       timeout: 3s
-      retries: 60
-      start_period: 10s
+      retries: 120  # first boot downloads the catalog and embedding model
+      start_period: 20s
 
   worker:
     build: .
@@ -40,6 +44,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://stylebuddy:stylebuddy@postgres:5432/stylebuddy
       REDIS_URL: redis://redis:6379/0
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-hm}
+      EMBEDDER: ${EMBEDDER:-bge}
+      FASTEMBED_CACHE_PATH: /app/data/cache/models
     volumes:
       - catalog-cache:/app/data/cache
     depends_on:

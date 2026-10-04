@@ -1,6 +1,7 @@
 """Text embedders. Both return L2-normalised float32 vectors so cosine == dot product."""
 
 import hashlib
+import logging
 import re
 from typing import Protocol
 
@@ -76,7 +77,11 @@ class BgeEmbedder:
 
 def make_embedder(kind: str) -> Embedder:
     if kind == "bge":
-        return BgeEmbedder()
+        try:
+            return BgeEmbedder()
+        except Exception:  # model download blocked / fastembed missing: degrade, don't crash
+            logging.getLogger(__name__).exception("BGE embedder unavailable; falling back to the hash embedder")
+            return HashEmbedder()
     if kind == "hash":
         return HashEmbedder()
     raise ValueError(f"unknown embedder {kind!r}")

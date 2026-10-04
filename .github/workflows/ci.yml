@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  compose:
+    # Boots the whole stack offline (seed catalog, fake LLM) and smoke-tests it through the gateway.
+    runs-on: ubuntu-latest
+    env:
+      CATALOG_SOURCE: seed
+      EMBEDDER: hash
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d --build --wait
+      - run: ./scripts/smoke_test.sh
+      - if: failure()
+        run: docker compose logs
