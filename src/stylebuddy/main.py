@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Query, Request
 
+from .api import profiles
 from .catalog.embedder import make_embedder
 from .catalog.importer import ensure_catalog
 from .catalog.service import Catalog
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="StyleBuddy", lifespan=lifespan)
+app.include_router(profiles.router)
 
 
 @app.get("/healthz")
