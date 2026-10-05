@@ -72,6 +72,6 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
         redis=client,
         trend_researcher=researcher,
         data_dir=Path(settings.data_dir),
-        tryon=make_tryon(settings.replicate_api_token, settings.tryon_model),
+        tryon=make_tryon(settings.replicate_api_token, settings.tryon_model, settings.fashn_api_key),
         tryon_queue=JobQueue(client, TRYON_QUEUE),
     )

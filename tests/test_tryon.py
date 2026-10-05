@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from lookmate.tryon.client import Garment, PreviewTryOn, ReplicateTryOn, TryOnError, plan_steps
+from lookmate.tryon.client import FashnTryOn, Garment, PreviewTryOn, ReplicateTryOn, TryOnError, make_tryon, plan_steps
 from lookmate.worker import process_job
 
 PHOTO = b"\xff\xd8\xff\xe0" + b"full-body-photo"
@@ -160,12 +160,15 @@ def replicate_stub(statuses, seen):
             if req.method == "POST":
                 seen.append(json.loads(req.content))
             status = next(state)
-            out = {"id": "p1", "status": status, "urls": {"get": "https://api.replicate.com/v1/predictions/p1"}}
+            out = {"id": "p1", "status": status, "urls": {"get": "https://api.replicate.com/v1/predictions/p1",
+                                                          "cancel": "https://api.replicate.com/v1/predictions/p1/cancel"}}
             if status == "succeeded":
                 out["output"] = "https://replicate.delivery/out.png"
             if status == "failed":
                 out["error"] = "CUDA out of memory"
             return httpx.Response(201 if req.method == "POST" else 200, json=out)
+        if req.url.path == "/v1/predictions/p1/cancel":
+            return httpx.Response(200, json={"id": "p1", "status": "canceled"})
         if req.url.host == "replicate.delivery":
             return httpx.Response(200, content=b"PNGDATA", headers={"content-type": "image/png"})
         return httpx.Response(404)
@@ -282,3 +285,65 @@ def test_an_old_tryon_on_the_shared_queue_is_handed_over(client, runtime, user, 
     monkeypatch.setattr(runtime.queue, "ack", lambda job: (real_ack(job), stop.set()))
     worker._serve(runtime, stop, True)
     assert runtime.tryon_queue.depth()["ready"] == 1 and runtime.queue.depth()["ready"] == 0
+
+
+def test_a_cold_replicate_model_is_cancelled_not_retried(monkeypatch):
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    clock = iter(range(0, 10_000, 100))
+    monkeypatch.setattr("lookmate.tryon.client.time.monotonic", lambda: next(clock))
+    seen = []
+    vton = ReplicateTryOn("token", timeout_s=240, http=replicate_stub(["starting"] * 50, seen))
+    with pytest.raises(TryOnError) as err:
+        vton.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "upper_body", "tee"))
+    assert not err.value.retryable, "a retry would pay for a second prediction"
+    assert "took too long" in str(err.value)
+    assert ("POST", "/v1/predictions/p1/cancel") in seen
+
+
+def fashn_stub(statuses, seen):
+    state = iter(statuses)
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append((req.method, req.url.path, req.headers.get("authorization")))
+        if req.url.path == "/v1/run":
+            seen.append(json.loads(req.content))
+            return httpx.Response(200, json={"id": "f1", "error": None})
+        if req.url.path == "/v1/status/f1":
+            status = next(state)
+            out = {"id": "f1", "status": status, "error": None}
+            if status == "completed":
+                out["output"] = ["https://cdn.fashn.ai/f1/out.jpg"]
+            if status == "failed":
+                out["error"] = {"name": "PoseError", "message": "Couldn't find a person"}
+            return httpx.Response(200, json=out)
+        if req.url.host == "cdn.fashn.ai":
+            return httpx.Response(200, content=b"JPEGDATA", headers={"content-type": "image/jpeg"})
+        return httpx.Response(404)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_fashn_client_renders_a_garment(monkeypatch):
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    seen = []
+    out = FashnTryOn("key", http=fashn_stub(["in_queue", "processing", "completed"], seen)).dress(
+        b"person", "image/jpeg", Garment(None, "image/jpeg", "lower_body", "jeans", url="https://img/jeans.jpg"))
+    assert out == (b"JPEGDATA", "image/jpeg")
+    body = next(s for s in seen if isinstance(s, dict))
+    assert body["model_name"] == "tryon-v1.6" and body["inputs"]["category"] == "bottoms"
+    assert body["inputs"]["garment_image"] == "https://img/jeans.jpg"
+    assert body["inputs"]["model_image"].startswith("data:image/jpeg;base64,")
+    assert ("POST", "/v1/run", "Bearer key") in seen
+
+
+def test_fashn_failure_is_explained(monkeypatch):
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    with pytest.raises(TryOnError, match="Couldn't find a person"):
+        FashnTryOn("key", http=fashn_stub(["failed"], [])).dress(
+            b"p", "image/jpeg", Garment(b"g", "image/jpeg", "dresses", "dress"))
+
+
+def test_fashn_is_preferred_when_configured():
+    assert make_tryon("rep-token", fashn_key="fa-key").name == "fashn"
+    assert make_tryon("rep-token").name == "idm-vton"
+    assert make_tryon("").name == "preview"

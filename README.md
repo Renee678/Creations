@@ -82,11 +82,13 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
 - **Retries only for transient errors.** Rate limits, timeouts and 5xx retry with exponential backoff (max 3);
   bad requests and refusals fail immediately.
 - **Photos are not kept.** Raw images (outfits and selfies) are deleted as soon as analysis finishes.
-- **Try-on uses an open-source model, not a trained one.** [IDM-VTON](https://github.com/yisol/IDM-VTON)
-  runs on Replicate (no local GPU). It swaps one garment per call, so the worker renders the bottom, then one
+- **Try-on uses a hosted model, not a trained one.** [FASHN](https://docs.fashn.ai) when `FASHN_API_KEY` is
+  set (always warm, about 5-10 s a garment), else the open-source [IDM-VTON](https://github.com/yisol/IDM-VTON)
+  on Replicate (cheaper, but a public model that has gone idle can take minutes to boot, so a step is cancelled
+  after 4 minutes rather than retried and paid twice). Either swaps one garment per call, so the worker renders the bottom, then one
   upper-body piece (or a dress), feeding each output into the next call; shoes, bags and accessories are pinned
   beside the picture instead. The job is queued like the others (retries, idempotent by photo + outfit, its own
-  daily cost cap). The full-body photo is sent to Replicate, dropped from Lookmate after rendering, and the
+  daily cost cap). The full-body photo is sent to the try-on service, dropped from Lookmate after rendering, and the
   result has an unguessable id and a delete button.
 - **Image → text → vector search.** Claude describes each item in catalog language; search runs on text
   embeddings (BGE-small, computed locally with fastembed). No model training needed.
@@ -130,7 +132,8 @@ The catalog mixes two public datasets, half of `CATALOG_SIZE` each, women's fash
 | `CATALOG_SOURCE` | `asos,polyvore` (compose, local mode) | Comma-separated mix of `asos`, `polyvore`, `hm`, `seed` |
 | `EMBEDDER` | `bge` (compose) | `bge` or `hash` (offline lexical) |
 | `CATALOG_SIZE` | `5000` | Products in the catalog, split evenly across the sources |
-| `REPLICATE_API_TOKEN` | empty | Enables rendered try-on (IDM-VTON on Replicate); empty shows a collage preview |
+| `FASHN_API_KEY` | empty | Rendered try-on with FASHN's hosted model (seconds per garment); preferred when set |
+| `REPLICATE_API_TOKEN` | empty | Rendered try-on with IDM-VTON on Replicate (cheaper, but slow cold starts); both empty shows a collage preview |
 | `DAILY_TRYON_LIMIT` | `30` | Global cap on rendered try-ons per UTC day; `0` disables it |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
 | `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |
@@ -141,7 +144,9 @@ Lookmate calls Claude Opus 5.5 once per photo analysis: roughly $0.05–0.12 per
 $0.10–0.20 for a personal colour analysis with several photos. These are estimates from token counts
 (Opus 5.5 at $4 / $20 per million input / output tokens), not a measured bill; the worker logs
 `claude usage=` for every call, so real numbers can be read from `docker compose logs worker`.
-Rendered try-ons run on Replicate and are billed there (a few cents per garment, at most two per outfit).
+Rendered try-ons are billed by the try-on service, at most two garments per outfit: about $0.075 an image
+on FASHN, about $0.02 a run on Replicate. Keeping a Replicate deployment warm instead would cost $3.51/h
+(L40S) to $5.04/h (A100) around the clock, so it isn't used.
 
 Guardrails for a shared demo: `ACCESS_CODE` gates every upload, `DAILY_LOOK_LIMIT` caps Claude analyses
 per day across all users (50 is plenty for reviewers), `DAILY_TRYON_LIMIT` caps rendered try-ons, and

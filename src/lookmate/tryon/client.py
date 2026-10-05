@@ -1,11 +1,15 @@
 """Virtual try-on: dress the user's own photo in catalog pieces.
 
-The image model is IDM-VTON (open source, https://github.com/yisol/IDM-VTON), run on Replicate so
-no GPU is needed locally. It swaps one garment per call, so an outfit is applied step by step:
-the output of one step is the person photo for the next.
+Two image models are supported; both swap one garment per call, so an outfit is applied step by
+step (the output of one step is the person photo for the next):
 
-Without REPLICATE_API_TOKEN the app uses PreviewTryOn, which returns the photo unchanged; the UI
-then shows the outfit pinned next to the photo (a collage) instead of a rendered try-on.
+- FASHN try-on (hosted API, FASHN_API_KEY): always warm, about 5-10 seconds a garment, about $0.075
+  an image. Preferred when configured, because a demo can't wait for a cold GPU.
+- IDM-VTON (open source, https://github.com/yisol/IDM-VTON) on Replicate (REPLICATE_API_TOKEN):
+  about $0.02 a run, but a public model that has gone idle can take minutes to boot.
+
+Without either, the app uses PreviewTryOn, which returns the photo unchanged; the UI then shows the
+outfit pinned next to the photo (a collage) instead of a rendered try-on.
 """
 
 import base64
@@ -73,7 +77,7 @@ class ReplicateTryOn:
     name = "idm-vton"
     renders = True
 
-    def __init__(self, token: str, model: str = DEFAULT_MODEL, timeout_s: float = 420.0,
+    def __init__(self, token: str, model: str = DEFAULT_MODEL, timeout_s: float = 240.0,
                  http: httpx.Client | None = None):
         self.model = model
         self.timeout_s = timeout_s
@@ -123,7 +127,13 @@ class ReplicateTryOn:
         deadline = time.monotonic() + self.timeout_s
         while pred["status"] in ("starting", "processing"):
             if time.monotonic() > deadline:
-                raise TryOnError("try-on timed out", retryable=True)
+                # Cancel rather than retry: a retry would start (and pay for) a second prediction,
+                # and the user has already waited long enough.
+                try:
+                    self._request("POST", pred["urls"]["cancel"])
+                except TryOnError:
+                    pass
+                raise TryOnError("The try-on model took too long to start. Please try again in a minute.")
             time.sleep(2)
             pred = self._request("GET", pred["urls"]["get"])
         if pred["status"] != "succeeded":
@@ -137,5 +147,67 @@ class ReplicateTryOn:
         return img.content, img.headers.get("content-type", "image/png").split(";")[0]
 
 
-def make_tryon(token: str, model: str = DEFAULT_MODEL):
+FASHN_API = "https://api.fashn.ai/v1"
+FASHN_CATEGORIES = {"upper_body": "tops", "lower_body": "bottoms", "dresses": "one-pieces"}
+
+
+class FashnTryOn:
+    """FASHN's hosted try-on model (https://docs.fashn.ai): no cold starts, seconds per garment."""
+
+    name = "fashn"
+    renders = True
+
+    def __init__(self, api_key: str, timeout_s: float = 90.0, http: httpx.Client | None = None):
+        self.timeout_s = timeout_s
+        self.http = http or httpx.Client(timeout=httpx.Timeout(30, read=60))
+        self.headers = {"Authorization": f"Bearer {api_key}"}
+
+    def _request(self, method: str, url: str, **kw) -> dict:
+        try:
+            r = self.http.request(method, url, headers=self.headers, **kw)
+        except httpx.TransportError as e:
+            raise TryOnError(f"try-on service unreachable: {e}", retryable=True) from e
+        if r.status_code == 401:
+            raise TryOnError("FASHN rejected the key: check FASHN_API_KEY in .env")
+        if r.status_code == 402:
+            raise TryOnError("FASHN is out of credits (app.fashn.ai)")
+        if r.status_code == 429 or r.status_code >= 500:
+            raise TryOnError(f"try-on service busy ({r.status_code})", retryable=True)
+        if r.status_code >= 400:
+            raise TryOnError(f"try-on request failed ({r.status_code}): {r.text[:200]}")
+        return r.json()
+
+    def dress(self, person: bytes, media_type: str, garment: Garment) -> tuple[bytes, str]:
+        body = {"model_name": "tryon-v1.6", "inputs": {
+            "model_image": _data_uri(person, media_type),
+            "garment_image": _data_uri(garment.image, garment.media_type) if garment.image else garment.url,
+            "category": FASHN_CATEGORIES.get(garment.region, "auto"),
+            "mode": "balanced",
+            "output_format": "jpeg",
+        }}
+        run = self._request("POST", f"{FASHN_API}/run", json=body)
+        if run.get("error") or not run.get("id"):
+            raise TryOnError(f"try-on was not accepted: {run.get('error')}")
+        deadline = time.monotonic() + self.timeout_s
+        status = {"status": "starting"}
+        while status["status"] in ("starting", "in_queue", "processing"):
+            if time.monotonic() > deadline:
+                raise TryOnError("The try-on took too long. Please try again.")
+            time.sleep(1.5)
+            status = self._request("GET", f"{FASHN_API}/status/{run['id']}")
+        if status["status"] != "completed" or not status.get("output"):
+            err = status.get("error")
+            msg = err.get("message") if isinstance(err, dict) else err
+            raise TryOnError(f"try-on {status['status']}: {msg or 'no output'}")
+        try:
+            img = self.http.get(status["output"][0])
+            img.raise_for_status()
+        except httpx.HTTPError as e:
+            raise TryOnError(f"couldn't download the try-on image: {e}", retryable=True) from e
+        return img.content, img.headers.get("content-type", "image/jpeg").split(";")[0]
+
+
+def make_tryon(token: str, model: str = DEFAULT_MODEL, fashn_key: str = ""):
+    if fashn_key:
+        return FashnTryOn(fashn_key)
     return ReplicateTryOn(token, model) if token else PreviewTryOn()
