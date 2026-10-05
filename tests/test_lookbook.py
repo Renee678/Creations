@@ -1,5 +1,7 @@
 """Personal analysis (photos -> queue -> worker) and the deterministic lookbook built from it."""
 
+from datetime import datetime, timezone
+
 import pytest
 
 from lookmate.llm.client import FakeVision, LLMTransientError
@@ -91,19 +93,25 @@ def test_photo_without_a_face_fails_with_a_clear_message(client, runtime, user, 
 def test_lookbook_has_complete_outfits_without_repeats(client, runtime, user, mode, sections):
     upload(client, user["id"], SELFIE)
     run_next_job(runtime)
-    lb = client.get(f"/api/users/{user['id']}/lookbook", params={"mode": mode}).json()
+    url = f"/api/users/{user['id']}/lookbook"
+    if mode == "seasons":  # one season per page
+        pages = [client.get(url, params={"mode": mode, "season": s}).json() for s in sections]
+    else:
+        pages = [client.get(url, params={"mode": mode}).json()]
+    lb = pages[0]
 
     assert lb["personal"] is True and lb["analysis"]["colour_season"] in SEASONS
-    assert [s["id"] for s in lb["sections"]] == list(sections)
-    ids = []
-    for section in lb["sections"]:
-        assert section["outfits"], f"no outfits for {section['id']}"
-        for outfit in section["outfits"]:
-            cats = [p["category"] for p in outfit["pieces"]]
-            assert len(cats) == len(set(cats)), "an outfit never has two pieces of the same category"
-            assert outfit["total_price"] == pytest.approx(sum(p["price"] for p in outfit["pieces"]))
-            ids += [p["id"] for p in outfit["pieces"]]
-    assert len(ids) / len(set(ids)) < 1.5, "pieces are mostly distinct across the lookbook"
+    assert [s["id"] for page in pages for s in page["sections"]] == list(sections)
+    for page in pages:
+        ids = []
+        for section in page["sections"]:
+            assert section["outfits"], f"no outfits for {section['id']}"
+            for outfit in section["outfits"]:
+                cats = [p["category"] for p in outfit["pieces"]]
+                assert len(cats) == len(set(cats)), "an outfit never has two pieces of the same category"
+                assert outfit["total_price"] == pytest.approx(sum(p["price"] for p in outfit["pieces"]))
+                ids += [p["id"] for p in outfit["pieces"]]
+        assert len(ids) / len(set(ids)) < 1.5, "pieces are mostly distinct across a page"
 
 
 def test_lookbook_works_before_any_photo(client, user):
@@ -220,3 +228,132 @@ def test_trends_say_which_suit_you_once_you_have_an_analysis(client, runtime, us
 def test_my_style_explains_the_fit_rules(client, user):
     fit = client.get(f"/api/users/{user['id']}/style").json()["fit"]
     assert fit["shape"] == "Pear" and "wide" in fit["look_for"] and "skinny" in fit["skip"]
+
+
+def test_lookbook_shows_the_current_season_and_offers_the_next(client, user, monkeypatch):
+    from lookmate.services.trends import season_of
+
+    now = season_of(datetime.now(timezone.utc).month)
+    lb = client.get(f"/api/users/{user['id']}/lookbook").json()
+    assert [s["id"] for s in lb["sections"]] == [now] and lb["season"] == now == lb["current_season"]
+    assert lb["next_season"] != now
+    nxt = client.get(f"/api/users/{user['id']}/lookbook", params={"season": lb["next_season"]}).json()
+    assert [s["id"] for s in nxt["sections"]] == [lb["next_season"]]
+
+
+WINTER = {"best_colours": [{"name": "emerald", "hex": "#00805a"}, {"name": "navy", "hex": "#1b2a4a"},
+                           {"name": "white", "hex": "#ffffff"}, {"name": "cobalt blue", "hex": "#0047ab"},
+                           {"name": "black", "hex": "#000000"}],
+          "avoid_colours": [{"name": "camel", "hex": "#c19a6b"}], "style_tags": ["quiet_luxury"]}
+
+
+def test_an_outfit_has_one_accent_and_true_neutrals(runtime):
+    """The bug: a 'navy' slot matched bright blue trousers, which next to a green blazer made two loud colours."""
+    from lookmate.services.lookbook import CORE_NEUTRALS, LOUD, build_lookbook
+    from lookmate.services.ranking import UserContext
+
+    class Rec:
+        result = WINTER
+
+    for mode in ("seasons", "occasions"):
+        for season in ("spring", "autumn", "winter"):
+            lb = build_lookbook(runtime.catalog, UserContext(style_weights={"quiet_luxury": 1.0}), Rec, [], mode,
+                                season=season)
+            for o in (o for s in lb["sections"] for o in s["outfits"]):
+                for p in o["pieces"][1:]:
+                    fam = family(p["colour"]) if p["colour"] else None
+                    assert fam in CORE_NEUTRALS, (o["title"], p["name"], p["colour"])
+                    assert not LOUD.search(p["name"]), (o["title"], p["name"])
+                assert family(o["pieces"][0]["colour"] or "") != "beige", "colours to avoid stay out"
+
+
+def test_neutral_slots_reject_bright_pieces_even_in_palette_families(runtime):
+    from lookmate.services.lookbook import Palette, _colour_ok
+
+    class P:
+        def __init__(self, name, colour):
+            self.name, self.colour = name, colour
+
+    pal = Palette.from_analysis(WINTER)
+    assert "blue" in pal.good, "cobalt is in this palette..."
+    assert not _colour_ok(P("Faux leather trousers", "Bright Blue"), pal, "quiet_luxury", neutral=True), \
+        "...but not for a neutral slot"
+    assert _colour_ok(P("Tailored trousers", "Navy"), pal, "quiet_luxury", neutral=True)
+    assert not _colour_ok(P("Neon slip skirt", "Black"), pal, "minimalist", neutral=True)
+    assert not _colour_ok(P("Metallic blazer", "Green"), pal, "quiet_luxury", neutral=False), "muted styles stay muted"
+    assert _colour_ok(P("Metallic blazer", "Green"), pal, "y2k", neutral=False)
+    assert not _colour_ok(P("Wool coat", "Camel"), pal, "old_money", neutral=True), "camel is on the avoid list"
+    warm = Palette.from_analysis({"best_colours": [{"name": "camel"}, {"name": "rust"}], "avoid_colours": []})
+    assert _colour_ok(P("Wool coat", "Camel"), warm, "old_money", neutral=True), "warm palettes keep camel"
+
+
+def test_the_stylist_chooses_among_the_top_candidates(runtime):
+    from lookmate.services.lookbook import build_lookbook
+    from lookmate.services.ranking import UserContext
+
+    class Rec:
+        result = WINTER
+
+    seen = []
+
+    def stylist(req):
+        seen.append(req)
+        o = req.outfits[0]
+        assert all(1 <= len(s.candidates) <= 5 for s in o.slots), "a short list, not the whole catalog"
+        assert req.outfits[0].style_definition, "the stylist sees what the style means"
+        picks = [s.candidates[-1].id for s in o.slots]
+        picks[0] = "not-a-candidate"  # invented ids are ignored
+        return {0: (picks, "Tonal and calm.")}
+
+    plain = build_lookbook(runtime.catalog, UserContext(), Rec, [], "seasons", season="autumn")
+    styled = build_lookbook(runtime.catalog, UserContext(), Rec, [], "seasons", season="autumn", stylist=stylist)
+    assert len(seen) == 1, "one call for the whole page"
+    first, base = styled["sections"][0]["outfits"][0], plain["sections"][0]["outfits"][0]
+    assert first["why"] == "Tonal and calm." and styled["styled"] and not plain["styled"]
+    assert first["pieces"][0]["id"] == base["pieces"][0]["id"], "an invented id keeps the scorer's pick"
+    expected = [s.candidates[-1].id for s in seen[0].outfits[0].slots][1:]
+    assert [p["id"] for p in first["pieces"][1:]] == expected
+    assert first["total_price"] == pytest.approx(sum(p["price"] for p in first["pieces"]))
+
+
+def test_stylist_falls_back_and_caches(runtime):
+    from lookmate.llm.client import FakeVision, LLMTransientError
+    from lookmate.llm.schemas import StylingRequest, StylistCandidate, StylistOutfit, StylistSlot
+    from lookmate.services import stylist
+
+    req = StylingRequest(setting="autumn", palette=["navy"], avoid=[], outfits=[StylistOutfit(
+        index=0, title="Quiet luxury autumn", style="Quiet luxury", style_definition="muted",
+        slots=[StylistSlot(slot="blazer", role="accent", candidates=[
+                   StylistCandidate(id="a", name="Wool blazer", colour="Green", price=40)]),
+               StylistSlot(slot="trousers", role="neutral", candidates=[
+                   StylistCandidate(id="b", name="Tailored trousers", colour="Navy", price=30)])])])
+
+    class Broken:
+        name = "broken"
+
+        def curate_outfits(self, request):
+            raise LLMTransientError("overloaded")
+
+    assert stylist.curate(Broken(), runtime.redis, req, 0) == {}, "an error leaves the scorer's picks"
+
+    calls = []
+
+    class Counting(FakeVision):
+        def curate_outfits(self, request):
+            calls.append(request)
+            return super().curate_outfits(request)
+
+    first = stylist.curate(Counting(), runtime.redis, req, 0)
+    assert first[0][0] == ["a", "b"] and "green" in first[0][1].lower()
+    assert stylist.curate(Counting(), runtime.redis, req, 0) == first and len(calls) == 1, "same page, no second call"
+    assert stylist.curate(Counting(), runtime.redis, req.model_copy(update={"setting": "winter"}), 1)
+    assert stylist.curate(Counting(), runtime.redis, req.model_copy(update={"setting": "spring"}), 1) == {}, \
+        "past the daily cap the scorer's picks stand"
+    assert len(calls) == 2
+
+
+def test_a_personal_lookbook_says_why_each_outfit_works(client, runtime, user):
+    upload(client, user["id"], SELFIE)
+    run_next_job(runtime)
+    lb = client.get(f"/api/users/{user['id']}/lookbook").json()
+    assert lb["styled"] and all(o["why"] for s in lb["sections"] for o in s["outfits"])

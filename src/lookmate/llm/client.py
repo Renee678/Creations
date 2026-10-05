@@ -11,7 +11,8 @@ import logging
 from typing import Protocol
 
 from ..services.vocab import STYLES
-from .schemas import DetectedItem, LookAnalysis, PersonAnalysis, PhotoCheck, Swatch
+from .schemas import (DetectedItem, LookAnalysis, PersonAnalysis, PhotoCheck, StyledOutfit, StylingRequest,
+                      StylingResult, Swatch)
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,8 @@ class VisionLLM(Protocol):
     def analyze_person(self, photos: list[tuple[bytes, str]]) -> PersonAnalysis: ...
 
     def check_photo(self, image: bytes, media_type: str) -> PhotoCheck: ...
+
+    def curate_outfits(self, request: StylingRequest) -> StylingResult: ...
 
 
 SYSTEM_PROMPT = f"""You are a fashion stylist who breaks outfit photos down into shoppable items.
@@ -81,6 +84,19 @@ one short sentence, what the photo is good for or how to retake it. Never commen
 Write in English."""
 
 
+STYLIST_PROMPT = """You are a fashion stylist with a sharp, editorial eye, dressing one client from a shop's stock.
+
+For each outfit you get the style it must express (with its definition), the season or occasion, the client's
+colour palette and colours to avoid, and for every slot up to 5 candidates that already fit the client's price
+range, body shape and palette. Pick exactly one candidate per slot so the outfit looks cohesive and intentional:
+- colours that work together: at most one accent; "neutral" slots stay calm and grounding;
+- fabrics, weight and formality that belong together and suit the season or occasion;
+- faithful to the style definition (never something loud for a muted style).
+When candidates are equally good, prefer the one listed first.
+Return the chosen ids in slot order, and one short sentence (at most 20 words) for the client on why the outfit
+works, in English."""
+
+
 class ClaudeVision:
     name = "claude"
 
@@ -106,6 +122,10 @@ class ClaudeVision:
     def check_photo(self, image: bytes, media_type: str) -> PhotoCheck:
         return self._parse(PHOTO_CHECK_PROMPT, [_image_block(image, media_type)], "Is this photo good for try-on?",
                            PhotoCheck)
+
+    def curate_outfits(self, request: StylingRequest) -> StylingResult:
+        return self._parse(STYLIST_PROMPT, [], "Curate these outfits:\n" + request.model_dump_json(indent=1),
+                           StylingResult)
 
     def _parse(self, system: str, images: list[dict], text: str, output_format):
         a = self._anthropic
@@ -302,6 +322,18 @@ class FakeVision:
     def check_photo(self, image: bytes, media_type: str) -> PhotoCheck:
         # Offline there is nobody to look at the photo, so it is accepted.
         return PhotoCheck(framing="full_body", good_for_colour=True, good_for_tryon=True, tip="Ready for try-on.")
+
+    def curate_outfits(self, request: StylingRequest) -> StylingResult:
+        # Offline: keep the scorer's top pick per slot and explain it from the request alone.
+        outfits = []
+        for o in request.outfits:
+            picks = [s.candidates[0] for s in o.slots if s.candidates]
+            accent = next((c for c, s in zip(picks, o.slots) if s.role == "accent"), None)
+            base = sorted({c.colour.lower() for c, s in zip(picks, o.slots) if s.role == "neutral" and c.colour})
+            why = (f"One {accent.colour.lower()} accent" if accent and accent.colour else "A calm base") + (
+                f" grounded by {' and '.join(base)}" if base else "") + f", true to {o.style.lower()}."
+            outfits.append(StyledOutfit(index=o.index, picks=[c.id for c in picks], why=why))
+        return StylingResult(outfits=outfits)
 
 
 def make_vision_llm(api_key: str, model: str, timeout_s: float) -> VisionLLM:

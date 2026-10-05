@@ -82,3 +82,43 @@ class PersonAnalysis(BaseModel):
     style_tags: list[str] = Field(description="Style labels from the allowed vocabulary that suit this person")
     caveats: str = Field(description="Anything that limits accuracy, e.g. warm indoor lighting or a beauty filter")
     photo_checks: list[PhotoCheck] = Field(default_factory=list, description="One check per photo, in upload order")
+
+
+class StylistCandidate(BaseModel):
+    id: str
+    name: str
+    colour: str
+    price: float
+
+
+class StylistSlot(BaseModel):
+    slot: str = Field(description="What the slot is for, e.g. 'wide-leg trousers'")
+    role: Literal["accent", "neutral"]
+    candidates: list[StylistCandidate]
+
+
+class StylistOutfit(BaseModel):
+    index: int
+    title: str
+    style: str
+    style_definition: str
+    slots: list[StylistSlot]
+
+
+class StylingRequest(BaseModel):
+    """Outfits to curate: per slot, the top candidates the deterministic scorer already picked."""
+
+    setting: str = Field(description="The season or occasion, e.g. 'autumn' or 'work'")
+    palette: list[str]
+    avoid: list[str]
+    outfits: list[StylistOutfit]
+
+
+class StyledOutfit(BaseModel):
+    index: int = Field(description="The outfit's index from the request")
+    picks: list[str] = Field(description="Exactly one candidate id per slot, in slot order")
+    why: str = Field(description="One short sentence, addressed to the client, on why this outfit works")
+
+
+class StylingResult(BaseModel):
+    outfits: list[StyledOutfit]

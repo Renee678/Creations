@@ -20,6 +20,7 @@ set_default SITE_ADDRESS "${PUBLIC_IP//./-}.sslip.io"
 set_default ACCESS_CODE "$(tr -dc 'a-z0-9' </dev/urandom | head -c 8)"
 set_default DAILY_LOOK_LIMIT 50
 set_default DAILY_TRYON_LIMIT 20
+set_default DAILY_STYLIST_LIMIT 100
 grep -qE '^ANTHROPIC_API_KEY=.+' .env || echo "!! ANTHROPIC_API_KEY is empty: the site will use the offline fake model"
 
 echo "== building and starting (first run downloads the catalog, this takes a few minutes)"

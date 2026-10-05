@@ -14,10 +14,11 @@ from ..config import get_settings
 from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES
 from ..models import PersonalAnalysis
+from ..services import stylist
 from ..services.lookbook import build_lookbook, latest_analysis
 from ..services.price_range import PriceRange
 from ..services.style_memory import user_context
-from ..services.trends import latest_batch, season_of
+from ..services.trends import SEASONS, latest_batch, season_of
 from ..worker import analysis_job
 from .looks import require_access_code, take_daily_quota
 from .profiles import get_user_or_404
@@ -89,18 +90,28 @@ def lookbook(
     user_id: int,
     request: Request,
     mode: Literal["seasons", "occasions"] = Query(default="seasons"),
+    season: Literal["spring", "summer", "autumn", "winter"] | None = Query(default=None),
     price_min: float | None = Query(default=None, ge=0, le=10000),
     price_max: float | None = Query(default=None, ge=0, le=10000),
     db: Session = Depends(get_db),
 ) -> dict:
+    rt = request.app.state.runtime
     user = user_context(db, get_user_or_404(db, user_id))
     analysis = latest_analysis(db, user_id)
     # Outfits are labelled with clothing trends only (not a lipstick or a colour), current season first.
     now = season_of(datetime.now(timezone.utc).month)
+    upcoming = SEASONS[(SEASONS.index(now) + 1) % 4]
     pieces = sorted((t for t in latest_batch(db) if t.kind == "pieces"), key=lambda t: t.season != now)
     first: dict[str, tuple[str, str]] = {}
     for t in pieces:
         first.setdefault(t.style_id, (t.style_id, t.label))
     trends = list(first.values())
     price = PriceRange.from_params(price_min, price_max, user.budget_per_item)
-    return build_lookbook(request.app.state.runtime.catalog, user, analysis, trends, mode, price)
+    # The stylist runs once a photo has been analysed: that's when outfits are personal, and the upload
+    # was already gated by the access code, so strangers can't run up model calls.
+    curate = None
+    if analysis:
+        limit = get_settings().daily_stylist_limit
+        curate = lambda req: stylist.curate(rt.llm, rt.redis, req, limit)  # noqa: E731
+    lb = build_lookbook(rt.catalog, user, analysis, trends, mode, price, season=season or now, stylist=curate)
+    return {**lb, "current_season": now, "next_season": upcoming, "stylist": rt.llm.name if curate else None}

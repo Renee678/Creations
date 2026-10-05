@@ -1,9 +1,11 @@
 """Personal lookbooks: complete outfits per season or per occasion, built from the catalog.
 
-The model only perceives (the PersonAnalysis: colour season, palette, face shape).
-Everything here is deterministic: outfit formulas are fixed templates, each one is
+Retrieval and scoring are deterministic: outfit formulas are fixed templates, each one is
 flavoured with one of the user's styles or a current trend, coloured from the user's
-palette, and every slot is filled by vector search plus a transparent score.
+palette, and every slot is filled by vector search plus a transparent score. One slot per
+outfit carries the accent colour; the others only accept true neutrals, so two loud pieces
+never meet. Optionally a stylist (stylist.py) then picks, per slot, among the top few
+candidates so the outfit works as a whole; without it the top-scored piece wins.
 
 score = 0.55 * similarity to the slot description
       + 0.15 * palette    (+1 in the user's colours, -1 in the colours to avoid)
@@ -17,16 +19,31 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+import re
+from collections.abc import Callable
+
 from ..catalog.service import Catalog
+from ..llm.schemas import StylingRequest, StylistCandidate, StylistOutfit, StylistSlot
 from ..models import PersonalAnalysis
 from .body import fit_adjustment
-from .colours import NEUTRALS, families, family, palette_score
+from .colours import NEUTRALS, colour_word, families, family, palette_score
 from .price_range import PriceRange, search_in_range
 from .ranking import STYLE_KEYWORDS, UserContext, price_score, style_score
-from .vocab import BODY_SHAPES, STYLES, style_name
+from .vocab import BODY_SHAPES, STYLE_DEFINITIONS, STYLES, style_name
 
 W_SIM, W_PALETTE, W_STYLE, W_FIT, W_PRICE = 0.55, 0.15, 0.10, 0.10, 0.10
 CANDIDATES_PER_SLOT = 30
+STYLIST_CHOICES = 5  # top candidates per slot the stylist may choose from
+
+# Neutral slots take only these. Camel and brown join when the palette holds them (warm palettes).
+CORE_NEUTRALS = {"black", "white", "grey", "cream", "navy"}
+WARM_NEUTRALS = {"beige", "brown"}
+# Never in a neutral slot, nor anywhere in a muted style, whatever the colour family says.
+LOUD = re.compile(r"\b(neon|fluro|fluoro|fluorescent|bright|metallic|sequin\w*|glitter\w*|holographic|vinyl|"
+                  r"high[- ]shine|tie[- ]dye|electric|hot pink|lime)\b", re.I)
+MUTED_STYLES = {"quiet_luxury", "old_money", "minimalist", "clean_girl"}
+
+Stylist = Callable[[StylingRequest], dict[int, tuple[list[str], str]]]
 
 Slot = tuple[str, str]  # (category, garment description)
 
@@ -101,6 +118,12 @@ class Palette:
         bad = families([s["name"] for s in analysis.get("avoid_colours", [])]) - good
         return cls(best, good, bad, personal=True)
 
+    @property
+    def neutrals(self) -> set[str]:
+        """Colour families a neutral slot accepts."""
+        warm = WARM_NEUTRALS if (not self.personal or self.good & WARM_NEUTRALS) else set()
+        return (CORE_NEUTRALS | warm) - self.bad
+
     def colours_for(self, outfit_no: int, n_slots: int) -> list[str]:
         """The first slot gets an accent colour; the rest are neutrals, so outfits stay wearable."""
         accents = [c for c in self.colours if family(c) not in NEUTRALS] or self.colours
@@ -129,6 +152,7 @@ def outfit_styles(user: UserContext, analysis: dict | None, trends: list[tuple[s
 def build_lookbook(
     catalog: Catalog, user: UserContext, analysis_rec: PersonalAnalysis | None,
     trends: list[tuple[str, str]], mode: str = "seasons", price: PriceRange | None = None,
+    season: str | None = None, stylist: Stylist | None = None,
 ) -> dict:
     # A soft price range (see price_range.py): without it a $260 designer pump can win a slot,
     # since price is only 10% of the score.
@@ -138,6 +162,8 @@ def build_lookbook(
     styles = outfit_styles(user, analysis, trends)
     trend_labels = dict(trends)
     templates = SEASONS if mode == "seasons" else OCCASIONS
+    if mode == "seasons" and season in SEASONS:
+        templates = {season: SEASONS[season]}  # one season at a time: the current one unless asked
     used: set[str] = set()
 
     sections = []
@@ -146,57 +172,128 @@ def build_lookbook(
         for n, slots in enumerate(formulas):
             style = styles[n % len(styles)]
             colours = palette.colours_for(n + len(sections), len(slots))
-            pieces = [p for p in (
-                _fill_slot(catalog, user, palette, style, cat, desc, colour, used, price)
-                for (cat, desc), colour in zip(slots, colours)
-            ) if p]
-            if not pieces:
+            filled = []
+            for i, ((cat, desc), colour) in enumerate(zip(slots, colours)):
+                options = _slot_options(catalog, user, palette, style, cat, desc, colour, used, price, neutral=i > 0)
+                if options:
+                    used.add(options[0]["id"])
+                    filled.append((desc, "neutral" if i > 0 else "accent", options))
+            if not filled:
                 continue
             outfits.append({
                 "title": f"{STYLES[style]} {title.lower()}" if mode == "seasons" else f"{STYLES[style]} · {title}",
                 "style_id": style,
                 "trend": trend_labels.get(style),
-                "pieces": pieces,
-                "total_price": round(sum(p["price"] for p in pieces), 2),
+                "why": None,
+                "slots": filled,
             })
         sections.append({"id": section_id, "title": title, "outfits": outfits})
 
+    if stylist:
+        _apply_stylist(stylist, sections, palette, analysis)
+    for section in sections:
+        for outfit in section["outfits"]:
+            pieces = [opts[0] for _, _, opts in outfit.pop("slots")]
+            outfit["pieces"] = pieces
+            outfit["total_price"] = round(sum(p["price"] for p in pieces), 2)
+
     return {
         "mode": mode,
+        "season": next(iter(templates)) if mode == "seasons" else None,
         "personal": palette.personal,
         "analysis": analysis,
         "styles": [{"id": s, "label": STYLES[s]} for s in styles],
         "sections": sections,
         "price_range": price.to_dict(),
+        "styled": any(o["why"] for s in sections for o in s["outfits"]),
     }
 
 
-def _fill_slot(catalog: Catalog, user: UserContext, palette: Palette, style: str,
-               category: str, desc: str, colour: str, used: set[str], price: PriceRange | None = None) -> dict | None:
-    flavour = " ".join(STYLE_KEYWORDS.get(style, [])[:2])
-    query = f"{colour} {desc} {flavour}"
-    price = price or PriceRange.from_params(None, None, user.budget_per_item)
-    candidates = (
-        search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, exclude=used, any_price=False)
-        # small catalogs run out: reuse a piece rather than leave a gap
-        or search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, any_price=False)
+def _apply_stylist(stylist: Stylist, sections: list[dict], palette: Palette, analysis: dict | None) -> None:
+    """Ask the stylist once for the whole page; move each chosen piece to the front of its slot's options."""
+    outfits = [o for s in sections for o in s["outfits"]]
+    if not outfits:
+        return
+    request = StylingRequest(
+        setting=", ".join(s["title"].lower() for s in sections),
+        palette=palette.colours,
+        avoid=[c["name"] for c in (analysis or {}).get("avoid_colours", [])],
+        outfits=[StylistOutfit(
+            index=i, title=o["title"], style=STYLES[o["style_id"]], style_definition=STYLE_DEFINITIONS[o["style_id"]],
+            slots=[StylistSlot(slot=desc, role=role, candidates=[
+                StylistCandidate(id=p["id"], name=p["name"], colour=p["colour"], price=p["price"])
+                for p in opts[:STYLIST_CHOICES]]) for desc, role, opts in o["slots"]],
+        ) for i, o in enumerate(outfits)],
     )
-    best = None
-    for c in candidates:
-        p = c.product
-        text = f"{p.name} {p.product_type} {p.description}"
-        s_pal = palette_score(p.colour, palette.good, palette.bad)
-        s_style, _ = style_score([style], user, text)
-        s_fit = fit_adjustment(user.body_shape, p.category, text)
-        score = (W_SIM * c.score + W_PALETTE * s_pal + W_STYLE * s_style + W_FIT * s_fit
-                 + W_PRICE * price_score(p.price, price.high))
-        if best is None or score > best[0]:
-            best = (score, c, s_pal, s_style, s_fit)
-    if best is None:
+    for i, (picks, why) in stylist(request).items():
+        outfit = outfits[i]
+        for (_, _, opts), pick in zip(outfit["slots"], picks):
+            chosen = next((p for p in opts if p["id"] == pick), None)
+            if chosen:
+                opts.remove(chosen)
+                opts.insert(0, chosen)
+        outfit["why"] = why or None
+
+
+def _colour_family(p) -> str | None:
+    return family(p.colour) if p.colour else family(colour_word(p.name))
+
+
+def _fill_slot(catalog: Catalog, user: UserContext, palette: Palette, style: str,
+               category: str, desc: str, colour: str, used: set[str], price: PriceRange | None = None,
+               neutral: bool | None = None) -> dict | None:
+    """The top-scored piece for a slot, or None."""
+    if neutral is None:
+        neutral = family(colour) in NEUTRALS
+    options = _slot_options(catalog, user, palette, style, category, desc, colour, used, price, neutral)
+    if not options:
         return None
-    score, c, s_pal, s_style, s_fit = best
+    used.add(options[0]["id"])
+    return options[0]
+
+
+def _slot_options(catalog: Catalog, user: UserContext, palette: Palette, style: str,
+                  category: str, desc: str, colour: str, used: set[str], price: PriceRange | None = None,
+                  neutral: bool = False) -> list[dict]:
+    """Candidates for a slot that pass the colour rules, best score first."""
+    price = price or PriceRange.from_params(None, None, user.budget_per_item)
+    flavour = " ".join(STYLE_KEYWORDS.get(style, [])[:2])
+    queries = [f"{colour} {desc} {flavour}"]
+    if neutral:
+        # Vector search reads "navy trousers" loosely and can return bright blue ones; a second,
+        # plainer query keeps a neutral slot from coming back empty after the colour filter.
+        queries.append(f"black {desc}")
+    for query in queries:
+        candidates = (
+            search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, exclude=used, any_price=False)
+            # small catalogs run out: reuse a piece rather than leave a gap
+            or search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, any_price=False)
+        )
+        scored = [_scored(c, user, palette, style, desc, price) for c in candidates
+                  if _colour_ok(c.product, palette, style, neutral)]
+        if scored:
+            return sorted(scored, key=lambda p: p["score"], reverse=True)
+    return []
+
+
+def _colour_ok(p, palette: Palette, style: str, neutral: bool) -> bool:
+    text = f"{p.name} {p.colour}"
+    fam = _colour_family(p)
+    if neutral:
+        return fam in palette.neutrals and not LOUD.search(text)
+    if fam in palette.bad:
+        return False
+    return not (style in MUTED_STYLES and LOUD.search(text))
+
+
+def _scored(c, user: UserContext, palette: Palette, style: str, desc: str, price: PriceRange) -> dict:
     p = c.product
-    used.add(p.id)
+    text = f"{p.name} {p.product_type} {p.description}"
+    s_pal = palette_score(p.colour, palette.good, palette.bad)
+    s_style, _ = style_score([style], user, text)
+    s_fit = fit_adjustment(user.body_shape, p.category, text)
+    score = (W_SIM * c.score + W_PALETTE * s_pal + W_STYLE * s_style + W_FIT * s_fit
+             + W_PRICE * price_score(p.price, price.high))
 
     reasons = []
     if s_pal > 0 and palette.personal:
