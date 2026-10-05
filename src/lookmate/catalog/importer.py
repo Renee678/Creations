@@ -34,6 +34,7 @@ HM_COLUMNS = [
     "detail_desc", "image_url", "bge_embedding",
 ]
 HM_GROUPS = {"Ladieswear", "Divided", "Menswear"}
+SEED_ID_PREFIX = "seed-"  # bundled catalog ids; H&M ids are numeric article ids
 
 
 def product_text(p: dict) -> str:
@@ -73,16 +74,30 @@ def download_hm(cache_dir: Path) -> Path:
 
 
 def load_hm_rows(parquet: Path, size: int) -> list[dict]:
+    """Filter and sample on the small metadata columns first, then fetch vectors for the sample only.
+
+    Converting all ~106k rows with their 384-d embeddings to Python objects peaks at 1-2 GB of RAM;
+    this way only `size` embeddings are ever materialised.
+    """
     import pyarrow.parquet as pq
 
-    table = pq.read_table(parquet, columns=HM_COLUMNS)
-    rows = []
-    for r in table.to_pylist():
+    meta_cols = [c for c in HM_COLUMNS if c != "bge_embedding"]
+    meta = pq.read_table(parquet, columns=meta_cols).to_pylist()
+    keep = []
+    for i, r in enumerate(meta):
         if r["index_group_name"] not in HM_GROUPS:
             continue
         category = category_for(r["product_type_name"] or "")
         if not category or not r["detail_desc"]:
             continue
+        keep.append((_stable_rank(str(r["article_id"])), i, category))
+    keep.sort()  # deterministic sample
+    keep = keep[:size]
+
+    vectors = pq.read_table(parquet, columns=["bge_embedding"]).column(0).take([i for _, i, _ in keep]).to_pylist()
+    rows = []
+    for (_, i, category), vector in zip(keep, vectors):
+        r = meta[i]
         rows.append({
             "id": str(r["article_id"]),
             "name": r["prod_name"],
@@ -93,10 +108,9 @@ def load_hm_rows(parquet: Path, size: int) -> list[dict]:
             "section": r["section_name"] or "",
             "description": r["detail_desc"],
             "image_url": r["image_url"] or "",
-            "vector": r["bge_embedding"],
+            "vector": vector,
         })
-    rows.sort(key=lambda r: _stable_rank(r["id"]))  # deterministic sample
-    return rows[:size]
+    return rows
 
 
 def _store(session: Session, rows: list[dict], embedder: Embedder) -> int:
@@ -119,13 +133,15 @@ def _store(session: Session, rows: list[dict], embedder: Embedder) -> int:
 
 
 def ensure_catalog(session: Session, embedder: Embedder, source: str, data_dir: Path, size: int) -> int:
-    """Import the catalog if the table is empty or was embedded with a different model."""
+    """Import the catalog if the table is empty, came from another source or used a different model."""
     count = session.scalar(select(func.count()).select_from(Product)) or 0
     if count:
-        sample = session.scalar(select(Product.embedding).limit(1))
-        if len(sample) // 4 == embedder.dim:
+        sample = session.scalar(select(Product).limit(1))
+        current = "seed" if sample.id.startswith(SEED_ID_PREFIX) else "hm"
+        if len(sample.embedding) // 4 == embedder.dim and current == source:
             return count
-        log.warning("catalog vectors don't match embedder %s; re-importing", embedder.name)
+        log.warning("catalog is %s/%d-d but %s/%s is configured; re-importing",
+                    current, len(sample.embedding) // 4, source, embedder.name)
         session.execute(delete(Product))
         session.commit()
 

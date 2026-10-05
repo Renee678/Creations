@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -55,3 +57,58 @@ def test_synthetic_price_is_stable_and_category_scaled():
 def test_category_mapping_skips_unsupported_types():
     assert category_for("Cardigan") == "top"
     assert category_for("Underwear bottom") is None
+
+
+def _hm_parquet(path, n=6):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    rows = {
+        "article_id": [100 + i for i in range(n)],
+        "prod_name": [f"Item {i}" for i in range(n)],
+        "product_type_name": ["Dress", "Socks", "Trousers", "Dress", "Top", "Coat"][:n],
+        "colour_group_name": ["Black"] * n,
+        "graphical_appearance_name": ["Solid"] * n,
+        "index_group_name": ["Ladieswear", "Ladieswear", "Baby/Children", "Divided", "Menswear", "Ladieswear"][:n],
+        "section_name": ["Womens"] * n,
+        "detail_desc": ["Soft and easy."] * (n - 1) + [None],
+        "image_url": [f"https://img/{i}.jpg" for i in range(n)],
+        "bge_embedding": [[float(i)] * 4 for i in range(n)],
+    }
+    pq.write_table(pa.table(rows), path)
+
+
+def test_hm_import_filters_then_fetches_vectors_for_the_sample_only(tmp_path):
+    from lookmate.catalog.importer import load_hm_rows
+
+    _hm_parquet(tmp_path / "hm.parquet")
+    rows = load_hm_rows(tmp_path / "hm.parquet", size=10)
+    # Socks (unsupported type), children's wear and the item without a description are dropped.
+    assert sorted(r["id"] for r in rows) == ["100", "103", "104"]
+    for r in rows:
+        assert r["vector"] == [float(int(r["id"]) - 100)] * 4, "each row keeps its own embedding"
+        assert r["image_url"].startswith("https://")
+    assert len(load_hm_rows(tmp_path / "hm.parquet", size=2)) == 2
+
+
+def test_catalog_is_reimported_when_the_source_changes(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+
+    from lookmate.catalog import importer
+    from lookmate.catalog.embedder import HashEmbedder
+    from lookmate.db import Base
+    from lookmate.models import Product
+
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    Base.metadata.create_all(eng)
+    data_dir = Path(__file__).resolve().parents[1] / "data"
+    with Session(eng) as s:
+        importer.ensure_catalog(s, HashEmbedder(), "seed", data_dir, 50)
+        assert s.scalar(select(Product.id).limit(1)).startswith("seed-")
+
+        _hm_parquet(tmp_path / "hm.parquet")
+        monkeypatch.setattr(importer, "download_hm", lambda cache_dir: tmp_path / "hm.parquet")
+        assert importer.ensure_catalog(s, HashEmbedder(), "hm", data_dir, 50) == 3
+        assert not any(i.startswith("seed-") for i in s.scalars(select(Product.id)))
+        assert importer.ensure_catalog(s, HashEmbedder(), "hm", data_dir, 50) == 3, "same source: kept as is"

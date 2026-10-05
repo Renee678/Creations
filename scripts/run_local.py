@@ -14,12 +14,33 @@ ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT / "src"))
 
-os.environ.setdefault("DATABASE_URL", "sqlite:///./lookmate.db")
-os.environ.setdefault("REDIS_URL", "memory://")
-os.environ.setdefault("INLINE_WORKER", "true")
+LOCAL_DEFAULTS = {
+    "DATABASE_URL": "sqlite:///./lookmate.db",
+    "REDIS_URL": "memory://",
+    "INLINE_WORKER": "true",
+    # The H&M catalog has product photos; the first start downloads it (~250 MB) into data/cache.
+    # If the download fails, the app falls back to the small bundled catalog.
+    "CATALOG_SOURCE": "hm",
+    "EMBEDDER": "bge",
+}
+
+
+def env_file_keys(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
+    return {line.split("=", 1)[0].strip() for line in lines if line and not line.startswith("#") and "=" in line}
+
+
+# Settings in .env or the shell win; environment variables would otherwise override .env.
+configured = env_file_keys(ROOT / ".env")
+for key, value in LOCAL_DEFAULTS.items():
+    if key not in configured:
+        os.environ.setdefault(key, value)
 
 import uvicorn  # noqa: E402
 
 if __name__ == "__main__":
     print("Lookmate (local mode) starting: open http://localhost:8000 once it says 'Application startup complete'")
+    print("The first start downloads the H&M catalog and embedding model, which can take a few minutes.")
     uvicorn.run("lookmate.main:app", host="127.0.0.1", port=8000)
