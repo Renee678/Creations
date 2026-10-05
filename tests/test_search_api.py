@@ -119,3 +119,11 @@ def test_try_on_lives_in_the_fitting_room_only(client):
     assert "/photo-check" in app_js, "a picked photo is checked before use"
     assert 'room = {}; store.set("room", "{}")' in app_js, "new photos start an empty fitting room"
     assert "tryon-clock" in app_js and "TRYON_GIVE_UP_MS" in app_js, "elapsed time and a hard stop instead of an endless spinner"
+
+
+def test_new_photos_hide_the_old_lookbook_until_they_are_read(client):
+    app_js = client.get("/static/app.js").text
+    upload = app_js.split("async function handlePhotos")[1].split("\n}\n")[0]
+    assert "analysing = true" in upload and '$("#lb-sections").innerHTML' in upload, "old outfits are cleared on upload"
+    lookbook = app_js.split("async function loadLookbook")[1]
+    assert lookbook.index("if (analysing) return;") < lookbook.index("await api("), "no lookbook while photos are read"

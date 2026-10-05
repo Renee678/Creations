@@ -349,6 +349,10 @@ async function handlePhotos(files) {
   mePhotos = await Promise.all(files.map((f) => shrinkPhoto(f, 1600)));
   // New photos, new lookbook: start the fitting room empty.
   room = {}; store.set("room", "{}"); renderRoom();
+  // The old analysis and lookbook belong to the old photos: hide them until the new ones are read.
+  analysing = true; lbShown = null; lbSeq++;
+  $("#me-analysis").innerHTML = ""; $("#lb-note").textContent = "";
+  $("#lb-sections").innerHTML = `<p class="muted lb-wait"><span class="spinner small"></span> Your lookbook appears once your photos are read.</p>`;
   $("#me-previews").innerHTML = mePhotos.map((f, i) =>
     `<figure class="me-photo"><img src="${URL.createObjectURL(f)}" alt=""><figcaption id="me-check-${i}"></figcaption></figure>`).join("");
   $("#me-previews").hidden = false; $("#me-drop-text").textContent = "Use different photos";
@@ -359,14 +363,17 @@ async function handlePhotos(files) {
     const a = await api(`/api/users/${userId}/analyses`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } })
       .catch((err) => { if (err.message === "access code required") store.set("accessCode", ""); throw err; });
     pollAnalysis(a.id, 0);
-  } catch (err) { setMeStatus(err.message, true); }
+  } catch (err) { analysing = false; loadLookbook(true); setMeStatus(err.message, true); }
 }
 
 async function pollAnalysis(id, tries) {
   try {
     const a = await api(`/api/analyses/${id}`);
-    if (a.status === "done") { setMeStatus(""); loadLookbook(true); return; }
-    if (a.status === "failed") { setMeStatus(a.error || "Analysis failed. Please try other photos.", true); return; }
+    if (a.status === "done") { analysing = false; setMeStatus(""); loadLookbook(true); return; }
+    if (a.status === "failed") {
+      analysing = false; loadLookbook(true);
+      setMeStatus(a.error || "Analysis failed. Please try other photos.", true); return;
+    }
     setMeStatus(a.attempts > 1 ? `The AI is busy, retrying (attempt ${a.attempts})…` : "Reading your colouring, face shape and style…");
     if (tries < 90) setTimeout(() => pollAnalysis(id, tries + 1), 1500);
     else setMeStatus("This is taking too long. Refresh the page in a little while.", true);
@@ -656,10 +663,12 @@ document.addEventListener("click", (e) => {
 
 let lbShown = null;  // the query the lookbook on screen was built from
 let lbSeq = 0;
+let analysing = false;  // new photos are being read: no lookbook until they are
 
 /** Build the lookbook. Opening the tab again doesn't rebuild it, so a try-on in progress stays put. */
 async function loadLookbook(force = false) {
   const query = `mode=${lbMode}&${priceQuery("lookbook")}`;
+  if (analysing) return;
   if (!force && query === lbShown) return renderRoom();
   const seq = ++lbSeq;
   try {
