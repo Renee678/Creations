@@ -164,10 +164,13 @@ class ReplicateTryOn:
 
 
 NANO_BANANA = "google/nano-banana"
-NANO_BANANA_PROMPT = """The first image is a photo of a person. Dress this same person in {pieces}. Replace what they
-are wearing now with exactly these pieces, keeping each piece's colour, pattern, fabric and cut. Keep the person's
-face, hair, skin tone, body shape and the background unchanged. Show a natural, realistic full-length photo of them
-standing and facing the camera."""
+NANO_BANANA_PROMPT = """Edit the first image, a photo of a person. Change only their clothes: dress them in {pieces},
+replacing what they are wearing now, and keep each piece's colour, pattern, fabric and cut.
+Everything else stays exactly as in the first photo: the same face, hair, skin tone, head size, height, body
+proportions and build, the same pose, the same camera angle, crop and framing, and the same background and light.
+Fit each garment to this person's body at their real size, the way it would drape on them. Do not make their
+silhouette wider, taller or slimmer, do not shrink or enlarge their head, and do not copy the size or pose of
+any model in the other images. The result must look like the original photo, only with different clothes."""
 
 
 def nano_banana_pieces(shown: list[str], described: list[str]) -> str:
@@ -200,6 +203,7 @@ class NanoBananaTryOn(ReplicateTryOn):
             "prompt": NANO_BANANA_PROMPT.format(pieces=nano_banana_pieces(
                 [g.description for g in shown], [g.description for g in described])),
             "image_input": images,
+            "aspect_ratio": "match_input_image",  # keep the person's own framing
             "output_format": "jpg",
         }}
         # Official models take predictions on the model itself, without a version id.

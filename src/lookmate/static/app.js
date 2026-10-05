@@ -354,7 +354,7 @@ async function handlePhotos(files) {
   // New photos, new lookbook: start the fitting room empty.
   room = {}; store.set("room", "{}"); renderRoom();
   // The old analysis and lookbook belong to the old photos: hide them until the new ones are read.
-  analysing = true; lbShown = null; lbSeq++;
+  analysing = true; lbShown = null; lbSeq++; lbRequested = false; lbSetup = null;
   $("#me-analysis").innerHTML = ""; $("#lb-note").textContent = "";
   $("#lb-sections").innerHTML = `<p class="muted lb-wait"><span class="spinner small"></span> Your lookbook appears once your photos are read.</p>`;
   $("#me-previews").innerHTML = mePhotos.map((f, i) =>
@@ -761,20 +761,43 @@ document.addEventListener("click", (e) => {
     return startTryOn("room");
   }
   if (e.target.closest("[data-room-photo]")) { pendingOutfit = null; return $("#tryon-file").click(); }
-  if (e.target.closest("[data-lb-browse]")) { store.set("lbBrowse", "1"); return loadLookbook(true); }
+  if (e.target.closest("[data-lb-browse]")) { lbRequested = true; return loadLookbook(true); }
   if (e.target.closest("[data-room-clear]")) { room = {}; store.set("room", "{}"); renderRoom(); }
 });
 
 let lbShown = null;  // the query the lookbook on screen was built from
 let lbSeq = 0;
 let analysing = false;  // new photos are being read: no lookbook until they are
+let lbRequested = false;  // nothing is built until "Create my looks" (Renee: photo, then options, then the button)
+let lbSetup = null;       // the palette and season choices shown before that
+
+/** Before "Create my looks": the photo, the palette it found, and the choices. No outfits yet. */
+async function showLookbookSetup() {
+  const seq = ++lbSeq;
+  lbShown = null;
+  try {
+    lbSetup = lbSetup || await api(`/api/users/${userId}/lookbook/setup`);
+  } catch (err) { return setMeStatus(err.message, true); }
+  if (seq !== lbSeq) return;
+  renderAnalysis(lbSetup.analysis);
+  renderSeasonChips({ mode: lbMode, season: lbSeason || lbSetup.current_season, ...lbSetup });
+  $("#lb-note").textContent = "";
+  $("#lb-sections").innerHTML = lbSetup.personal ? "" : `<div class="lb-gate"><span class="tape"></span><h2>Start with your photos ♡</h2>
+    <p>Add a selfie and a full-body photo above. Your lookbook is then built in your own colours, and the full-body photo is what <strong>Try it on me</strong> dresses.</p>
+    <button type="button" class="linklike" data-lb-browse>or create looks without a photo</button></div>`;
+  $("#lb-create-hint").textContent = lbSetup.personal
+    ? "Pick a season or an occasion, then create your looks." : "";
+  renderRoom();
+}
 
 /** Build the lookbook. Opening the tab again doesn't rebuild it, so a try-on in progress stays put. */
 async function loadLookbook(force = false) {
   $("#lb-mine").hidden = lbMode !== "mine";
+  $("#lb-create").hidden = lbMode === "mine" || lbRequested;
   if (lbMode === "mine" && lbInspo) return loadMine(force);
   if (lbMode === "mine" && !lbVibe) {
     lbShown = null; $("#lb-seasons").hidden = true; $("#lb-note").textContent = "";
+    if (lbSetup) renderAnalysis(lbSetup.analysis);
     $("#lb-sections").innerHTML = "";
     return renderRoom();
   }
@@ -782,6 +805,7 @@ async function loadLookbook(force = false) {
   const mode = lbMode === "mine" ? `mode=seasons&vibe=${encodeURIComponent(lbVibe)}` : `mode=${lbMode}${season}`;
   const query = `${mode}&${priceQuery("lookbook")}`;
   if (analysing) return;
+  if (!lbRequested) return showLookbookSetup();
   if (!force && query === lbShown) return renderRoom();
   const seq = ++lbSeq;
   // A new page of outfits goes past the AI stylist, which takes a few seconds; say so if it's slow.
@@ -800,14 +824,6 @@ async function loadLookbook(force = false) {
         + (lb.styled && lb.stylist !== "fake" ? " An AI stylist picked and approved every outfit."
           : " These outfits follow the colour rules but haven't been reviewed by the AI stylist.")
       : "Upload a photo for outfits in your own colours. For now these use neutral colours and your styles.";
-    if (!lb.personal && store.get("lbBrowse") !== "1") {
-      // Photos first: outfits are built from your colours, and the full-body photo is what try-on dresses.
-      $("#lb-note").textContent = "";
-      $("#lb-sections").innerHTML = `<div class="lb-gate"><span class="tape"></span><h2>Start with your photos ♡</h2>
-        <p>Add a selfie and a full-body photo above. Your lookbook is then built in your own colours, and the full-body photo is what <strong>Try it on me</strong> dresses.</p>
-        <button type="button" class="linklike" data-lb-browse>or browse outfits without a photo</button></div>`;
-      return renderRoom();
-    }
     $("#lb-sections").innerHTML = lb.sections.map((s) =>
       `<div class="lb-section"><h2>${esc(s.title)}</h2>${s.outfits.map((o) => outfitCard(o, s)).join("") || `<p class="muted">${lb.styled ? "No outfit passed the stylist's review here. Try a wider price range." : "Nothing found for this one yet."}</p>`}</div>`).join("");
     renderRoom();
@@ -907,6 +923,7 @@ $("#lb-mode").addEventListener("click", (e) => {
   loadLookbook();
 });
 $("#lb-sections").addEventListener("click", onSaveClick);
+$("#lb-create-btn").addEventListener("click", () => { lbRequested = true; loadLookbook(true); });
 setupPriceRange("lookbook", () => loadLookbook());
 
 // ---------- installable app ----------

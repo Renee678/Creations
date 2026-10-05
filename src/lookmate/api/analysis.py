@@ -86,6 +86,17 @@ def get_analysis(analysis_id: int, db: Session = Depends(get_db)) -> dict:
     return analysis_out(rec)
 
 
+@router.get("/api/users/{user_id}/lookbook/setup")
+def lookbook_setup(user_id: int, db: Session = Depends(get_db)) -> dict:
+    """What the Lookbook shows before anything is built: the user's palette and the season choices.
+    Building outfits waits for "Create my looks", so opening the tab costs no stylist call."""
+    get_user_or_404(db, user_id)
+    rec = latest_analysis(db, user_id)
+    now = season_of(datetime.now(timezone.utc).month)
+    return {"analysis": rec.result if rec else None, "personal": rec is not None,
+            "current_season": now, "next_season": SEASONS[(SEASONS.index(now) + 1) % 4]}
+
+
 @router.get("/api/users/{user_id}/lookbook")
 def lookbook(
     user_id: int,

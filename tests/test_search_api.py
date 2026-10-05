@@ -86,10 +86,17 @@ def test_lookbook_has_a_fitting_room_for_mixing_outfits(client, runtime, user):
     assert res.status_code == 202 and res.json()["product_ids"] == ids
 
 
-def test_lookbook_asks_for_photos_before_showing_outfits(client):
+def test_lookbook_waits_for_create_my_looks(client, user):
+    """Renee: photo first, then the options, then one button; nothing is built when the tab opens."""
+    assert 'id="lb-create-btn"' in client.get("/").text
     app_js = client.get("/static/app.js").text
     gate = app_js.split("async function loadLookbook")[1]
-    assert "!lb.personal" in gate and "lb-gate" in gate and "data-lb-browse" in gate
+    assert "if (!lbRequested) return showLookbookSetup();" in gate
+    assert gate.index("showLookbookSetup()") < gate.index("/lookbook?"), "the setup step comes before any build"
+    setup = app_js.split("async function showLookbookSetup")[1].split("\n}\n")[0]
+    assert "/lookbook/setup" in setup and "lb-gate" in setup and "data-lb-browse" in setup
+    s = client.get(f"/api/users/{user['id']}/lookbook/setup").json()
+    assert s["personal"] is False and s["analysis"] is None and s["current_season"] and s["next_season"]
     # The fitting room tray can add the try-on photo itself, so Try it on me always works.
     assert "data-room-photo" in app_js and 'pendingOutfit = "room"' in app_js
 
