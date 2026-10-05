@@ -59,7 +59,7 @@ def test_colour_and_length_never_relax_only_price_does():
     """Renee: accuracy before a full page. A white skirt search with no white skirt shows nothing, not a black one."""
     no_exact = [x for x in STOCK if x[0].id not in ("ivory-maxi", "cream-maxi")]
     section = dupes(no_exact)
-    assert section["picks"] == [] and section["note"].startswith("No match in this colour and length")
+    assert section["picks"] == [] and section["note"].startswith("No ivory maxi skirt in our catalog")
 
     pricey = [(p("ivory-maxi-dear", "Satin maxi skirt", "Ivory", price=90), 0.8)] + no_exact
     section = dupes(pricey)

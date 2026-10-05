@@ -31,7 +31,7 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext, pric
         if len(picks) < PICKS_PER_ITEM:
             note = (f"Only {len(picks)} close {'match' if len(picks) == 1 else 'matches'} for this piece. "
                     "Widen the price range to see more." if picks
-                    else "No match in this colour and length in our catalog yet.")
+                    else f"No {_describe(target, item)} in our catalog yet, so nothing is shown rather than a wrong match.")
         sections.append({
             "item": item.model_dump(),
             "note": note,
@@ -51,6 +51,12 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext, pric
         })
     return {"vibe": analysis.vibe, "style_tags": analysis.style_tags, "sections": sections,
             "price_range": price.to_dict()}
+
+
+def _describe(target: Target, item) -> str:
+    """'white maxi skirt': the rules the catalog couldn't meet, in the shopper's words."""
+    words = [item.colour.lower() if target.colour else "", target.length, target.subtype]
+    return " ".join(w for w in words if w) if target.subtype else item.name
 
 
 def _length_reason(target: Target, product) -> list[str]:
