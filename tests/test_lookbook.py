@@ -455,3 +455,15 @@ def test_an_uploaded_look_can_be_made_mine(client, runtime, user):
     mine = client.get(f"/api/looks/{look_id}/mine").json()
     assert mine["personal"] and mine["pieces"] and mine["reviewed"] and mine["approved"]
     assert all({"original", "colour", "change", "pick"} <= set(p) for p in mine["pieces"])
+
+
+def test_by_occasion_builds_only_the_occasion_picked(client, user):
+    """Renee: pick the occasion before Create my looks, and get just that occasion."""
+    setup = client.get(f"/api/users/{user['id']}/lookbook/setup").json()
+    assert [o["id"] for o in setup["occasions"]] == ["work", "weekend", "date", "party", "travel"]
+    lb = client.get(f"/api/users/{user['id']}/lookbook", params={"mode": "occasions", "occasion": "date"}).json()
+    assert [s["id"] for s in lb["sections"]] == ["date"] and lb["occasion"] == "date"
+    every = client.get(f"/api/users/{user['id']}/lookbook", params={"mode": "occasions"}).json()
+    assert len(every["sections"]) == 5, "without a pick, all occasions as before"
+    app_js = client.get("/static/app.js").text
+    assert "data-occasion" in app_js and "&occasion=${lbOccasion}" in app_js

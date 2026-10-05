@@ -325,6 +325,7 @@ $("#trend-list").addEventListener("click", onSaveClick);
 // ---------- personal analysis + lookbook ----------
 let lbMode = "seasons";
 let lbSeason = "";  // empty: the server picks the current season
+let lbOccasion = "work";  // "By occasion" builds one occasion at a time, picked before Create my looks
 let lbVibe = "";    // Make it mine: a typed vibe…
 let lbInspo = null; // …or an uploaded inspiration look's id
 const meDrop = $("#me-drop");
@@ -802,7 +803,8 @@ async function loadLookbook(force = false) {
     return renderRoom();
   }
   const season = lbMode === "seasons" && lbSeason ? `&season=${lbSeason}` : "";
-  const mode = lbMode === "mine" ? `mode=seasons&vibe=${encodeURIComponent(lbVibe)}` : `mode=${lbMode}${season}`;
+  const occasion = lbMode === "occasions" ? `&occasion=${lbOccasion}` : "";
+  const mode = lbMode === "mine" ? `mode=seasons&vibe=${encodeURIComponent(lbVibe)}` : `mode=${lbMode}${season}${occasion}`;
   const query = `${mode}&${priceQuery("lookbook")}`;
   if (analysing) return;
   if (!lbRequested) return showLookbookSetup();
@@ -899,19 +901,24 @@ async function waitForInspo(id, tries) {
   } catch (err) { $("#lb-sections").innerHTML = `<p class="status error">${esc(err.message)}</p>`; }
 }
 
-/** This season first; the next one is a tap away. */
+/** By season: this season first, the next one a tap away. By occasion: one chip per occasion. */
 function renderSeasonChips(lb) {
   const box = $("#lb-seasons");
-  box.hidden = lb.mode !== "seasons" || !!lb.vibe;
+  box.hidden = !["seasons", "occasions"].includes(lb.mode) || !!lb.vibe;
   if (box.hidden) return;
+  if (lb.mode === "occasions") {
+    const occasions = (lbSetup && lbSetup.occasions) || [];
+    box.innerHTML = occasions.map((o) => `<button type="button" class="chip${lbOccasion === o.id ? " on" : ""}" data-occasion="${o.id}">${esc(o.label)}</button>`).join("");
+    return;
+  }
   const chip = (id, tag) => `<button type="button" class="chip${lb.season === id ? " on" : ""}" data-season="${id}">${cap(id)} · ${tag}</button>`;
   box.innerHTML = chip(lb.current_season, "now") + chip(lb.next_season, "next");
 }
 
 $("#lb-seasons").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-season]");
+  const b = e.target.closest("button[data-season], button[data-occasion]");
   if (!b) return;
-  lbSeason = b.dataset.season;
+  if (b.dataset.season) lbSeason = b.dataset.season; else lbOccasion = b.dataset.occasion;
   loadLookbook();
 });
 

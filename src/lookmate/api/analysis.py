@@ -15,7 +15,7 @@ from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES
 from ..models import Look, PersonalAnalysis
 from ..services import stylist
-from ..services.lookbook import build_lookbook, latest_analysis
+from ..services.lookbook import OCCASIONS, build_lookbook, latest_analysis
 from ..services.make_it_mine import make_it_mine
 from ..services.price_range import PriceRange
 from ..services.style_memory import user_context
@@ -94,7 +94,8 @@ def lookbook_setup(user_id: int, db: Session = Depends(get_db)) -> dict:
     rec = latest_analysis(db, user_id)
     now = season_of(datetime.now(timezone.utc).month)
     return {"analysis": rec.result if rec else None, "personal": rec is not None,
-            "current_season": now, "next_season": SEASONS[(SEASONS.index(now) + 1) % 4]}
+            "current_season": now, "next_season": SEASONS[(SEASONS.index(now) + 1) % 4],
+            "occasions": [{"id": k, "label": v[0]} for k, v in OCCASIONS.items()]}
 
 
 @router.get("/api/users/{user_id}/lookbook")
@@ -103,6 +104,7 @@ def lookbook(
     request: Request,
     mode: Literal["seasons", "occasions"] = Query(default="seasons"),
     season: Literal["spring", "summer", "autumn", "winter"] | None = Query(default=None),
+    occasion: Literal["work", "weekend", "date", "party", "travel"] | None = Query(default=None),
     price_min: float | None = Query(default=None, ge=0, le=10000),
     price_max: float | None = Query(default=None, ge=0, le=10000),
     vibe: str | None = Query(default=None, max_length=120),
@@ -124,7 +126,7 @@ def lookbook(
     # was already gated by the access code, so strangers can't run up model calls.
     curate = stylist_for(rt) if analysis else None
     lb = build_lookbook(rt.catalog, user, analysis, trends, mode, price, season=season or now, stylist=curate,
-                        vibe=(vibe or "").strip() or None)
+                        vibe=(vibe or "").strip() or None, occasion=occasion)
     return {**lb, "current_season": now, "next_season": upcoming, "stylist": rt.llm.name if curate else None}
 
 

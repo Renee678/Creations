@@ -176,6 +176,7 @@ def build_lookbook(
     catalog: Catalog, user: UserContext, analysis_rec: PersonalAnalysis | None,
     trends: list[tuple[str, str]], mode: str = "seasons", price: PriceRange | None = None,
     season: str | None = None, stylist: Stylist | None = None, vibe: str | None = None,
+    occasion: str | None = None,
 ) -> dict:
     # A soft price range (see price_range.py): without it a $260 designer pump can win a slot,
     # since price is only 10% of the score.
@@ -195,6 +196,8 @@ def build_lookbook(
             mode, templates, season = "seasons", SEASONS, v_season or season
     if mode == "seasons" and season in SEASONS:
         templates = {season: SEASONS[season]}  # one season at a time: the current one unless asked
+    if mode == "occasions" and occasion in OCCASIONS and templates is OCCASIONS:
+        templates = {occasion: OCCASIONS[occasion]}  # the occasion picked before "Create my looks"
     used: set[str] = set()
 
     sections = []
@@ -233,6 +236,7 @@ def build_lookbook(
         "mode": mode,
         "vibe": vibe or None,
         "season": next(iter(templates)) if mode == "seasons" else None,
+        "occasion": next(iter(templates)) if mode == "occasions" and len(templates) == 1 else None,
         "personal": palette.personal,
         "analysis": analysis,
         "styles": [{"id": s, "label": STYLES[s]} for s in styles],
