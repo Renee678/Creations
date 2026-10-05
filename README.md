@@ -10,6 +10,7 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 |---|---|
 | **Find look-alikes** | Photo → Claude vision → per-item search → personalised ranking with reasons |
 | **Personal lookbook** | 1-3 photos of you → colour season, palette, face shape, hair and makeup ideas → complete outfits per season (spring to winter) or occasion (work, weekend, date night, party, vacation) |
+| **Virtual try-on** | "Try it on me" on any lookbook outfit renders it on your own full-body photo with IDM-VTON; without a Replicate token it shows a collage of you next to the pieces |
 | **Style memory** | Every upload and save updates your style profile, which feeds back into ranking |
 | **Profile & fit** | Height, weight, age, body shape, preferred styles, budget → rule-based fit guidance |
 | **Trend radar** | A weekly job researches current styles (old money, coquette, …) with Claude web search and links each trend to catalog items |
@@ -81,6 +82,12 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
 - **Retries only for transient errors.** Rate limits, timeouts and 5xx retry with exponential backoff (max 3);
   bad requests and refusals fail immediately.
 - **Photos are not kept.** Raw images (outfits and selfies) are deleted as soon as analysis finishes.
+- **Try-on uses an open-source model, not a trained one.** [IDM-VTON](https://github.com/yisol/IDM-VTON)
+  runs on Replicate (no local GPU). It swaps one garment per call, so the worker renders the bottom, then one
+  upper-body piece (or a dress), feeding each output into the next call; shoes, bags and accessories are pinned
+  beside the picture instead. The job is queued like the others (retries, idempotent by photo + outfit, its own
+  daily cost cap). The full-body photo is sent to Replicate, dropped from Lookmate after rendering, and the
+  result has an unguessable id and a delete button.
 - **Image → text → vector search.** Claude describes each item in catalog language; search runs on text
   embeddings (BGE-small, computed locally with fastembed). No model training needed.
 - **Exact search in memory.** ~5k products × 384 dims is a few milliseconds with NumPy, so an ANN index
@@ -123,6 +130,8 @@ The catalog mixes two public datasets, half of `CATALOG_SIZE` each, women's fash
 | `CATALOG_SOURCE` | `asos,polyvore` (compose, local mode) | Comma-separated mix of `asos`, `polyvore`, `hm`, `seed` |
 | `EMBEDDER` | `bge` (compose) | `bge` or `hash` (offline lexical) |
 | `CATALOG_SIZE` | `5000` | Products in the catalog, split evenly across the sources |
+| `REPLICATE_API_TOKEN` | empty | Enables rendered try-on (IDM-VTON on Replicate); empty shows a collage preview |
+| `DAILY_TRYON_LIMIT` | `30` | Global cap on rendered try-ons per UTC day; `0` disables it |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
 | `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |
 

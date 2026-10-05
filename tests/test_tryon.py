@@ -198,3 +198,16 @@ def test_replicate_errors_are_classified():
         with pytest.raises(TryOnError) as e:
             ReplicateTryOn("t", http=status(code)).version()
         assert e.value.retryable is retryable
+
+
+def test_garment_photos_come_from_the_saved_dataset_images(tmp_path):
+    from lookmate.catalog.service import ProductView
+    from lookmate.tryon.garments import garment_for
+
+    (tmp_path / "cache" / "images" / "polyvore").mkdir(parents=True)
+    (tmp_path / "cache" / "images" / "polyvore" / "1_1.png").write_bytes(b"png")
+    p = ProductView("pv-1_1", "Tibi knit dress", "Day Dresses", "dress", "black", "", "/catalog-images/polyvore/1_1.png", 300)
+    g = garment_for(p, tmp_path)
+    assert (g.image, g.media_type, g.region, g.description) == (b"png", "image/png", "dresses", "black Tibi knit dress")
+    with pytest.raises(TryOnError):
+        garment_for(ProductView("seed-1", "x", "Top", "top", "", "", "", 9), tmp_path)

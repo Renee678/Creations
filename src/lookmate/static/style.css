@@ -195,3 +195,24 @@ legend { font-size: 14px; color: var(--muted); font-weight: 500; margin-bottom: 
 }
 #lookbook .polaroid-drop { max-width: 620px; margin: 22px auto; }
 html, body { overflow-x: hidden; }
+
+/* ---------- virtual try-on ---------- */
+.item-head .tryon-btn { margin-left: auto; align-self: center; }
+.tryon { margin: 0 0 20px; }
+.tryon-wait { display: flex; align-items: center; gap: 10px; color: var(--muted); padding: 14px 0; }
+.spinner { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--sky-1); border-top-color: var(--gel);
+  animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.tryon-board { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; padding: 8px 4px 4px; }
+.tryon-shot { position: relative; margin: 0; background: var(--paper); padding: 12px 12px 8px; border-radius: 6px;
+  box-shadow: var(--note-shadow); transform: rotate(-1.5deg); width: min(320px, 100%); }
+.tryon-shot img { display: block; width: 100%; border-radius: 3px; background: var(--sky-2); }
+.tryon-shot .tape { top: -12px; left: 50%; margin-left: -46px; }
+.tryon-shot figcaption, .pin figcaption { font: 22px/1.2 var(--f-hand); color: var(--ink); text-align: center; padding-top: 6px; }
+.tryon-pins { flex: 1 1 200px; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 16px; }
+.pin { margin: 0; background: var(--paper); padding: 8px 8px 4px; border-radius: 4px; box-shadow: var(--note-shadow); transform: rotate(var(--r)); }
+.pin img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; background: #fff; }
+.pin figcaption { font-size: 17px; }
+.linklike { appearance: none; background: none; border: 0; padding: 0; font: inherit; color: var(--gel-deep);
+  text-decoration: underline; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

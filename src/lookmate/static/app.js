@@ -13,7 +13,7 @@ async function api(path, opts = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = Array.isArray(body.detail) ? body.detail.map((d) => d.msg).join("; ") : body.detail;
-    throw new Error(res.status === 429 ? "Too many requests. Please try again in a moment." : detail || `Request failed (${res.status})`);
+    throw new Error(detail || (res.status === 429 ? "Too many requests. Please try again in a moment." : `Request failed (${res.status})`));
   }
   return body;
 }
@@ -246,13 +246,104 @@ function renderAnalysis(a) {
     <p class="muted small">${esc(a.caveats)}</p></div>`;
 }
 
+const WEARABLE = new Set(["top", "bottom", "dress", "outerwear"]);  // what the try-on model can render
+const lbOutfits = [];
+
 function outfitCard(o) {
+  const n = lbOutfits.push(o) - 1;
   const trend = o.trend ? `<span class="tag">On trend: ${esc(o.trend)}</span>` : "";
-  return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span></div>
+  const canTry = o.pieces.some((p) => WEARABLE.has(p.category));
+  const tryBtn = canTry ? `<button type="button" class="gel primary tryon-btn" data-outfit="${n}">✨ Try it on me</button>` : "";
+  return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>${tryBtn}</div>
+    <div class="tryon" id="tryon-${n}" hidden></div>
     <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id])).join("")}</div></div>`;
 }
 
+// ---------- virtual try-on ----------
+let tryonPhoto = null;     // kept in this tab only; sent with each try-on, never stored by Lookmate
+let pendingOutfit = null;
+
+/** Scale a phone photo down to at most 1024px on its longest side: faster upload, same result. */
+async function shrinkPhoto(file) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+    const canvas = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * scale), height: Math.round(bmp.height * scale) });
+    canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    return await new Promise((ok) => canvas.toBlob((b) => ok(b || file), "image/jpeg", 0.9));
+  } catch { return file; }
+}
+
+$("#tryon-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  tryonPhoto = await shrinkPhoto(file);
+  if (pendingOutfit !== null) startTryOn(pendingOutfit);
+});
+
+function tryonBox(n, html) { const box = $(`#tryon-${n}`); box.hidden = false; box.innerHTML = html; return box; }
+
+function startTryOn(n) {
+  pendingOutfit = n;
+  if (!tryonPhoto) {
+    tryonBox(n, `<p class="muted">Pick a full-body photo: standing, facing the camera, plain background works best.</p>`);
+    $("#tryon-file").click();
+    return;
+  }
+  pendingOutfit = null;
+  const o = lbOutfits[n];
+  tryonBox(n, `<div class="tryon-wait"><span class="spinner"></span> Dressing you in this outfit… this takes about a minute.</div>`);
+  const form = new FormData();
+  form.append("photo", tryonPhoto, "me.jpg");
+  form.append("product_ids", o.pieces.map((p) => p.id).join(","));
+  api(`/api/users/${userId}/tryons`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } })
+    .then((t) => pollTryOn(n, t.id, 0))
+    .catch((err) => tryonBox(n, `<p class="status error">${esc(err.message)}</p>`));
+}
+
+async function pollTryOn(n, id, tries) {
+  try {
+    const t = await api(`/api/tryons/${id}`);
+    if (t.status === "done") return renderTryOn(n, t);
+    if (t.status === "failed") return tryonBox(n, `<p class="status error">${esc(t.error || "Try-on failed. Try another photo?")}</p>`);
+    if (t.attempts > 1) tryonBox(n, `<div class="tryon-wait"><span class="spinner"></span> The try-on model is busy, retrying (attempt ${t.attempts})…</div>`);
+    if (tries < 150) setTimeout(() => pollTryOn(n, id, tries + 1), 2000);
+    else tryonBox(n, `<p class="status error">This is taking too long. Try again in a little while.</p>`);
+  } catch (err) { tryonBox(n, `<p class="status error">${esc(err.message)}</p>`); }
+}
+
+function renderTryOn(n, t) {
+  const o = lbOutfits[n];
+  const rendered = new Set(t.result.rendered_ids || []);
+  // Pieces the model didn't draw (shoes, bags, a second top layer) are pinned beside the photo, scrapbook style.
+  const pinned = o.pieces.filter((p) => !rendered.has(p.id) && p.image_url);
+  const note = t.result.rendered
+    ? "Rendered with IDM-VTON. Colours and fit are an AI impression, not a promise."
+    : "Collage preview: add a REPLICATE_API_TOKEN to .env to render the outfit on you.";
+  tryonBox(n, `<div class="tryon-board">
+      <figure class="tryon-shot"><span class="tape"></span><img src="${esc(t.image_url)}" alt="You wearing this outfit"><figcaption>${t.result.rendered ? "you, in this look ♡" : "you + this look ♡"}</figcaption></figure>
+      <div class="tryon-pins">${pinned.map((p, i) => `<figure class="pin" style="--r:${(i % 2 ? 1 : -1) * (2 + i % 3)}deg"><img src="${esc(p.image_url)}" alt=""><figcaption>${esc(p.product_type)}</figcaption></figure>`).join("")}</div>
+    </div>
+    <p class="muted small">${note} Your photo was deleted after rendering.
+      <button type="button" class="linklike" data-tryon-new="${n}">Use another photo</button> ·
+      <button type="button" class="linklike" data-tryon-delete="${esc(t.id)}" data-outfit="${n}">Delete this picture</button></p>`);
+}
+
+$("#lb-sections").addEventListener("click", async (e) => {
+  const tryBtn = e.target.closest(".tryon-btn");
+  if (tryBtn) return startTryOn(Number(tryBtn.dataset.outfit));
+  const again = e.target.closest("[data-tryon-new]");
+  if (again) { tryonPhoto = null; return startTryOn(Number(again.dataset.tryonNew)); }
+  const del = e.target.closest("[data-tryon-delete]");
+  if (del) {
+    await api(`/api/tryons/${del.dataset.tryonDelete}`, { method: "DELETE" }).catch(() => {});
+    const box = $(`#tryon-${del.dataset.outfit}`); box.hidden = true; box.innerHTML = "";
+  }
+});
+
 async function loadLookbook() {
+  lbOutfits.length = 0;
   try {
     const lb = await api(`/api/users/${userId}/lookbook?mode=${lbMode}`);
     renderAnalysis(lb.analysis);
