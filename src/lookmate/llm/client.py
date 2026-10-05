@@ -11,7 +11,7 @@ import logging
 from typing import Protocol
 
 from ..services.vocab import STYLES
-from .schemas import DetectedItem, LookAnalysis
+from .schemas import DetectedItem, LookAnalysis, PersonAnalysis, Swatch
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +37,8 @@ class VisionLLM(Protocol):
 
     def analyze_look(self, image: bytes, media_type: str) -> LookAnalysis: ...
 
+    def analyze_person(self, photos: list[tuple[bytes, str]]) -> PersonAnalysis: ...
+
 
 SYSTEM_PROMPT = f"""You are a fashion stylist who breaks outfit photos down into shoppable items.
 
@@ -48,6 +50,22 @@ would type to find a similar product (include colour, garment type, fit and key 
 Use only these style labels for style_tags: {", ".join(STYLES)}.
 Estimate the original retail price only when the item looks premium or designer; otherwise null.
 If the image shows no clothing, set is_outfit to false and return no items.
+Write everything in English."""
+
+PERSON_PROMPT = f"""You are a professional personal stylist and colour analyst. The user has shared 1-3 photos
+of themselves and asked for personal styling advice.
+
+- Seasonal colour analysis: judge undertone, value and contrast from skin, hair and eye colour, then
+  pick one of spring, summer, autumn or winter plus a sub-season. Recommend 8 clothing colours that
+  flatter them and 4 to keep away from the face, each with an approximate hex code.
+- Face shape, the current hairstyle, 3 hairstyle or hair colour ideas, and 4 makeup suggestions
+  (base, cheeks, eyes, lips) in tones that suit their season.
+- Only if a full-body photo is included: neutral advice on proportions and cuts. Never comment on
+  weight or attractiveness.
+- Do not guess ethnicity, age or any other sensitive trait. Lighting, white balance and filters change
+  how colour reads, so mention them in caveats when they matter.
+- Use only these style labels for style_tags: {", ".join(STYLES)}.
+If no person's face is clearly visible, set usable to false and fill the rest with your best neutral defaults.
 Write everything in English."""
 
 
@@ -62,23 +80,26 @@ class ClaudeVision:
         self._model = model
 
     def analyze_look(self, image: bytes, media_type: str) -> LookAnalysis:
+        result = self._parse(SYSTEM_PROMPT, [_image_block(image, media_type)],
+                             "Break this outfit down into shoppable items.", LookAnalysis)
+        log.info("claude look analysis: %d items", len(result.items))
+        return result
+
+    def analyze_person(self, photos: list[tuple[bytes, str]]) -> PersonAnalysis:
+        blocks = [_image_block(data, media_type) for data, media_type in photos]
+        result = self._parse(PERSON_PROMPT, blocks, "Here are my photos. What suits me?", PersonAnalysis)
+        log.info("claude person analysis: season=%s usable=%s", result.colour_season, result.usable)
+        return result
+
+    def _parse(self, system: str, images: list[dict], text: str, output_format):
         a = self._anthropic
         try:
             response = self._client.beta.messages.parse(
                 model=self._model,
                 max_tokens=16000,
-                system=SYSTEM_PROMPT,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "source": {
-                            "type": "base64", "media_type": media_type,
-                            "data": base64.standard_b64encode(image).decode(),
-                        }},
-                        {"type": "text", "text": "Break this outfit down into shoppable items."},
-                    ],
-                }],
-                output_format=LookAnalysis,
+                system=system,
+                messages=[{"role": "user", "content": [*images, {"type": "text", "text": text}]}],
+                output_format=output_format,
                 # If the primary model declines, the API retries on a fallback model in the same call.
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
@@ -94,8 +115,14 @@ class ClaudeVision:
             raise LLMRefusedError("the model declined to analyse this image")
         if response.parsed_output is None:
             raise LLMError(f"no structured output (stop_reason={response.stop_reason})")
-        log.info("claude look analysis: %d items, usage=%s", len(response.parsed_output.items), response.usage)
+        log.info("claude usage=%s", response.usage)
         return response.parsed_output
+
+
+def _image_block(data: bytes, media_type: str) -> dict:
+    return {"type": "image", "source": {
+        "type": "base64", "media_type": media_type, "data": base64.standard_b64encode(data).decode(),
+    }}
 
 
 # Canned looks for offline mode. Chosen by image hash so the same image always
@@ -158,12 +185,94 @@ _FAKE_LOOKS = [
 ]
 
 
+def _swatches(spec: str) -> list[Swatch]:
+    return [Swatch(name=n, hex=h) for n, h in (pair.split("=") for pair in spec.split(", "))]
+
+
+# Canned personal analyses for offline mode, one per colour season.
+_FAKE_PEOPLE = [
+    PersonAnalysis(
+        usable=True, colour_season="summer", season_detail="soft summer", undertone="cool", contrast="low",
+        colouring_notes="Ash-brown hair, grey-green eyes and cool pink undertones with soft overall contrast.",
+        best_colours=_swatches("dusty rose=#c48b9f, powder blue=#a7c4dc, lavender=#b9a7d1, sage=#a3b59a, "
+                               "navy=#2f3e5c, soft white=#f2efe9, grey=#9a9ca3, mauve=#a77c8e"),
+        avoid_colours=_swatches("orange=#f08a24, mustard=#d4a017, black=#111111, camel=#c19a6b"),
+        metals="silver", face_shape="oval", hair_now="Shoulder-length ash-brown hair worn straight.",
+        hair_suggestions=["Soft face-framing layers keep the look light.",
+                          "A cool beige balayage adds dimension without warmth.",
+                          "Loose waves suit an oval face and soften the jaw line."],
+        makeup_suggestions=["Light-coverage base with a pink-neutral undertone.",
+                            "Rose or berry-tinted blush on the apples of the cheeks.",
+                            "Taupe and soft grey eyeshadow; brown-black mascara.",
+                            "Rosy nude or mauve lips; avoid orange-based reds."],
+        silhouette_notes=None, style_tags=["minimalist", "ballet_core"],
+        caveats="Offline demo analysis: not based on your photo.",
+    ),
+    PersonAnalysis(
+        usable=True, colour_season="autumn", season_detail="deep autumn", undertone="warm", contrast="medium",
+        colouring_notes="Dark brown hair with golden warmth, brown eyes and a warm, golden undertone.",
+        best_colours=_swatches("camel=#c19a6b, olive=#6b6b2f, rust=#b7410e, chocolate brown=#5a3825, "
+                               "cream=#f3e9d2, forest green=#2e5339, mustard=#d4a017, beige=#d8c3a5"),
+        avoid_colours=_swatches("icy pink=#f6d6e3, bright white=#ffffff, fuchsia=#d1338b, powder blue=#a7c4dc"),
+        metals="gold", face_shape="heart", hair_now="Long dark brown hair with a centre part.",
+        hair_suggestions=["Curtain bangs balance a heart-shaped face.",
+                          "Warm chestnut or caramel highlights bring out golden tones.",
+                          "Collarbone length with soft layers adds volume near the jaw."],
+        makeup_suggestions=["Warm-golden foundation with a satin finish.",
+                            "Peach or terracotta blush.",
+                            "Bronze, copper and olive eyeshadow.",
+                            "Brick red, warm nude or cinnamon lips."],
+        silhouette_notes="Balanced proportions: a defined waist and straight or wide-leg trousers work well.",
+        style_tags=["old_money", "boho"],
+        caveats="Offline demo analysis: not based on your photo.",
+    ),
+    PersonAnalysis(
+        usable=True, colour_season="winter", season_detail="cool winter", undertone="cool", contrast="high",
+        colouring_notes="Very dark hair and eyes against fair, cool-toned skin give strong contrast.",
+        best_colours=_swatches("black=#111111, bright white=#ffffff, navy=#1f2a44, emerald=#047857, "
+                               "true red=#c8102e, icy pink=#f6d6e3, royal blue=#2747a6, charcoal=#36454f"),
+        avoid_colours=_swatches("beige=#d8c3a5, orange=#f08a24, olive=#6b6b2f, camel=#c19a6b"),
+        metals="silver", face_shape="square", hair_now="Black hair in a sleek chin-length bob.",
+        hair_suggestions=["Soft side-swept layers round off a square jaw.",
+                          "Keep a cool blue-black or espresso shade.",
+                          "A longer bob past the jaw softens strong angles."],
+        makeup_suggestions=["Neutral-to-cool base with a natural finish.",
+                            "Cool pink or plum blush.",
+                            "Crisp black liner with grey or silver shadow.",
+                            "Blue-red or berry lips."],
+        silhouette_notes=None, style_tags=["minimalist", "office"],
+        caveats="Offline demo analysis: not based on your photo.",
+    ),
+    PersonAnalysis(
+        usable=True, colour_season="spring", season_detail="light spring", undertone="warm", contrast="low",
+        colouring_notes="Light golden-brown hair, light eyes and a peachy undertone.",
+        best_colours=_swatches("peach=#f6b48f, coral=#f88379, warm ivory=#fff4e0, light camel=#d6b88f, "
+                               "aqua=#7fd1c7, butter yellow=#f8e08e, light pink=#f7c6c7, warm beige=#e3cba8"),
+        avoid_colours=_swatches("black=#111111, burgundy=#6d1a36, charcoal=#36454f, icy blue=#d6ecf5"),
+        metals="gold", face_shape="round", hair_now="Light golden-brown hair just past the shoulders.",
+        hair_suggestions=["Long layers that start below the chin lengthen a round face.",
+                          "Honey or strawberry-blonde highlights keep it bright.",
+                          "A side part adds height and angles."],
+        makeup_suggestions=["Sheer, warm-ivory base.",
+                            "Peach or coral blush.",
+                            "Champagne and soft bronze eyeshadow with brown mascara.",
+                            "Coral, peach or warm pink lips."],
+        silhouette_notes=None, style_tags=["coquette", "resort"],
+        caveats="Offline demo analysis: not based on your photo.",
+    ),
+]
+
+
 class FakeVision:
     name = "fake"
 
     def analyze_look(self, image: bytes, media_type: str) -> LookAnalysis:
         idx = int.from_bytes(hashlib.sha256(image).digest()[:4], "little") % len(_FAKE_LOOKS)
         return _FAKE_LOOKS[idx].model_copy(deep=True)
+
+    def analyze_person(self, photos: list[tuple[bytes, str]]) -> PersonAnalysis:
+        digest = hashlib.sha256(b"".join(data for data, _ in photos)).digest()
+        return _FAKE_PEOPLE[int.from_bytes(digest[:4], "little") % len(_FAKE_PEOPLE)].model_copy(deep=True)
 
 
 def make_vision_llm(api_key: str, model: str, timeout_s: float) -> VisionLLM:

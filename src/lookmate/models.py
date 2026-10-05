@@ -86,3 +86,23 @@ class Trend(Base):
     sources: Mapped[list] = mapped_column(JSON, default=list)
     origin: Mapped[str] = mapped_column(String(20))  # "web" (researched) or "seed" (bundled fallback)
     refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PersonalAnalysis(Base):
+    """A colour, face and styling analysis from 1-3 photos of the user; feeds the lookbook."""
+
+    __tablename__ = "personal_analyses"
+    __table_args__ = (UniqueConstraint("user_id", "photos_sha256", name="uq_analysis_user_photos"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    photos_sha256: Mapped[str] = mapped_column(String(64))
+    # [{"media_type": ..., "data": base64}], kept only until the analysis finishes.
+    photos: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued")  # queued|processing|done|failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

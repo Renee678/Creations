@@ -32,8 +32,7 @@ async def upload_look(
     db: Session = Depends(get_db),
 ):
     settings = get_settings()
-    if settings.access_code and not hmac.compare_digest(x_access_code, settings.access_code):
-        raise HTTPException(401, "access code required")
+    require_access_code(x_access_code)
     get_user_or_404(db, user_id)
     if image.content_type not in ALLOWED_MEDIA_TYPES:
         raise HTTPException(415, f"unsupported image type {image.content_type}; use JPEG, PNG, WebP or GIF")
@@ -66,6 +65,12 @@ def get_look(look_id: int, db: Session = Depends(get_db)) -> dict:
     if look is None:
         raise HTTPException(404, "look not found")
     return look_out(look)
+
+
+def require_access_code(given: str) -> None:
+    code = get_settings().access_code
+    if code and not hmac.compare_digest(given, code):
+        raise HTTPException(401, "access code required")
 
 
 def take_daily_quota(redis_client, limit: int) -> bool:

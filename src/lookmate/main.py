@@ -8,7 +8,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import looks, profiles, style, trends
+from .api import analysis, looks, profiles, style, trends
 from .config import get_settings
 from .runtime import Runtime, build_runtime
 from .services.vocab import BODY_SHAPES, STYLES
@@ -35,6 +35,7 @@ app.include_router(profiles.router)
 app.include_router(looks.router)
 app.include_router(style.router)
 app.include_router(trends.router)
+app.include_router(analysis.router)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
