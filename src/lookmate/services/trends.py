@@ -28,6 +28,8 @@ log = logging.getLogger(__name__)
 
 REFRESH_EVERY = timedelta(days=7)
 LOCK_KEY = "lock:trends-refresh"
+RETRY_KEY = "trends:retry-after"  # set after a failed research, so a broken setup isn't retried (and paid) every 10 min
+RETRY_AFTER_S = 6 * 3600
 
 
 SEASONS = ("spring", "summer", "autumn", "winter")
@@ -75,6 +77,10 @@ shoes, makeup and hair, and colours. Name each one the way people search for it,
 closest style label, give the 1-3 colours that define it, and keep only trends you saw evidence for.
 Cite the URLs you relied on in each trend's sources."""
 
+STRUCTURE_PROMPT = """Turn these research notes on {season} and {next_season} fashion and beauty trends into the
+report schema. Keep only trends the notes give evidence for, use each trend's URLs from the notes as its sources,
+map each to the closest style label, and give 1-3 defining colours with hex codes. Notes:"""
+
 
 def load_seed(data_dir: Path) -> list[TrendItem]:
     return [TrendItem(**t) for t in json.loads((data_dir / "seed_trends.json").read_text())]
@@ -94,21 +100,35 @@ class ClaudeTrendResearcher:
         season = season_of(now.month)
         next_season = SEASONS[(SEASONS.index(season) + 1) % 4]
         year = now.year
-        messages = [{"role": "user", "content": RESEARCH_PROMPT.format(season=season, next_season=next_season, year=year)}]
+        # Two calls: web search returns cited text, and the API doesn't combine citations with structured
+        # output. So the first call researches and writes notes (URLs inline); the second turns them into
+        # the TrendReport schema without tools.
+        messages = [{"role": "user", "content": RESEARCH_PROMPT.format(season=season, next_season=next_season, year=year)
+                     + "\n\nWrite your findings as plain notes, one trend per paragraph, with the source URLs inline."}]
         for _ in range(3):  # server tools may pause a long turn; resume it
-            response = self._client.messages.parse(
+            response = self._client.messages.create(
                 model=self._model,
                 max_tokens=16000,
                 tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
                 messages=messages,
-                output_format=TrendReport,
             )
             if response.stop_reason != "pause_turn":
                 break
             messages = messages + [{"role": "assistant", "content": response.content}]
-        if response.stop_reason == "refusal" or response.parsed_output is None:
-            raise RuntimeError(f"trend research produced no report (stop_reason={response.stop_reason})")
-        return response.parsed_output.trends
+        notes = "\n".join(b.text for b in response.content if getattr(b, "type", "") == "text").strip()
+        if response.stop_reason == "refusal" or not notes:
+            raise RuntimeError(f"trend research produced no notes (stop_reason={response.stop_reason})")
+        structured = self._client.messages.parse(
+            model=self._model,
+            max_tokens=16000,
+            messages=[{"role": "user", "content": STRUCTURE_PROMPT.format(season=season, next_season=next_season)
+                       + "\n\n" + notes}],
+            output_format=TrendReport,
+        )
+        if structured.parsed_output is None:
+            raise RuntimeError(f"trend notes couldn't be structured (stop_reason={structured.stop_reason})")
+        log.info("trend research usage: search=%s structure=%s", response.usage, structured.usage)
+        return structured.parsed_output.trends
 
 
 def store_batch(session: Session, items: list[TrendItem], origin: str) -> str:
@@ -131,10 +151,12 @@ def latest_batch(session: Session) -> list[Trend]:
     return list(session.scalars(select(Trend).where(Trend.batch_id == newest.batch_id).order_by(Trend.id)))
 
 
-def is_stale(session: Session, now: datetime | None = None) -> bool:
+def is_stale(session: Session, now: datetime | None = None, researcher=None) -> bool:
     batch = latest_batch(session)
     if not batch:
         return True
+    if researcher is not None and batch[0].origin == "seed":
+        return True  # seed trends only hold the page until research has worked once
     now = now or datetime.now(timezone.utc)
     refreshed = batch[0].refreshed_at
     if refreshed.tzinfo is None:  # SQLite drops tz info
@@ -150,6 +172,7 @@ def refresh(session: Session, researcher, data_dir: Path) -> str:
             if items:
                 log.info("trend research returned %d trends", len(items))
                 return store_batch(session, items, researcher.name)
+            log.warning("trend research returned no trends")
         except Exception:
             log.exception("trend research failed; using seed trends")
     if latest_batch(session):
@@ -157,14 +180,33 @@ def refresh(session: Session, researcher, data_dir: Path) -> str:
     return store_batch(session, load_seed(data_dir), "seed")
 
 
+def seed_rows(data_dir: Path) -> list[Trend]:
+    """The seed trends as unsaved rows, for a read that finds the table empty."""
+    now = datetime.now(timezone.utc)
+    return [Trend(batch_id="seed", style_id=t.style_id, label=t.label, description=t.description, keywords=t.keywords,
+                  example_query=t.example_query, sources=t.sources, origin="seed", season=t.season, kind=t.kind,
+                  colours=[c.model_dump() for c in t.colours], refreshed_at=now)
+            for t in load_seed(data_dir)]
+
+
+def ensure_some(session: Session, data_dir: Path) -> None:
+    """Seed trends right away, so the page isn't empty while the first research runs (it takes minutes)."""
+    if not latest_batch(session):
+        store_batch(session, load_seed(data_dir), "seed")
+
+
 def refresh_if_due(session: Session, redis_client, researcher, data_dir: Path) -> bool:
-    if not is_stale(session):
+    ensure_some(session, data_dir)
+    if not is_stale(session, researcher=researcher) or redis_client.exists(RETRY_KEY):
         return False
     # SET NX EX: one refresher across all workers; the TTL frees the lock if we crash.
     if not redis_client.set(LOCK_KEY, "1", nx=True, ex=900):
         return False
     try:
-        refresh(session, researcher, data_dir)
+        before = latest_batch(session)[0].batch_id
+        if refresh(session, researcher, data_dir) == before:
+            redis_client.set(RETRY_KEY, "1", ex=RETRY_AFTER_S)
+            return False
         return True
     finally:
         redis_client.delete(LOCK_KEY)

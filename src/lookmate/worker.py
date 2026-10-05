@@ -249,20 +249,28 @@ def run_forever(rt: Runtime, stop_event: threading.Event | None = None) -> None:
     _serve(rt, stop_event, True)
 
 
+def _check_trends(rt: Runtime) -> None:
+    try:
+        with SessionLocal() as session:
+            if refresh_if_due(session, rt.redis, rt.trend_researcher, rt.data_dir):
+                log.info("trends refreshed")
+    except Exception:
+        log.exception("trend refresh check failed")
+
+
 def _serve(rt: Runtime, stop_event: threading.Event, check_trends: bool) -> None:
     recovered = rt.queue.recover()
     if recovered:
         log.warning("re-queued %d jobs left over from a previous run", recovered)
     next_trend_check = 0.0 if check_trends else float("inf")
+    trend_thread: threading.Thread | None = None
     while not stop_event.is_set():
         if time.monotonic() >= next_trend_check:
             next_trend_check = time.monotonic() + TREND_CHECK_EVERY_S
-            try:
-                with SessionLocal() as session:
-                    if refresh_if_due(session, rt.redis, rt.trend_researcher, rt.data_dir):
-                        log.info("trends refreshed")
-            except Exception:
-                log.exception("trend refresh check failed")
+            # Research with web search takes minutes: run it beside the queue, not in front of it.
+            if trend_thread is None or not trend_thread.is_alive():
+                trend_thread = threading.Thread(target=_check_trends, args=(rt,), daemon=True, name="trends")
+                trend_thread.start()
         rt.queue.promote_due()
         job = rt.queue.reserve(timeout_s=1.0)
         if job is None:

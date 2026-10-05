@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.lookbook import Palette, latest_analysis, outfit_styles
 from ..services.style_memory import user_context
-from ..services.trends import KINDS, SEASONS, latest_batch, season_of, trend_fit
+from ..services.trends import KINDS, SEASONS, latest_batch, season_of, seed_rows, trend_fit
 from ..services.vocab import STYLES
 from .profiles import get_user_or_404
 
@@ -18,8 +18,10 @@ SHOPPABLE = {"pieces", "bags_shoes", "colour"}  # kinds with product examples (n
 @router.get("")
 def list_trends(request: Request, user_id: int | None = Query(default=None), db: Session = Depends(get_db)) -> dict:
     """Trends by season and kind. With a user, each one also says whether it suits them."""
-    catalog = request.app.state.runtime.catalog
-    batch = latest_batch(db)
+    rt = request.app.state.runtime
+    catalog = rt.catalog
+    # Never an empty page: before the worker has stored anything, serve the bundled seed trends.
+    batch = latest_batch(db) or seed_rows(rt.data_dir)
     palette, styles = Palette.from_analysis(None), []
     if user_id is not None:
         user = user_context(db, get_user_or_404(db, user_id))

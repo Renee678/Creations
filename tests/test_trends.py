@@ -108,3 +108,44 @@ def test_trends_for_a_user_carry_a_fit_verdict(client, runtime, user):
     assert body["my_styles"][0]["id"] == "old_money"
     # No photo analysis yet: no colour verdict to give.
     assert all(t["fit"] is None for t in body["trends"])
+
+
+def test_the_trends_page_is_never_empty(client):
+    body = client.get("/api/trends").json()
+    assert body["origin"] == "seed" and body["trends"], "nothing stored yet: the seed trends are served"
+
+
+def test_seed_trends_show_while_research_runs_and_a_failure_backs_off(client, fake_redis):
+    broken = FakeResearcher(fail=True)
+    with SessionLocal() as s:
+        assert trends.refresh_if_due(s, fake_redis, broken, DATA) is False
+        assert trends.latest_batch(s)[0].origin == "seed", "seed stored first, so the page has content"
+        assert trends.refresh_if_due(s, fake_redis, broken, DATA) is False
+        assert broken.calls == 1, "a failed research isn't retried every 10 minutes"
+        fake_redis.delete(trends.RETRY_KEY)
+        assert trends.refresh_if_due(s, fake_redis, FakeResearcher([ITEM]), DATA) is True
+        assert trends.latest_batch(s)[0].origin == "web", "a seed batch is replaced once research works"
+
+
+def test_research_searches_first_then_structures_without_tools():
+    """Web search answers carry citations, which structured output doesn't accept: two calls, not one."""
+    from types import SimpleNamespace as NS
+
+    calls = []
+
+    class Messages:
+        def create(self, **kw):
+            calls.append(("create", kw))
+            return NS(stop_reason="end_turn", usage={}, content=[
+                NS(type="server_tool_use"), NS(type="text", text="Burgundy everything, see https://example.com")])
+
+        def parse(self, **kw):
+            calls.append(("parse", kw))
+            return NS(stop_reason="end_turn", usage={}, parsed_output=trends.TrendReport(trends=[ITEM]))
+
+    r = trends.ClaudeTrendResearcher.__new__(trends.ClaudeTrendResearcher)
+    r._client, r._model = NS(messages=Messages()), "m"
+    assert r.research() == [ITEM]
+    (first, search), (second, structure) = calls
+    assert first == "create" and search["tools"][0]["name"] == "web_search" and "output_format" not in search
+    assert second == "parse" and "tools" not in structure and "https://example.com" in structure["messages"][0]["content"]
