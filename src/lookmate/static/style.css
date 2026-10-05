@@ -197,7 +197,6 @@ legend { font-size: 14px; color: var(--muted); font-weight: 500; margin-bottom: 
 html, body { overflow-x: hidden; }
 
 /* ---------- virtual try-on ---------- */
-.item-head .tryon-btn { margin-left: auto; align-self: center; }
 .tryon { margin: 0 0 20px; }
 .tryon-wait { display: flex; align-items: center; gap: 10px; color: var(--muted); padding: 14px 0; }
 .tryon-need { padding: 12px 0; }
@@ -331,3 +330,14 @@ body.room-open { padding-bottom: 110px; }
   .sr-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sr-hero h2 { font-size: 36px; }
 }
+
+/* fitting room: one try-on at a time, with an instant collage and a timer while it renders */
+.item-head .room-all { margin-left: auto; align-self: center; font-size: 12px; color: var(--violet); }
+.tryon-shot.rendering img { filter: saturate(.7) brightness(1.05); opacity: .75; }
+.tryon-overlay { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); display: flex; flex-direction: column;
+  align-items: center; gap: 6px; padding: 14px 22px; color: var(--ink); background: rgba(255, 255, 255, .9); border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(42, 100, 184, .2); }
+.tryon-overlay b { font: 700 24px/1 var(--f-hand); color: var(--violet); }
+.tryon-clock { font: 700 15px/1 var(--f-body); font-variant-numeric: tabular-nums; color: var(--gel-deep); }
+.spinner.small { width: 12px; height: 12px; border-width: 2px; display: inline-block; vertical-align: -2px; }
+.room-actions button[disabled] { opacity: .85; cursor: progress; }

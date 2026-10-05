@@ -109,3 +109,13 @@ def test_app_files_are_revalidated_so_a_deploy_shows_up(client):
         assert res.headers["cache-control"] == "no-cache", path
     again = client.get("/static/app.js", headers={"If-None-Match": client.get("/static/app.js").headers["etag"]})
     assert again.status_code == 304, "unchanged files are still cheap to check"
+
+
+def test_try_on_lives_in_the_fitting_room_only(client):
+    app_js = client.get("/static/app.js").text
+    card = app_js.split("function outfitCard")[1].split("\n}\n")[0]
+    assert "tryon-btn" not in card and "data-room-all" in card, "outfits fill the fitting room instead of starting try-ons"
+    assert "if (tryonRunning) return;" in app_js, "one try-on at a time"
+    assert "/photo-check" in app_js, "a picked photo is checked before use"
+    assert 'room = {}; store.set("room", "{}")' in app_js, "new photos start an empty fitting room"
+    assert "tryon-clock" in app_js and "TRYON_GIVE_UP_MS" in app_js, "elapsed time and a hard stop instead of an endless spinner"

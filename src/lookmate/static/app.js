@@ -347,6 +347,8 @@ async function handlePhotos(files) {
   setMeStatus("Preparing your photos…");
   // Phone photos are 5-12 MB each; 1600px is plenty for colour analysis and keeps uploads small.
   mePhotos = await Promise.all(files.map((f) => shrinkPhoto(f, 1600)));
+  // New photos, new lookbook: start the fitting room empty.
+  room = {}; store.set("room", "{}"); renderRoom();
   $("#me-previews").innerHTML = mePhotos.map((f, i) =>
     `<figure class="me-photo"><img src="${URL.createObjectURL(f)}" alt=""><figcaption id="me-check-${i}"></figcaption></figure>`).join("");
   $("#me-previews").hidden = false; $("#me-drop-text").textContent = "Use different photos";
@@ -403,23 +405,13 @@ const WEARABLE = new Set(["top", "bottom", "dress", "outerwear"]);  // what the 
 const ROOM_SLOTS = ["outerwear", "top", "dress", "bottom", "shoes", "bag", "accessory"];  // one of each in the fitting room
 const lbProducts = new Map();  // every piece on the lookbook page, for the fitting room
 
-/** A stable key for an outfit, so a try-on survives the lookbook being re-rendered. */
-function outfitKey(pieces) {
-  let h = 0;
-  for (const c of pieces.map((p) => p.id).join(",")) h = (h * 31 + c.charCodeAt(0)) | 0;
-  return "o" + (h >>> 0).toString(36);
-}
-
 function outfitCard(o) {
-  const key = outfitKey(o.pieces);
-  tryonPieces[key] = o.pieces;
   o.pieces.forEach((p) => lbProducts.set(p.id, p));
   const trend = o.trend ? `<span class="tag">On trend: ${esc(o.trend)}</span>` : "";
-  const canTry = o.pieces.some((p) => WEARABLE.has(p.category));
-  const tryBtn = canTry ? `<button type="button" class="gel primary tryon-btn" data-outfit="${key}">✨ Try it on me</button>` : "";
-  const box = tryonHtml[key];  // keep a try-on in progress (or its picture) across re-renders
-  return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>${tryBtn}</div>
-    <div class="tryon" id="tryon-${key}" ${box ? "" : "hidden"}>${box || ""}</div>
+  // Try-on happens in one place, the fitting room; an outfit card just fills it.
+  const ids = o.pieces.map((p) => p.id).join(",");
+  return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>
+      <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></div>
     <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></div>`;
 }
 
@@ -460,8 +452,23 @@ $("#tryon-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
-  await setTryonPhoto(file);
+  const key = pendingOutfit || "room";
+  tryonBox(key, waitHtml("Checking your photo…"));
+  const small = await shrinkPhoto(file, 1024);
+  // Same check as the Lookbook upload: try-on needs head to knees, facing the camera.
+  const form = new FormData();
+  form.append("photo", small, "me.jpg");
+  const check = await api(`/api/users/${userId}/photo-check`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } })
+    .catch(() => null);  // if the check itself fails, don't block the user
+  if (check && !check.good_for_tryon) {
+    pendingOutfit = null;
+    return tryonBox(key, `<div class="tryon-need"><p><strong>This photo won't work for try-on</strong> (${esc(FRAMING[check.framing] || check.framing)}). ${esc(check.tip)}</p>
+      <p class="muted small">Try-on needs one person standing, facing the camera, from head to at least the knees.</p>
+      <button type="button" class="gel primary" data-tryon-pick>Choose another photo</button></div>`);
+  }
+  await setTryonPhoto(small);
   if (pendingOutfit !== null) startTryOn(pendingOutfit);
+  else { delete tryonHtml[key]; const box = $(`#tryon-${key}`); if (box) { box.hidden = true; box.innerHTML = ""; } $("#room-result").hidden = true; }
 });
 
 function tryonBox(key, html) {
@@ -472,7 +479,10 @@ function tryonBox(key, html) {
   return box;
 }
 
+let tryonRunning = false;
+
 function startTryOn(key) {
+  if (tryonRunning) return;
   pendingOutfit = key;
   tryonPhoto = tryonPhoto || savedTryonPhoto();
   if (!tryonPhoto) {
@@ -485,55 +495,81 @@ function startTryOn(key) {
   pendingOutfit = null;
   const pieces = key === "room" ? roomPieces() : tryonPieces[key];
   tryonPieces[key] = pieces;
-  tryonBox(key, waitHtml("Dressing you in this outfit… this usually takes about a minute."));
+  tryonRunning = true;
+  renderRoom();
+  const started = Date.now();
+  // Show the pieces pinned next to you straight away; the rendered picture replaces it when ready.
+  tryonBox(key, previewHtml(pieces, URL.createObjectURL(tryonPhoto)));
+  const tick = setInterval(() => {
+    const el = $(`#tryon-${key} .tryon-clock`);
+    if (!el) return;
+    const s = Math.round((Date.now() - started) / 1000);
+    el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    if (s === 45) $(`#tryon-${key} .tryon-hint`).textContent = "The model is warming up, which can take a few minutes the first time.";
+  }, 1000);
+  const done = (html) => { clearInterval(tick); tryonRunning = false; tryonBox(key, html); renderRoom(); };
   if (key === "room") $("#room-result").scrollIntoView({ behavior: "smooth", block: "start" });
   const form = new FormData();
   form.append("photo", tryonPhoto, "me.jpg");
   form.append("product_ids", pieces.map((p) => p.id).join(","));
   api(`/api/users/${userId}/tryons`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } })
-    .then((t) => pollTryOn(key, t.id, 0, 0))
-    .catch((err) => tryonBox(key, errorHtml(key, networkHint(err))));
+    .then((t) => pollTryOn(key, t.id, started, 0, done))
+    .catch((err) => done(errorHtml(key, networkHint(err))));
 }
+
+const TRYON_GIVE_UP_MS = 6 * 60 * 1000;  // the server cancels a stuck step after 4 minutes; this is the backstop
+
+function previewHtml(pieces, photoUrl) {
+  return `<div class="tryon-board">
+      <figure class="tryon-shot rendering"><span class="tape"></span><img src="${esc(photoUrl)}" alt="You">
+        <div class="tryon-overlay"><span class="spinner"></span><b>Dressing you</b><span class="tryon-clock">0:00</span></div>
+        <figcaption>you + this look ♡</figcaption></figure>
+      <div class="tryon-pins">${pins(pieces)}</div>
+    </div>
+    <p class="muted small tryon-hint">Usually ready in under a minute.</p>`;
+}
+
+const pins = (pieces) => pieces.filter((p) => p.image_url).map((p, i) =>
+  `<figure class="pin" style="--r:${(i % 2 ? 1 : -1) * (2 + i % 3)}deg"><img src="${esc(p.image_url)}" alt=""><figcaption>${esc(p.product_type)}</figcaption></figure>`).join("");
 
 const waitHtml = (text) => `<div class="tryon-wait"><span class="spinner"></span> ${esc(text)}</div>`;
 const errorHtml = (key, text) => `<p class="status error">${esc(text)} <button type="button" class="linklike" data-tryon-retry="${key}">Try again</button></p>`;
 const networkHint = (err) => err instanceof TypeError ? "Lost the connection to Lookmate. Check your signal." : err.message;
 
-async function pollTryOn(key, id, tries, misses) {
+async function pollTryOn(key, id, started, misses, done) {
+  if (Date.now() - started > TRYON_GIVE_UP_MS) return done(errorHtml(key, "The try-on model didn't answer in time."));
   let t;
   try { t = await api(`/api/tryons/${id}`); } catch (err) {
     // A phone drops its connection now and then (screen off, switching apps): keep waiting, don't give up.
-    if (err instanceof TypeError && misses < 30) return setTimeout(() => pollTryOn(key, id, tries + 1, misses + 1), 4000);
-    return tryonBox(key, errorHtml(key, networkHint(err)));
+    if (err instanceof TypeError && misses < 30) return setTimeout(() => pollTryOn(key, id, started, misses + 1, done), 4000);
+    return done(errorHtml(key, networkHint(err)));
   }
-  if (t.status === "done") return renderTryOn(key, t);
-  if (t.status === "failed") return tryonBox(key, errorHtml(key, t.error || "Try-on failed. Try another photo?"));
-  if (t.attempts > 1) tryonBox(key, waitHtml(`The try-on model is busy, retrying (attempt ${t.attempts})…`));
-  else if (tries === 20) tryonBox(key, waitHtml("Still dressing you… the first try-on in a while wakes the model up, which can take 3 to 5 minutes. You can keep browsing."));
-  if (tries < 300) setTimeout(() => pollTryOn(key, id, tries + 1, 0), 2000);
-  else tryonBox(key, errorHtml(key, "This is taking too long."));
+  if (t.status === "done") return done(renderedHtml(key, t));
+  if (t.status === "failed") return done(errorHtml(key, t.error || "Try-on failed. Try another photo?"));
+  if (t.attempts > 1) { const h = $(`#tryon-${key} .tryon-hint`); if (h) h.textContent = `The try-on model is busy, retrying (attempt ${t.attempts})…`; }
+  setTimeout(() => pollTryOn(key, id, started, 0, done), 2000);
 }
 
-function renderTryOn(key, t) {
+function renderedHtml(key, t) {
   const pieces = tryonPieces[key] || [];
   const rendered = new Set(t.result.rendered_ids || []);
   // Pieces the model didn't draw (shoes, bags, a second top layer) are pinned beside the photo, scrapbook style.
-  const pinned = pieces.filter((p) => !rendered.has(p.id) && p.image_url);
+  const pinned = pieces.filter((p) => !rendered.has(p.id));
   const note = t.result.rendered
-    ? "Rendered with IDM-VTON. Colours and fit are an AI impression, not a promise."
-    : "Collage preview: add a REPLICATE_API_TOKEN to .env to render the outfit on you.";
-  tryonBox(key, `<div class="tryon-board">
+    ? "Rendered by an AI try-on model. Colours and fit are an impression, not a promise."
+    : "Collage preview: add a FASHN_API_KEY or REPLICATE_API_TOKEN to .env to render the outfit on you.";
+  return `<div class="tryon-board">
       <figure class="tryon-shot"><span class="tape"></span><img src="${esc(t.image_url)}" alt="You wearing this outfit"><figcaption>${t.result.rendered ? "you, in this look ♡" : "you + this look ♡"}</figcaption></figure>
-      <div class="tryon-pins">${pinned.map((p, i) => `<figure class="pin" style="--r:${(i % 2 ? 1 : -1) * (2 + i % 3)}deg"><img src="${esc(p.image_url)}" alt=""><figcaption>${esc(p.product_type)}</figcaption></figure>`).join("")}</div>
+      <div class="tryon-pins">${pins(pinned)}</div>
     </div>
     <p class="muted small">${note} Your photo was deleted after rendering.
       <button type="button" class="linklike" data-tryon-new="${key}">Use another photo</button> ·
-      <button type="button" class="linklike" data-tryon-delete="${esc(t.id)}" data-outfit="${key}">Delete this picture</button></p>`);
+      <button type="button" class="linklike" data-tryon-delete="${esc(t.id)}" data-outfit="${key}">Delete this picture</button></p>`;
 }
 
 async function onTryonClick(e) {
-  const tryBtn = e.target.closest(".tryon-btn, [data-tryon-retry]");
-  if (tryBtn) return startTryOn(tryBtn.dataset.outfit || tryBtn.dataset.tryonRetry);
+  const retry = e.target.closest("[data-tryon-retry]");
+  if (retry) return startTryOn(retry.dataset.tryonRetry);
   if (e.target.closest("[data-tryon-pick]")) return $("#tryon-file").click();
   const again = e.target.closest("[data-tryon-new]");
   if (again) {
@@ -560,11 +596,11 @@ try { room = JSON.parse(store.get("room")) || {}; } catch { room = {}; }
 const roomPieces = () => ROOM_SLOTS.map((s) => room[s]).filter(Boolean);
 const roomSlot = (p) => ROOM_SLOTS.includes(p.category) ? p.category : "accessory";
 
-function toggleRoom(id) {
+function toggleRoom(id, keep = false) {
   const p = lbProducts.get(id);
   if (!p) return;
   const slot = roomSlot(p);
-  if (room[slot] && room[slot].id === id) delete room[slot];
+  if (room[slot] && room[slot].id === id) { if (!keep) delete room[slot]; }
   else {
     room[slot] = { id: p.id, name: p.name, category: p.category, product_type: p.product_type, image_url: p.image_url, price: p.price };
     // A dress replaces a top and a bottom, and the other way round.
@@ -584,7 +620,8 @@ function renderRoom() {
     b.textContent = on ? "✓ in fitting room" : "+ fitting room";
   });
   const tray = $("#room");
-  tray.hidden = !pieces.length || $("#lookbook").hidden;
+  // No tray before the Lookbook has outfits (photos first), and only on the Lookbook tab.
+  tray.hidden = !pieces.length || $("#lookbook").hidden || !$("#lb-sections .outfit");
   document.body.classList.toggle("room-open", !tray.hidden);
   if (!pieces.length) return;
   const photo = store.get("tryonPhoto");
@@ -596,7 +633,8 @@ function renderRoom() {
     <div class="room-pieces">${pieces.map((p) => `<button type="button" class="room-piece" data-room="${esc(p.id)}" title="Remove ${esc(p.name)}">
       ${p.image_url ? `<img src="${esc(p.image_url)}" alt="">` : `<span>${esc(p.product_type)}</span>`}<i>×</i></button>`).join("")}</div>
     <div class="room-actions"><span class="room-total">$${total.toFixed(2)}</span>
-      ${canTry ? `<button type="button" class="gel primary" data-room-try>✨ Try it on me</button>`
+      ${tryonRunning ? `<button type="button" class="gel primary" disabled><span class="spinner small"></span> Dressing you…</button>`
+        : canTry ? `<button type="button" class="gel primary" data-room-try>✨ Try it on me</button>`
         : `<span class="room-need">Add a top, bottom,<br>dress or jacket</span>`}
       <button type="button" class="linklike" data-room-clear>clear</button></div>`;
 }
@@ -604,6 +642,8 @@ function renderRoom() {
 document.addEventListener("click", (e) => {
   const add = e.target.closest("button[data-room]");
   if (add) return toggleRoom(add.dataset.room);
+  const all = e.target.closest("[data-room-all]");
+  if (all) return all.dataset.roomAll.split(",").forEach((id) => toggleRoom(id, true));
   if (e.target.closest("[data-room-try]")) {
     // No photo on this device yet: open the picker straight away, then try on.
     if (!(tryonPhoto || savedTryonPhoto())) { pendingOutfit = "room"; return $("#tryon-file").click(); }
