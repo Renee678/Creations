@@ -128,6 +128,8 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
         pieces = [rt.catalog.products[i] for i in rec.product_ids if i in rt.catalog.products]
         steps = plan_steps([{"category": p.category, "product": p} for p in pieces])
 
+        described: list[str] = []
+
         def render():
             image, media_type, done = rec.photo, rec.media_type, []
             if rt.tryon.renders and getattr(rt.tryon, "whole_outfit", False):
@@ -143,6 +145,7 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
                 if not garments:
                     raise TryOnError("None of these pieces has a photo the try-on model can use.")
                 image, media_type = rt.tryon.dress_outfit(image, media_type, [g for _, g in garments])
+                described.extend(pid for pid, g in garments if g.image is None)  # drawn from words, no photo
                 return image, media_type, [pid for pid, _ in garments]
             if rt.tryon.renders:
                 for step in steps:
@@ -167,6 +170,7 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
         _finish(session, rec, "done", result={
             "rendered": rendered,
             "rendered_ids": done,
+            "described_ids": described,
             "model": rt.tryon.name,
             "latency_ms": round((time.monotonic() - started) * 1000),
         })

@@ -190,11 +190,13 @@ def test_replicate_client_runs_idm_vton_and_downloads_the_result(monkeypatch):
     assert ("GET", "/v1/predictions/p1") in seen, "a slow prediction is polled"
 
 
-def test_replicate_errors_are_classified():
+def test_replicate_errors_are_classified(caplog):
     vton = ReplicateTryOn("token", http=replicate_stub(["failed"], []))
     with pytest.raises(TryOnError) as e:
         vton.dress(b"p", "image/jpeg", Garment(b"g", "image/jpeg", "dresses", "dress"))
-    assert "CUDA" in str(e.value) and not e.value.retryable
+    # The user gets a plain sentence; the model's raw error goes to the log.
+    assert str(e.value).startswith("The try-on model couldn't render") and not e.value.retryable
+    assert "CUDA" in caplog.text
 
     def status(code):
         return httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(code, json={})))
@@ -216,6 +218,23 @@ def test_garment_photos_come_from_the_saved_dataset_images(tmp_path):
     assert (g.image, g.media_type, g.region, g.description) == (b"png", "image/png", "dresses", "black Tibi knit dress")
     with pytest.raises(TryOnError):
         garment_for(ProductView("seed-1", "x", "Top", "top", "", "", "", 9), tmp_path)
+
+
+def test_a_slow_shop_photo_is_fetched_on_the_second_try():
+    from lookmate.catalog.service import ProductView
+    from lookmate.tryon.garments import garment_for
+
+    tries = []
+
+    def once_slow(req):
+        tries.append(req.extensions["timeout"]["read"])
+        if len(tries) == 1:
+            raise httpx.ReadTimeout("timed out", request=req)
+        return httpx.Response(200, content=b"jpg", headers={"content-type": "image/jpeg"})
+
+    p = ProductView("asos-2", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/y/1-2", 20)
+    g = garment_for(p, None, http=httpx.Client(transport=httpx.MockTransport(once_slow)))
+    assert g.image == b"jpg" and tries == [15, 30], "the retry waits longer"
 
 
 def test_shop_photo_falls_back_to_its_url_when_the_cdn_stalls():
@@ -375,8 +394,10 @@ def test_nano_banana_dresses_the_whole_outfit_in_one_call(monkeypatch):
         Garment(None, "image/jpeg", "accessory", "black ballet flats", url="https://img/flats.jpg")])
     assert out == (b"JPG", "image/jpeg")
     body = next(s for s in seen if isinstance(s, dict))["input"]
-    assert len(body["image_input"]) == 3 and body["image_input"][2] == "https://img/flats.jpg"
-    assert "white satin blouse; black ballet flats" in body["prompt"]
+    # A photo we couldn't fetch isn't passed on as a URL (the CDN stalls the model too): it's described in words.
+    assert len(body["image_input"]) == 2 and not any(i.startswith("https://") for i in body["image_input"])
+    assert "shown in the other images: white satin blouse, and" in body["prompt"]
+    assert "no photo, as described: black ballet flats" in body["prompt"]
     assert not any(p == "/v1/models/google/nano-banana" for _, p in [x for x in seen if isinstance(x, tuple)]), \
         "official models need no version lookup"
 
@@ -393,12 +414,15 @@ def test_a_whole_outfit_model_renders_shoes_too(client, runtime, user, monkeypat
 
     monkeypatch.setattr(runtime, "tryon", WholeOutfit())
     monkeypatch.setattr("lookmate.worker.garment_for",
-                        lambda p, data_dir: Garment(b"img", "image/jpeg", {"shoes": "accessory"}.get(p.category, "upper_body"), p.name))
+                        lambda p, data_dir: Garment(None if p.category == "shoes" else b"img", "image/jpeg",
+                                                    {"shoes": "accessory"}.get(p.category, "upper_body"), p.name))
     ids = pick(runtime, "top", "bottom", "shoes")
     tryon_id = request_tryon(client, user["id"], ids).json()["id"]
     assert run_next_job(runtime) == "done"
     assert len(calls) == 1 and "accessory" in calls[0], "one call, shoes included"
-    assert client.get(f"/api/tryons/{tryon_id}").json()["result"]["rendered_ids"] == ids
+    result = client.get(f"/api/tryons/{tryon_id}").json()["result"]
+    assert result["rendered_ids"] == ids
+    assert result["described_ids"] == [ids[2]], "the shoes' photo wouldn't load, so they were drawn from words"
 
 
 def test_a_try_on_photo_is_checked_before_it_is_used(client, runtime, user, monkeypatch):

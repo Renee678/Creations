@@ -25,16 +25,20 @@ def garment_for(product: ProductView, data_dir: Path, http: httpx.Client | None 
             raise TryOnError(f"photo missing for {product.name}")
         data, media_type = path.read_bytes(), _TYPES.get(path.suffix.lstrip(".").lower(), "image/jpeg")
     elif url.startswith("https://"):
-        # Shop CDNs often stall requests that don't look like a browser. If ours still fails, hand the
-        # URL to the try-on service and let it fetch the photo from its own network.
-        try:
-            r = (http or httpx).get(url, follow_redirects=True, timeout=httpx.Timeout(10, read=15), headers=BROWSER_HEADERS)
-            r.raise_for_status()
-            if not r.headers.get("content-type", "").startswith("image/"):
-                raise httpx.HTTPError("not an image")
-            data, media_type = r.content, r.headers["content-type"].split(";")[0]
-        except httpx.HTTPError:
-            data, media_type = None, "image/jpeg"
+        # Shop CDNs often stall requests that don't look like a browser, and sometimes just stall. Try twice;
+        # if both fail, the garment carries only its URL and the provider decides what to do with it.
+        data, media_type = None, "image/jpeg"
+        for read_s in (15, 30):
+            try:
+                r = (http or httpx).get(url, follow_redirects=True, timeout=httpx.Timeout(10, read=read_s),
+                                        headers=BROWSER_HEADERS)
+                r.raise_for_status()
+                if not r.headers.get("content-type", "").startswith("image/"):
+                    raise httpx.HTTPError("not an image")
+                data, media_type = r.content, r.headers["content-type"].split(";")[0]
+                break
+            except httpx.HTTPError:
+                continue
     else:
         raise TryOnError(f"{product.name} has no photo to try on")
     colour = "" if product.colour.lower() in product.name.lower() else f"{product.colour} "

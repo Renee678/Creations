@@ -144,7 +144,8 @@ class ReplicateTryOn:
             time.sleep(2)
             pred = self._request("GET", pred["urls"]["get"])
         if pred["status"] != "succeeded":
-            raise TryOnError(f"try-on {pred['status']}: {pred.get('error') or 'no output'}")
+            log.warning("try-on prediction %s %s: %s", pred.get("id"), pred["status"], pred.get("error"))
+            raise TryOnError("The try-on model couldn't render this outfit. Please try again, or swap a piece.")
         output = pred["output"][0] if isinstance(pred["output"], list) else pred["output"]
         try:
             img = self.http.get(output)
@@ -155,10 +156,20 @@ class ReplicateTryOn:
 
 
 NANO_BANANA = "google/nano-banana"
-NANO_BANANA_PROMPT = """The first image is a photo of a person. Dress this same person in the clothes and accessories
-shown in the other images: {pieces}. Replace what they are wearing now with exactly these pieces, keeping each
-piece's colour, pattern, fabric and cut. Keep the person's face, hair, skin tone, body shape and the background
-unchanged. Show a natural, realistic full-length photo of them standing and facing the camera."""
+NANO_BANANA_PROMPT = """The first image is a photo of a person. Dress this same person in {pieces}. Replace what they
+are wearing now with exactly these pieces, keeping each piece's colour, pattern, fabric and cut. Keep the person's
+face, hair, skin tone, body shape and the background unchanged. Show a natural, realistic full-length photo of them
+standing and facing the camera."""
+
+
+def nano_banana_pieces(shown: list[str], described: list[str]) -> str:
+    """The outfit part of the prompt: pieces with a photo, then pieces known only by their description."""
+    parts = []
+    if shown:
+        parts.append("the clothes and accessories shown in the other images: " + "; ".join(shown))
+    if described:
+        parts.append("these pieces, which have no photo, as described: " + "; ".join(described))
+    return ", and ".join(parts)
 
 
 class NanoBananaTryOn(ReplicateTryOn):
@@ -172,10 +183,14 @@ class NanoBananaTryOn(ReplicateTryOn):
         super().__init__(token, model, timeout_s, http)
 
     def dress_outfit(self, person: bytes, media_type: str, garments: list[Garment]) -> tuple[bytes, str]:
-        images = [self._file_input(person, media_type)] + [
-            self._file_input(g.image, g.media_type) if g.image else g.url for g in garments]
+        # Only photos we fetched ourselves go in. A shop URL would make the model fetch it, and a CDN that
+        # stalled us usually stalls it too, failing the whole outfit; such a piece is described in words.
+        shown = [g for g in garments if g.image]
+        described = [g for g in garments if not g.image]
+        images = [self._file_input(person, media_type)] + [self._file_input(g.image, g.media_type) for g in shown]
         body = {"input": {
-            "prompt": NANO_BANANA_PROMPT.format(pieces="; ".join(g.description for g in garments)),
+            "prompt": NANO_BANANA_PROMPT.format(pieces=nano_banana_pieces(
+                [g.description for g in shown], [g.description for g in described])),
             "image_input": images,
             "output_format": "jpg",
         }}
