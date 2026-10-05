@@ -146,3 +146,26 @@ def test_palette_puts_an_accent_first_and_neutrals_after():
 def test_bad_hex_from_the_model_is_replaced():
     assert Swatch(name="x", hex="zzz").hex == "#999999"
     assert Swatch(name="x", hex="C19A6B").hex == "#c19a6b"
+
+
+def test_lookbook_pieces_stay_near_the_budget(runtime):
+    from lookmate.services.lookbook import BUDGET_STRETCH, Palette, _fill_slot
+    from lookmate.services.ranking import UserContext
+
+    for budget in (10, 20, 40):
+        user = UserContext(budget_per_item=budget)
+        for category in ("top", "bottom", "dress", "outerwear", "shoes", "bag"):
+            cheap = [p for p in runtime.catalog.products.values()
+                     if p.category == category and p.price <= budget * BUDGET_STRETCH]
+            piece = _fill_slot(runtime.catalog, user, Palette.from_analysis(None), "minimalist",
+                               category, category, "black", set())
+            if cheap:
+                assert piece["price"] <= budget * BUDGET_STRETCH, (budget, category, piece["name"])
+
+
+def test_photo_checks_say_which_photo_is_for_try_on(client, runtime, user):
+    res = upload(client, user["id"], SELFIE, FULL_BODY)
+    run_next_job(runtime)
+    checks = client.get(f"/api/analyses/{res.json()['id']}").json()["result"]["photo_checks"]
+    assert [c["framing"] for c in checks] == ["face", "full_body"]
+    assert [c["good_for_tryon"] for c in checks] == [False, True]

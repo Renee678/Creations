@@ -211,3 +211,21 @@ def test_garment_photos_come_from_the_saved_dataset_images(tmp_path):
     assert (g.image, g.media_type, g.region, g.description) == (b"png", "image/png", "dresses", "black Tibi knit dress")
     with pytest.raises(TryOnError):
         garment_for(ProductView("seed-1", "x", "Top", "top", "", "", "", 9), tmp_path)
+
+
+def test_shop_photo_falls_back_to_its_url_when_the_cdn_stalls():
+    from lookmate.catalog.service import ProductView
+    from lookmate.tryon.garments import garment_for
+
+    def stall(req):
+        raise httpx.ReadTimeout("timed out", request=req)
+
+    url = "https://images.asos-media.com/products/x/1-4"
+    p = ProductView("asos-1", "Satin cargo trousers in black", "Trousers", "bottom", "black", "", url, 28.6)
+    g = garment_for(p, None, http=httpx.Client(transport=httpx.MockTransport(stall)))
+    assert g.image is None and g.url == url and g.region == "lower_body"
+
+    seen = []
+    ReplicateTryOn("t", http=replicate_stub(["succeeded"], seen)).dress(b"p", "image/jpeg", g)
+    body = next(s for s in seen if isinstance(s, dict))
+    assert body["input"]["garm_img"] == url, "the try-on service fetches it instead"

@@ -11,7 +11,7 @@ import logging
 from typing import Protocol
 
 from ..services.vocab import STYLES
-from .schemas import DetectedItem, LookAnalysis, PersonAnalysis, Swatch
+from .schemas import DetectedItem, LookAnalysis, PersonAnalysis, PhotoCheck, Swatch
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +65,9 @@ of themselves and asked for personal styling advice.
 - Do not guess ethnicity, age or any other sensitive trait. Lighting, white balance and filters change
   how colour reads, so mention them in caveats when they matter.
 - Use only these style labels for style_tags: {", ".join(STYLES)}.
+- photo_checks: one entry per photo, in the order given. Say how the person is framed, whether the photo
+  works for colour analysis, and whether it works for a virtual try-on (one person, standing, facing the
+  camera, head to at least the knees). The tip tells the user, kindly, what to retake if it doesn't.
 If no person's face is clearly visible, set usable to false and fill the rest with your best neutral defaults.
 Write everything in English."""
 
@@ -272,7 +275,15 @@ class FakeVision:
 
     def analyze_person(self, photos: list[tuple[bytes, str]]) -> PersonAnalysis:
         digest = hashlib.sha256(b"".join(data for data, _ in photos)).digest()
-        return _FAKE_PEOPLE[int.from_bytes(digest[:4], "little") % len(_FAKE_PEOPLE)].model_copy(deep=True)
+        person = _FAKE_PEOPLE[int.from_bytes(digest[:4], "little") % len(_FAKE_PEOPLE)].model_copy(deep=True)
+        # Offline: a lone photo counts as full body; with several, the first is the selfie.
+        person.photo_checks = [
+            PhotoCheck(framing="face", good_for_colour=True, good_for_tryon=False, tip="Good selfie for your colours.")
+            if i == 0 and len(photos) > 1 else
+            PhotoCheck(framing="full_body", good_for_colour=True, good_for_tryon=True, tip="Ready for try-on.")
+            for i in range(len(photos))
+        ]
+        return person
 
 
 def make_vision_llm(api_key: str, model: str, timeout_s: float) -> VisionLLM:

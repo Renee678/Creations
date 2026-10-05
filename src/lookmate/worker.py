@@ -128,25 +128,35 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
         steps = plan_steps([{"category": p.category, "product": p} for p in pieces])
 
         def render():
-            image, media_type = rec.photo, rec.media_type
+            image, media_type, done = rec.photo, rec.media_type, []
             if rt.tryon.renders:
                 for step in steps:
-                    image, media_type = rt.tryon.dress(image, media_type, garment_for(step["product"], rt.data_dir))
-            return image, media_type
+                    try:
+                        garment = garment_for(step["product"], rt.data_dir)
+                    except TryOnError as e:
+                        if e.retryable:
+                            raise
+                        log.warning("try-on %s: skipping %s (%s)", tryon_id, step["product"].id, e)
+                        continue  # pinned beside the picture instead
+                    image, media_type = rt.tryon.dress(image, media_type, garment)
+                    done.append(step["product"].id)
+                if not done:
+                    raise TryOnError("None of these pieces has a photo the try-on model can use.")
+            return image, media_type, done
 
         out = _call_llm(rt, session, rec, job, render)
         if out is None:
             return rec.status
-        rec.result_image, rec.result_media_type = out
-        rendered = rt.tryon.renders and bool(steps)
+        rec.result_image, rec.result_media_type, done = out
+        rendered = bool(done)
         _finish(session, rec, "done", result={
             "rendered": rendered,
-            "rendered_ids": [s["product"].id for s in steps] if rendered else [],
+            "rendered_ids": done,
             "model": rt.tryon.name,
             "latency_ms": round((time.monotonic() - started) * 1000),
         })
         rt.queue.ack(job)
-        log.info("try-on %s done (%s, %d steps)", tryon_id, rt.tryon.name, len(steps) if rendered else 0)
+        log.info("try-on %s done (%s, %d steps)", tryon_id, rt.tryon.name, len(done))
         return "done"
 
 

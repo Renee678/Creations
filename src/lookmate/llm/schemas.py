@@ -49,6 +49,17 @@ class Swatch(BaseModel):
         return v.lower() if re.fullmatch(r"#[0-9a-fA-F]{6}", v) else "#999999"
 
 
+class PhotoCheck(BaseModel):
+    """What one uploaded photo is good for, so the user knows which photo does what."""
+
+    framing: Literal["face", "upper_body", "full_body", "no_person"] = Field(
+        description="How much of the person is visible: face close-up, waist up, head to toe, or nobody")
+    good_for_colour: bool = Field(description="Face clearly visible in natural-looking light, no heavy filter")
+    good_for_tryon: bool = Field(
+        description="One person, standing, facing the camera, visible from head to at least the knees, not cropped")
+    tip: str = Field(description="One short sentence: what this photo is good for, or how to retake it")
+
+
 class PersonAnalysis(BaseModel):
     """Personal colour, face and styling read from 1-3 photos of the user."""
 
@@ -70,3 +81,4 @@ class PersonAnalysis(BaseModel):
     )
     style_tags: list[str] = Field(description="Style labels from the allowed vocabulary that suit this person")
     caveats: str = Field(description="Anything that limits accuracy, e.g. warm indoor lighting or a beauty filter")
+    photo_checks: list[PhotoCheck] = Field(default_factory=list, description="One check per photo, in upload order")

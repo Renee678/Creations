@@ -32,10 +32,11 @@ class TryOnError(Exception):
 
 @dataclass(frozen=True)
 class Garment:
-    image: bytes
+    image: bytes | None  # None: the model fetches `url` itself
     media_type: str
     region: str        # upper_body | lower_body | dresses
     description: str   # e.g. "sage green satin slip dress"
+    url: str | None = None
 
 
 def plan_steps(pieces: list[dict]) -> list[dict]:
@@ -113,7 +114,7 @@ class ReplicateTryOn:
     def dress(self, person: bytes, media_type: str, garment: Garment) -> tuple[bytes, str]:
         body = {"version": self.version(), "input": {
             "human_img": self._file_input(person, media_type),
-            "garm_img": self._file_input(garment.image, garment.media_type),
+            "garm_img": self._file_input(garment.image, garment.media_type) if garment.image else garment.url,
             "garment_des": garment.description,
             "category": garment.region,
             "crop": True,  # accept photos that aren't 3:4

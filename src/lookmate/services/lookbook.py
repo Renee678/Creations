@@ -26,6 +26,9 @@ from .vocab import BODY_SHAPES, STYLES, style_name
 
 W_SIM, W_PALETTE, W_STYLE, W_FIT, W_PRICE = 0.55, 0.15, 0.10, 0.10, 0.10
 CANDIDATES_PER_SLOT = 30
+# Pieces may cost up to 1.5x the user's per-item budget; only if nothing fits does a slot go above it.
+# Without this a $260 designer pump can win a slot, since price is only 10% of the score.
+BUDGET_STRETCH = 1.5
 
 Slot = tuple[str, str]  # (category, garment description)
 
@@ -170,9 +173,14 @@ def _fill_slot(catalog: Catalog, user: UserContext, palette: Palette, style: str
                category: str, desc: str, colour: str, used: set[str]) -> dict | None:
     flavour = " ".join(STYLE_KEYWORDS.get(style, [])[:2])
     query = f"{colour} {desc} {flavour}"
-    candidates = catalog.search(query, k=CANDIDATES_PER_SLOT, category=category, exclude=used)
-    if not candidates:  # small catalogs run out: reuse a piece rather than leave a gap
-        candidates = catalog.search(query, k=CANDIDATES_PER_SLOT, category=category)
+    cap = user.budget_per_item * BUDGET_STRETCH
+    candidates = (
+        catalog.search(query, k=CANDIDATES_PER_SLOT, category=category, max_price=cap, exclude=used)
+        or catalog.search(query, k=CANDIDATES_PER_SLOT, category=category, exclude=used)
+        # small catalogs run out: reuse a piece rather than leave a gap
+        or catalog.search(query, k=CANDIDATES_PER_SLOT, category=category, max_price=cap)
+        or catalog.search(query, k=CANDIDATES_PER_SLOT, category=category)
+    )
     best = None
     for c in candidates:
         p = c.product
