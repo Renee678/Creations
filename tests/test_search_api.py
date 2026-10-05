@@ -69,3 +69,18 @@ def test_tryon_asks_for_a_photo_instead_of_popping_the_picker(client):
     start = app_js.split("function startTryOn")[1].split("\n}\n")[0]
     assert "data-tryon-pick" in start and '#tryon-file").click()' not in start
     assert '[data-tryon-pick]")) return $("#tryon-file").click()' in app_js
+
+
+def test_lookbook_has_a_fitting_room_for_mixing_outfits(client, runtime, user):
+    page = client.get("/").text
+    assert 'id="room"' in page and 'id="tryon-room"' in page
+    app_js = client.get("/static/app.js").text
+    assert "data-room=" in app_js and 'startTryOn("room")' in app_js
+    # Mixed pieces are sent like any outfit: the API takes any pieces from the catalog.
+    by_cat = {}
+    for p in runtime.catalog.products.values():
+        by_cat.setdefault(p.category, p.id)
+    ids = [by_cat["top"], by_cat["bottom"], by_cat["shoes"]]
+    res = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(ids)},
+                      files={"photo": ("me.jpg", b"\xff\xd8\xff\xe0me", "image/jpeg")})
+    assert res.status_code == 202 and res.json()["product_ids"] == ids
