@@ -16,6 +16,7 @@ from .jobqueue import JobQueue
 from .llm.client import VisionLLM, make_vision_llm
 from .models import Trend
 from .services.trends import ClaudeTrendResearcher
+from .tryon.client import make_tryon
 
 LOOK_QUEUE = "looks"
 _memory_server = None
@@ -47,6 +48,7 @@ class Runtime:
     redis: redis.Redis
     trend_researcher: object | None  # ClaudeTrendResearcher, or None offline
     data_dir: Path
+    tryon: object  # ReplicateTryOn, or PreviewTryOn without a token
 
 
 def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, import_catalog: bool = True) -> Runtime:
@@ -68,4 +70,5 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
         redis=client,
         trend_researcher=researcher,
         data_dir=Path(settings.data_dir),
+        tryon=make_tryon(settings.replicate_api_token, settings.tryon_model),
     )

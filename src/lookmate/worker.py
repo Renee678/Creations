@@ -1,4 +1,4 @@
-"""Background worker: turns queued uploads into look-alike results and personal analyses.
+"""Background worker: turns queued uploads into look-alike results, personal analyses and try-ons.
 
 Run with `python -m lookmate.worker`. Each job is handled idempotently, since
 the queue delivers at least once.
@@ -13,12 +13,14 @@ import time
 from .config import get_settings
 from .db import SessionLocal
 from .llm.client import LLMError
-from .models import Look, PersonalAnalysis, User, utcnow
+from .models import Look, PersonalAnalysis, TryOn, User, utcnow
 from .runtime import Runtime, build_runtime
 from .services.dupes import find_dupes
 from .services.style_memory import record_look, user_context
 from .services.trends import refresh_if_due
 from .services.vocab import STYLES
+from .tryon.client import TryOnError, plan_steps
+from .tryon.garments import garment_for
 
 log = logging.getLogger("lookmate.worker")
 
@@ -28,11 +30,16 @@ TREND_CHECK_EVERY_S = 600
 
 
 ANALYSIS_PREFIX = "analysis:"
+TRYON_PREFIX = "tryon:"
 
 
 def analysis_job(analysis_id: int) -> str:
     """Queue key for a personal analysis; looks use their bare id."""
     return f"{ANALYSIS_PREFIX}{analysis_id}"
+
+
+def tryon_job(tryon_id: str) -> str:
+    return f"{TRYON_PREFIX}{tryon_id}"
 
 
 def process_look(rt: Runtime, look_id: int) -> str:
@@ -102,11 +109,52 @@ def process_analysis(rt: Runtime, analysis_id: int) -> str:
         return "done"
 
 
+def process_tryon(rt: Runtime, tryon_id: str) -> str:
+    """Dress the user's photo in the outfit, one garment per model call (see tryon.client)."""
+    job = tryon_job(tryon_id)
+    with SessionLocal() as session:
+        rec = session.get(TryOn, tryon_id)
+        if rec is None:
+            rt.queue.ack(job)
+            return "missing"
+        if rec.status in ("done", "failed"):
+            rt.queue.ack(job)
+            return rec.status
+
+        rec.status, rec.attempts = "processing", rec.attempts + 1
+        session.commit()
+        started = time.monotonic()
+        pieces = [rt.catalog.products[i] for i in rec.product_ids if i in rt.catalog.products]
+        steps = plan_steps([{"category": p.category, "product": p} for p in pieces])
+
+        def render():
+            image, media_type = rec.photo, rec.media_type
+            if rt.tryon.renders:
+                for step in steps:
+                    image, media_type = rt.tryon.dress(image, media_type, garment_for(step["product"], rt.data_dir))
+            return image, media_type
+
+        out = _call_llm(rt, session, rec, job, render)
+        if out is None:
+            return rec.status
+        rec.result_image, rec.result_media_type = out
+        rendered = rt.tryon.renders and bool(steps)
+        _finish(session, rec, "done", result={
+            "rendered": rendered,
+            "rendered_ids": [s["product"].id for s in steps] if rendered else [],
+            "model": rt.tryon.name,
+            "latency_ms": round((time.monotonic() - started) * 1000),
+        })
+        rt.queue.ack(job)
+        log.info("try-on %s done (%s, %d steps)", tryon_id, rt.tryon.name, len(steps) if rendered else 0)
+        return "done"
+
+
 def _call_llm(rt: Runtime, session, rec, job, call):
     """Run the model call; on failure schedule a retry or fail the record, and return None."""
     try:
         return call()
-    except LLMError as e:
+    except (LLMError, TryOnError) as e:
         if e.retryable and rec.attempts < MAX_ATTEMPTS:
             delay = BACKOFF_BASE_S * 2 ** (rec.attempts - 1)
             log.warning("job %s attempt %s failed (%s); retrying in %.0fs", job, rec.attempts, e, delay)
@@ -126,6 +174,8 @@ def _finish(session, rec, status: str, result: dict | None = None, error: str | 
     # Drop the photos as soon as we're done with them.
     if isinstance(rec, Look):
         rec.image = None
+    elif isinstance(rec, TryOn):
+        rec.photo = None
     else:
         rec.photos = None
     rec.finished_at = utcnow()
@@ -133,15 +183,22 @@ def _finish(session, rec, status: str, result: dict | None = None, error: str | 
 
 
 def process_job(rt: Runtime, job: str) -> str:
+    if job.startswith(TRYON_PREFIX):
+        return process_tryon(rt, job.removeprefix(TRYON_PREFIX))
     if job.startswith(ANALYSIS_PREFIX):
         return process_analysis(rt, int(job.removeprefix(ANALYSIS_PREFIX)))
     return process_look(rt, int(job))
 
 
 def _fail_after_crash(job: str) -> None:
-    model, rec_id = (PersonalAnalysis, job.removeprefix(ANALYSIS_PREFIX)) if job.startswith(ANALYSIS_PREFIX) else (Look, job)
+    if job.startswith(TRYON_PREFIX):
+        model, rec_id = TryOn, job.removeprefix(TRYON_PREFIX)
+    elif job.startswith(ANALYSIS_PREFIX):
+        model, rec_id = PersonalAnalysis, int(job.removeprefix(ANALYSIS_PREFIX))
+    else:
+        model, rec_id = Look, int(job)
     with SessionLocal() as session:
-        rec = session.get(model, int(rec_id))
+        rec = session.get(model, rec_id)
         if rec is not None:
             _finish(session, rec, "failed", error="internal error")
 

@@ -23,6 +23,11 @@ class Settings(BaseSettings):
 
     max_upload_bytes: int = 8 * 1024 * 1024
 
+    # Virtual try-on (IDM-VTON on Replicate). Empty token: the UI shows a collage preview instead.
+    replicate_api_token: str = ""
+    tryon_model: str = "cuuupid/idm-vton"
+    daily_tryon_limit: int = 30    # rendered try-ons per UTC day across all users (0 = unlimited)
+
     # Cost guardrails for a public deployment.
     access_code: str = ""          # if set, uploads need the X-Access-Code header
     daily_look_limit: int = 200    # new image analyses per UTC day across all users (0 = unlimited)

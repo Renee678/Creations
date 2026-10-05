@@ -106,3 +106,30 @@ class PersonalAnalysis(Base):
     model: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TryOn(Base):
+    """One "try this outfit on me" request: the user's photo dressed in catalog pieces.
+
+    The id is a random token, not a counter, because the result is a picture of the user.
+    The uploaded photo is dropped once the job finishes; the result stays until the user deletes it.
+    """
+
+    __tablename__ = "tryons"
+    __table_args__ = (UniqueConstraint("user_id", "request_sha256", name="uq_tryon_user_request"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    request_sha256: Mapped[str] = mapped_column(String(64))  # photo + product ids
+    product_ids: Mapped[list] = mapped_column(JSON)
+    media_type: Mapped[str] = mapped_column(String(30))
+    photo: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    result_image: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    result_media_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
