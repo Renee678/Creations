@@ -3,6 +3,8 @@
 import base64
 import json
 import re
+import struct
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import unquote, unquote_plus, urlparse, parse_qs
 
@@ -239,6 +241,14 @@ def test_a_saved_outfit_becomes_a_look_book_page(page):
     page.keyboard.press("ArrowRight")
     page.keyboard.press("ArrowRight")
     page.locator("#book-page .bk-look").wait_for()
+
+    # Coordinator, 2026-10-05: a page goes out as a 3:4 image for Xiaohongshu.
+    with page.expect_download() as dl:
+        page.locator("[data-book-image]").click()
+    png = Path(dl.value.path()).read_bytes()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n" and dl.value.suggested_filename.endswith(".png")
+    assert struct.unpack(">II", png[16:24]) == (1080, 1440), "a 3:4 portrait, the Xiaohongshu post shape"
+    assert page.locator("[data-book-image]").inner_text().strip() == "⤓ Save as image"
 
     with page.expect_response(lambda r: "/outfits/" in r.url and r.request.method == "DELETE"):
         page.locator("[data-book-delete]").click()

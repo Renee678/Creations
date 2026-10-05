@@ -540,6 +540,7 @@ function openPage(i) {
   $("#book-actions").innerHTML = pg.kind === "look" ? `
       <button type="button" class="gel" data-book-rename="${pg.o.id}">✎ Rename</button>
       <button type="button" class="gel primary" data-room-all="${esc(pg.o.pieces.map((p) => p.id).join(","))}" data-goto="lookbook">Try it on me</button>
+      <button type="button" class="gel" data-book-image="${pg.o.id}">⤓ Save as image</button>
       <button type="button" class="linklike" data-book-delete="${pg.o.id}">Delete</button>` : "";
   document.querySelectorAll("[data-book-step]").forEach((b) => {
     const to = i + Number(b.dataset.bookStep);
@@ -646,6 +647,15 @@ $("#my-outfits").addEventListener("click", async (e) => {
     if (o) { pg.o.title = o.title; renderContents(); openPage(book.at); }
     return;
   }
+  const img = e.target.closest("[data-book-image]");
+  if (img) {
+    const o = book.pages[book.at].o;
+    const view = o.tryon_image && book.views[o.id] !== "flat" ? "me" : "flat";
+    img.disabled = true; img.textContent = "Making the image…";
+    try { await sharePageImage(o, view); } catch (err) { alert(`Could not make the image: ${err.message}`); }
+    img.disabled = false; img.textContent = "⤓ Save as image";
+    return;
+  }
   const del = e.target.closest("[data-book-delete]");
   if (del && confirm("Delete this look from your book?")) {
     await api(`/api/users/${userId}/outfits/${del.dataset.bookDelete}`, { method: "DELETE" }).catch(() => {});
@@ -653,6 +663,153 @@ $("#my-outfits").addEventListener("click", async (e) => {
     loadBook();
   }
 });
+
+// ---------- Save a Look Book page as an image (3:4, the Xiaohongshu post shape) ----------
+const IMG_W = 1080, IMG_H = 1440;
+const INK = "#3a2a22", SOFT = "#9a8476", HAND = "#8a5a44";
+
+function loadImg(src) {
+  return new Promise((ok) => {
+    if (!src) return ok(null);
+    const im = new Image();
+    im.onload = () => ok(im);
+    im.onerror = () => ok(null);
+    im.src = src;
+  });
+}
+
+// Shop photos come through our own server: a canvas holding another site's picture can't be saved.
+const photoSrc = (p) => (!p.image_url ? null : p.image_url.startsWith("https://") ? `/api/products/${encodeURIComponent(p.id)}/photo` : p.image_url);
+
+function wrapText(ctx, text, maxW, maxLines) {
+  const lines = [];
+  let line = "";
+  for (const word of String(text).split(/\s+/)) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxW || !line) { line = next; continue; }
+    lines.push(line); line = word;
+  }
+  if (line) lines.push(line);
+  if (lines.length > maxLines) {
+    lines.length = maxLines;
+    let last = lines[maxLines - 1];
+    while (last && ctx.measureText(`${last}…`).width > maxW) last = last.slice(0, -1);
+    lines[maxLines - 1] = `${last.trim()}…`;
+  }
+  return lines;
+}
+
+function drawLines(ctx, lines, x, y, lh) { lines.forEach((l, i) => ctx.fillText(l, x, y + i * lh)); return y + lines.length * lh; }
+
+function drawContain(ctx, im, x, y, w, h) {
+  const k = Math.min(w / im.width, h / im.height);
+  ctx.drawImage(im, x + (w - im.width * k) / 2, y + (h - im.height * k) / 2, im.width * k, im.height * k);
+}
+
+function drawCover(ctx, im, x, y, w, h) {
+  const k = Math.max(w / im.width, h / im.height);
+  const sw = w / k, sh = h / k;
+  ctx.drawImage(im, (im.width - sw) / 2, Math.max(0, (im.height - sh) * 0.2), sw, sh, x, y, w, h);
+}
+
+// One piece in a box: its photo (or its type in words), then the italic label, price and palette dots.
+function drawPiece(ctx, p, im, x, y, w, h) {
+  const labelH = 78;
+  if (im) drawContain(ctx, im, x, y, w, h - labelH);
+  else {
+    ctx.fillStyle = "#f1e9e1"; ctx.fillRect(x + 10, y + 10, w - 20, h - labelH - 20);
+    ctx.fillStyle = SOFT; ctx.font = '400 24px "Jost", sans-serif'; ctx.textAlign = "center";
+    ctx.fillText(p.product_type, x + w / 2, y + (h - labelH) / 2);
+  }
+  ctx.textAlign = "center"; ctx.fillStyle = INK;
+  ctx.font = 'italic 500 24px "Bodoni Moda", Georgia, serif';
+  const ly = drawLines(ctx, wrapText(ctx, boardLabel(p), w - 10, 1), x + w / 2, y + h - labelH + 28, 28);
+  ctx.font = '400 22px "Jost", sans-serif'; ctx.fillStyle = SOFT;
+  const price = `$${p.price.toFixed(2)}`;
+  ctx.fillText(price, x + w / 2, ly + 2);
+  const dots = p.palette_dots || [];
+  let dx = x + w / 2 + ctx.measureText(price).width / 2 + 16;
+  for (const d of dots) {
+    ctx.beginPath(); ctx.arc(dx, ly - 6, 7, 0, Math.PI * 2); ctx.fillStyle = d.hex; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,.12)"; ctx.lineWidth = 1; ctx.stroke(); dx += 18;
+  }
+}
+
+async function drawPageImage(o, view) {
+  try { await Promise.all(['italic 500 40px "Bodoni Moda"', '500 40px "Bodoni Moda"', '400 24px "Jost"', '600 40px "Caveat"'].map((f) => document.fonts.load(f))); } catch { /* fallback fonts */ }
+  const [hero, ...ims] = await Promise.all([view === "me" ? loadImg(o.tryon_image) : null, ...o.pieces.map((p) => loadImg(photoSrc(p)))]);
+  const photo = new Map(o.pieces.map((p, i) => [p.id, ims[i]]));
+  const c = document.createElement("canvas");
+  c.width = IMG_W; c.height = IMG_H;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fbf8f4"; ctx.fillRect(0, 0, IMG_W, IMG_H);
+  ctx.strokeStyle = "#e8ddd3"; ctx.lineWidth = 2; ctx.strokeRect(36, 36, IMG_W - 72, IMG_H - 72);
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+
+  const sub = `${SEASON_NAMES[o.season] || o.season} · ${o.style}`.toUpperCase();
+  ctx.fillStyle = SOFT; ctx.font = '400 24px "Jost", sans-serif';
+  if (ctx.letterSpacing !== undefined) ctx.letterSpacing = "4px";
+  ctx.fillText(sub, IMG_W / 2, 112);
+  if (ctx.letterSpacing !== undefined) ctx.letterSpacing = "0px";
+  ctx.fillStyle = INK;
+  let y;
+  if (view === "me") {
+    ctx.font = '500 76px "Bodoni Moda", Georgia, serif'; ctx.fillText("Daily Look", IMG_W / 2, 196);
+    ctx.font = 'italic 500 32px "Bodoni Moda", Georgia, serif';
+    y = drawLines(ctx, wrapText(ctx, o.title, 860, 1), IMG_W / 2, 248, 38);
+  } else {
+    ctx.font = 'italic 500 64px "Bodoni Moda", Georgia, serif';
+    y = drawLines(ctx, wrapText(ctx, o.title, 900, 2), IMG_W / 2, 190, 72) - 30;
+  }
+  if (o.why) {
+    ctx.fillStyle = HAND; ctx.font = '600 36px "Caveat", cursive';
+    y = drawLines(ctx, wrapText(ctx, o.why, 880, 2), IMG_W / 2, y + 44, 40);
+  }
+  const top = y + 20, bottom = 1250;
+
+  if (view === "me") {
+    const heroW = 460, side = 230, gap = 24, left = (IMG_W - heroW - 2 * side - 2 * gap) / 2;
+    const hx = left + side + gap;
+    if (hero) drawCover(ctx, hero, hx, top, heroW, bottom - top);
+    const column = (ps, x) => {
+      const h = ps.length ? Math.min(330, (bottom - top) / ps.length) : 0;
+      ps.forEach((p, i) => drawPiece(ctx, p, photo.get(p.id), x, top + i * h, side, h));
+    };
+    column(o.pieces.filter((p) => LEFT.has(p.category)), left);
+    column(o.pieces.filter((p) => !LEFT.has(p.category)), hx + heroW + gap);
+  } else {
+    // The same body map as the flat lay on screen: rows / columns from BOARD_AREA.
+    const cats = new Set(o.pieces.map((p) => p.category));
+    const cols = !cats.has("bag") && !cats.has("accessory") ? 2 : 3;
+    const gridW = cols === 2 ? 760 : 960, x0 = (IMG_W - gridW) / 2, cw = gridW / cols, rh = (bottom - top) / 3;
+    for (const p of o.pieces) {
+      const a = p.category === "shoes" && !cats.has("outerwear") ? "2 / 1 / 4 / 2" : BOARD_AREA[p.category] || BOARD_AREA.accessory;
+      const [r1, c1, r2, c2] = a.split("/").map((n) => Number(n) - 1);
+      drawPiece(ctx, p, photo.get(p.id), x0 + c1 * cw + 8, top + r1 * rh + 8, (c2 - c1) * cw - 16, (r2 - r1) * rh - 16);
+    }
+  }
+
+  ctx.strokeStyle = "#e8ddd3"; ctx.beginPath(); ctx.moveTo(90, 1290); ctx.lineTo(IMG_W - 90, 1290); ctx.stroke();
+  ctx.fillStyle = INK; ctx.font = '500 28px "Jost", sans-serif'; ctx.textAlign = "left";
+  ctx.fillText(`${o.pieces.length} pieces · $${o.total_price.toFixed(2)}`, 90, 1344);
+  ctx.fillStyle = SOFT; ctx.font = 'italic 500 26px "Bodoni Moda", Georgia, serif'; ctx.textAlign = "right";
+  ctx.fillText("My Look Book · Lookmate", IMG_W - 90, 1344);
+  return c;
+}
+
+async function sharePageImage(o, view) {
+  const c = await drawPageImage(o, view);
+  const blob = await new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error("the browser could not save it"))), "image/png"));
+  const name = `lookmate-${o.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "look"}.png`;
+  const file = new File([blob], name, { type: "image/png" });
+  // On a phone, the share sheet goes straight to Xiaohongshu or Photos; elsewhere it downloads.
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { return await navigator.share({ files: [file], title: o.title }); } catch (err) { if (err.name === "AbortError") return; }
+  }
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
 
 // Swipe between pages on a phone; arrow keys on a computer.
 let swipeX = null;

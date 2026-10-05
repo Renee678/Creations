@@ -121,3 +121,23 @@ def test_new_outfit_columns_are_added_to_an_existing_table(tmp_path):
     cols = {c["name"] for c in inspect(eng).get_columns("saved_outfits")}
     assert {"why", "occasion", "inspo_look_id"} <= cols
     _add_new_columns(eng)  # idempotent
+
+
+def test_shop_photos_are_served_from_our_origin_for_saving_a_page_as_an_image(client, runtime, monkeypatch):
+    """A canvas holding another site's photo can't be exported, so Save as image loads pieces through us."""
+    from lookmate.api import tryon as api
+    from lookmate.catalog.service import ProductView
+
+    asked = []
+    monkeypatch.setattr(api, "fetch_shop_photo", lambda url, data_dir: (asked.append(url), (b"\xff\xd8jpg", "image/jpeg"))[1])
+    p = ProductView("asos-photo-1", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/x/1", 20)
+    runtime.catalog.products[p.id] = p
+    try:
+        res = client.get(f"/api/products/{p.id}/photo")
+        assert res.status_code == 200 and res.content == b"\xff\xd8jpg" and res.headers["content-type"] == "image/jpeg"
+        assert asked == [p.image_url]
+        assert client.get("/api/products/not-a-piece/photo").status_code == 404, "only catalog pieces, never any URL"
+        monkeypatch.setattr(api, "fetch_shop_photo", lambda url, data_dir: (None, "image/jpeg"))
+        assert client.get(f"/api/products/{p.id}/photo").status_code == 404
+    finally:
+        del runtime.catalog.products[p.id]

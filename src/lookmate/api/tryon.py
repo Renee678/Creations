@@ -16,7 +16,7 @@ from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES, LLMError
 from ..models import TryOn
 from ..tryon.client import REGIONS, TRYON_STAGE
-from ..tryon.garments import prefetch
+from ..tryon.garments import fetch_shop_photo, prefetch
 from ..worker import tryon_job
 from .looks import require_access_code
 from .profiles import get_user_or_404
@@ -153,6 +153,23 @@ def prefetch_photos(body: PrefetchIn, request: Request, background: BackgroundTa
     if rt.tryon.renders and products:
         background.add_task(prefetch, products, rt.data_dir)
     return {"queued": len(products) if rt.tryon.renders else 0}
+
+
+@router.get("/api/products/{product_id}/photo")
+async def product_photo(product_id: str, request: Request) -> Response:
+    """A shop photo from our own origin, so a Look Book page can be drawn into a saved image.
+
+    Browsers refuse to export a canvas holding another site's picture; this serves the catalog photo
+    through the same disk cache the try-on uses. Only catalog pieces are served, never arbitrary URLs.
+    """
+    rt = request.app.state.runtime
+    product = rt.catalog.products.get(product_id)
+    if product is None or not product.image_url.startswith("https://"):
+        raise HTTPException(404, "no shop photo for this piece")
+    data, media_type = await run_in_threadpool(fetch_shop_photo, product.image_url, rt.data_dir)
+    if data is None:
+        raise HTTPException(404, "the shop photo could not be loaded")
+    return Response(data, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/api/tryons/{tryon_id}/image")
