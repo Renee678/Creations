@@ -323,6 +323,7 @@ $("#trend-list").addEventListener("click", onSaveClick);
 
 // ---------- personal analysis + lookbook ----------
 let lbMode = "seasons";
+let lbSeason = "";  // empty: the server picks the current season
 const meDrop = $("#me-drop");
 ["dragover", "dragenter"].forEach((ev) => meDrop.addEventListener(ev, (e) => { e.preventDefault(); meDrop.classList.add("over"); }));
 ["dragleave", "drop"].forEach((ev) => meDrop.addEventListener(ev, () => meDrop.classList.remove("over")));
@@ -419,6 +420,7 @@ function outfitCard(o) {
   const ids = o.pieces.map((p) => p.id).join(",");
   return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>
       <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></div>
+    ${o.why ? `<p class="outfit-why">✦ ${esc(o.why)}</p>` : ""}
     <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></div>`;
 }
 
@@ -670,18 +672,25 @@ let analysing = false;  // new photos are being read: no lookbook until they are
 
 /** Build the lookbook. Opening the tab again doesn't rebuild it, so a try-on in progress stays put. */
 async function loadLookbook(force = false) {
-  const query = `mode=${lbMode}&${priceQuery("lookbook")}`;
+  const season = lbMode === "seasons" && lbSeason ? `&season=${lbSeason}` : "";
+  const query = `mode=${lbMode}${season}&${priceQuery("lookbook")}`;
   if (analysing) return;
   if (!force && query === lbShown) return renderRoom();
   const seq = ++lbSeq;
+  // A new page of outfits goes past the AI stylist, which takes a few seconds; say so if it's slow.
+  const slow = setTimeout(() => {
+    if (seq === lbSeq) $("#lb-sections").innerHTML = `<p class="muted lb-wait"><span class="spinner small"></span> Styling your outfits…</p>`;
+  }, 600);
   try {
     const lb = await api(`/api/users/${userId}/lookbook?${query}`);
     if (seq !== lbSeq) return;  // a newer request (another range or mode) is on its way
     lbShown = query;
     showPriceRange("lookbook", lb.price_range);
     renderAnalysis(lb.analysis);
+    renderSeasonChips(lb);
     $("#lb-note").textContent = lb.personal
       ? `Built from your palette and your styles: ${lb.styles.map((s) => s.label).join(", ")}.`
+        + (lb.styled && lb.stylist !== "fake" ? " An AI stylist picked each outfit from the best-matching pieces." : "")
       : "Upload a photo for outfits in your own colours. For now these use neutral colours and your styles.";
     if (!lb.personal && store.get("lbBrowse") !== "1") {
       // Photos first: outfits are built from your colours, and the full-body photo is what try-on dresses.
@@ -695,7 +704,24 @@ async function loadLookbook(force = false) {
       `<div class="lb-section"><h2>${esc(s.title)}</h2>${s.outfits.map(outfitCard).join("") || '<p class="muted">Nothing found for this one yet.</p>'}</div>`).join("");
     renderRoom();
   } catch (err) { setMeStatus(err.message, true); }
+  finally { clearTimeout(slow); }
 }
+
+/** This season first; the next one is a tap away. */
+function renderSeasonChips(lb) {
+  const box = $("#lb-seasons");
+  box.hidden = lb.mode !== "seasons";
+  if (box.hidden) return;
+  const chip = (id, tag) => `<button type="button" class="chip${lb.season === id ? " on" : ""}" data-season="${id}">${cap(id)} · ${tag}</button>`;
+  box.innerHTML = chip(lb.current_season, "now") + chip(lb.next_season, "next");
+}
+
+$("#lb-seasons").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-season]");
+  if (!b) return;
+  lbSeason = b.dataset.season;
+  loadLookbook();
+});
 
 $("#lb-mode").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-mode]");

@@ -341,3 +341,7 @@ body.room-open { padding-bottom: 110px; }
 .tryon-clock { font: 700 15px/1 var(--f-body); font-variant-numeric: tabular-nums; color: var(--gel-deep); }
 .spinner.small { width: 12px; height: 12px; border-width: 2px; display: inline-block; vertical-align: -2px; }
 .room-actions button[disabled] { opacity: .85; cursor: progress; }
+
+/* Lookbook: season picker and the stylist's line per outfit */
+#lb-seasons { margin-left: 4px; }
+.outfit-why { margin: -4px 0 10px; font: 700 19px/1.3 var(--f-hand); color: var(--violet); }
