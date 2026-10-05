@@ -16,9 +16,11 @@ from dataclasses import dataclass, field
 from ..catalog.service import SearchResult
 from ..llm.schemas import DetectedItem
 from .body import fit_adjustment
+from .match import Target
 from .vocab import BODY_SHAPES, style_name
 
 W_SIM, W_STYLE, W_FIT, W_PRICE = 0.60, 0.15, 0.10, 0.15
+W_COLOUR = 0.15  # on top: between two equally close pieces, the one in the original's colour wins
 
 # Style label -> words that signal it in catalog descriptions.
 STYLE_KEYWORDS = {
@@ -94,6 +96,7 @@ def price_score(price: float, budget: float) -> float:
 
 
 def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, k: int = 4) -> list[RankedPick]:
+    target = Target(item.category, item.name, item.colour, item.details, item.fit)
     picks = []
     for c in candidates:
         p = c.product
@@ -103,11 +106,14 @@ def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, 
         s_style, style_reasons = style_score(item.style_tags, user, text)
         s_fit = fit_adjustment(user.body_shape, p.category, text)
         s_price = price_score(p.price, user.budget_per_item)
-        score = W_SIM * c.score + W_STYLE * s_style + W_FIT * s_fit + W_PRICE * s_price
+        s_colour = target.colour_score(p)
+        score = W_SIM * c.score + W_STYLE * s_style + W_FIT * s_fit + W_PRICE * s_price + W_COLOUR * s_colour
 
         reasons = []
-        if item.colour.lower() in p.colour.lower():
+        if s_colour == 1.0 or item.colour.lower() in p.colour.lower():
             reasons.append("Same colour")
+        elif s_colour == 0.0 and target.colour:
+            reasons.append("Different colour")
         reasons += style_reasons
         if s_fit > 0:
             reasons.append(f"Cut suits your {BODY_SHAPES.get(user.body_shape, '').lower()} shape")

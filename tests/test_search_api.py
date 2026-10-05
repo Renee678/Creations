@@ -152,3 +152,8 @@ def test_outfits_show_as_boards_and_can_be_saved_to_my_style(client):
     assert "boardHtml(o.pieces)" in card and "saveButton(" in card, "a lookbook outfit is a board you can save"
     assert 'source: "fitting_room"' in app_js, "a mix from the fitting room can be saved too"
     assert "loadMyOutfits()" in app_js
+
+
+def test_find_dupes_says_when_it_shows_fewer_or_relaxed_matches(client):
+    render = client.get("/static/app.js").text.split("function renderLook")[1].split("\n}\n")[0]
+    assert "s.note" in render and "s.relaxed" in render

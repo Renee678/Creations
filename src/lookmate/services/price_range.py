@@ -5,6 +5,7 @@ designer pump win a slot. So searches try the range as given, then roughly half 
 quarter to 3x, then any price. Picks from a widened step are labelled, so the user sees why.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..catalog.service import Catalog, SearchResult
@@ -40,16 +41,18 @@ class PriceRange:
 
 
 def search_in_range(catalog: Catalog, query: str, k: int, category: str | None, price: PriceRange,
-                    want: int = 1, exclude: set[str] | None = None, any_price: bool = True) -> list[SearchResult]:
+                    want: int = 1, exclude: set[str] | None = None, any_price: bool = True,
+                    accept: Callable[[SearchResult], bool] | None = None) -> list[SearchResult]:
     """Candidates from the tightest step that yields at least `want` of them.
 
     With `any_price=False` the search stops at a quarter to 3x the range: better no pick than a
-    $300 pump in a $45 outfit.
+    $300 pump in a $45 outfit. With `accept`, only candidates it passes are kept and counted.
     """
     found: dict[str, SearchResult] = {}
     for low, high in price.steps(any_price):
         for r in catalog.search(query, k=k, category=category, min_price=low, max_price=high, exclude=exclude):
-            found.setdefault(r.product.id, r)
+            if accept is None or accept(r):
+                found.setdefault(r.product.id, r)
         if len(found) >= want:
             break
     return list(found.values())
