@@ -35,6 +35,7 @@ class VectorIndex:
         category: str | None = None,
         max_price: float | None = None,
         exclude: set[str] | None = None,
+        min_price: float | None = None,
     ) -> list[Hit]:
         if len(self) == 0:
             return []
@@ -44,6 +45,8 @@ class VectorIndex:
             mask &= self.categories == category
         if max_price is not None:
             mask &= self.prices <= max_price
+        if min_price is not None:
+            mask &= self.prices >= min_price
         if exclude:
             mask &= ~np.isin(self.ids, list(exclude))
         candidates = np.flatnonzero(mask)

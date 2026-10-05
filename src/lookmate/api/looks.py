@@ -2,7 +2,7 @@ import hashlib
 import hmac
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES
+from ..llm.schemas import LookAnalysis
 from ..models import Look
+from ..services.dupes import find_dupes
+from ..services.price_range import PriceRange
+from ..services.style_memory import user_context
 from .profiles import get_user_or_404
 
 router = APIRouter(prefix="/api/looks", tags=["looks"])
@@ -60,11 +64,26 @@ async def upload_look(
 
 
 @router.get("/{look_id}")
-def get_look(look_id: int, db: Session = Depends(get_db)) -> dict:
+def get_look(
+    look_id: int,
+    request: Request,
+    price_min: float | None = Query(default=None, ge=0, le=10000),
+    price_max: float | None = Query(default=None, ge=0, le=10000),
+    db: Session = Depends(get_db),
+) -> dict:
     look = db.get(Look, look_id)
     if look is None:
         raise HTTPException(404, "look not found")
-    return look_out(look)
+    out = look_out(look)
+    if look.status == "done" and (price_min is not None or price_max is not None):
+        # Re-pick for another price range from the stored analysis: search only, no new model call.
+        r = look.result
+        analysis = LookAnalysis(is_outfit=True, vibe=r["vibe"], style_tags=r["style_tags"],
+                                items=[s["item"] for s in r["sections"]])
+        user = user_context(db, get_user_or_404(db, look.user_id))
+        price = PriceRange.from_params(price_min, price_max, user.budget_per_item)
+        out["result"] = r | find_dupes(analysis, request.app.state.runtime.catalog, user, price)
+    return out
 
 
 def require_access_code(given: str) -> None:

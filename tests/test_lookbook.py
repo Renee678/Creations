@@ -148,19 +148,29 @@ def test_bad_hex_from_the_model_is_replaced():
     assert Swatch(name="x", hex="C19A6B").hex == "#c19a6b"
 
 
-def test_lookbook_pieces_stay_near_the_budget(runtime):
-    from lookmate.services.lookbook import BUDGET_STRETCH, Palette, _fill_slot
+def test_lookbook_pieces_stay_in_the_price_range_when_they_can(runtime):
+    from lookmate.services.lookbook import Palette, _fill_slot
+    from lookmate.services.price_range import PriceRange
     from lookmate.services.ranking import UserContext
 
-    for budget in (10, 20, 40):
-        user = UserContext(budget_per_item=budget)
+    for low, high in [(0, 15), (0, 30), (20, 60)]:
+        price = PriceRange(low, high)
         for category in ("top", "bottom", "dress", "outerwear", "shoes", "bag"):
-            cheap = [p for p in runtime.catalog.products.values()
-                     if p.category == category and p.price <= budget * BUDGET_STRETCH]
-            piece = _fill_slot(runtime.catalog, user, Palette.from_analysis(None), "minimalist",
-                               category, category, "black", set())
-            if cheap:
-                assert piece["price"] <= budget * BUDGET_STRETCH, (budget, category, piece["name"])
+            fits = [p for p in runtime.catalog.products.values() if p.category == category and low <= p.price <= high]
+            piece = _fill_slot(runtime.catalog, UserContext(), Palette.from_analysis(None), "minimalist",
+                               category, category, "black", set(), price)
+            if fits:
+                assert low <= piece["price"] <= high, (low, high, category, piece["name"])
+                assert "In your price range" in piece["reasons"]
+            else:
+                assert any("price range" in r for r in piece["reasons"]), "a widened pick says so"
+
+
+def test_lookbook_takes_a_price_range(client, user):
+    lb = client.get(f"/api/users/{user['id']}/lookbook", params={"price_min": 0, "price_max": 20}).json()
+    assert lb["price_range"] == {"low": 0, "high": 20}
+    default = client.get(f"/api/users/{user['id']}/lookbook").json()
+    assert default["price_range"] == {"low": 0, "high": 45}, "no range chosen: up to 1.5x the $30 budget"
 
 
 def test_photo_checks_say_which_photo_is_for_try_on(client, runtime, user):

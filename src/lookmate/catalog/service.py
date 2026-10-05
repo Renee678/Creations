@@ -69,7 +69,7 @@ class Catalog:
 
     def search(
         self, query: str, k: int = 5, category: str | None = None,
-        max_price: float | None = None, exclude: set[str] | None = None,
+        max_price: float | None = None, exclude: set[str] | None = None, min_price: float | None = None,
     ) -> list[SearchResult]:
-        hits = self.index.search(self.embedder.embed_query(query), k, category, max_price, exclude)
+        hits = self.index.search(self.embedder.embed_query(query), k, category, max_price, exclude, min_price)
         return [SearchResult(self.products[h.product_id], h.score) for h in hits]

@@ -21,14 +21,12 @@ from ..catalog.service import Catalog
 from ..models import PersonalAnalysis
 from .body import fit_adjustment
 from .colours import NEUTRALS, families, family, palette_score
+from .price_range import PriceRange, search_in_range
 from .ranking import STYLE_KEYWORDS, UserContext, price_score, style_score
 from .vocab import BODY_SHAPES, STYLES, style_name
 
 W_SIM, W_PALETTE, W_STYLE, W_FIT, W_PRICE = 0.55, 0.15, 0.10, 0.10, 0.10
 CANDIDATES_PER_SLOT = 30
-# Pieces may cost up to 1.5x the user's per-item budget; only if nothing fits does a slot go above it.
-# Without this a $260 designer pump can win a slot, since price is only 10% of the score.
-BUDGET_STRETCH = 1.5
 
 Slot = tuple[str, str]  # (category, garment description)
 
@@ -130,8 +128,11 @@ def outfit_styles(user: UserContext, analysis: dict | None, trends: list[tuple[s
 
 def build_lookbook(
     catalog: Catalog, user: UserContext, analysis_rec: PersonalAnalysis | None,
-    trends: list[tuple[str, str]], mode: str = "seasons",
+    trends: list[tuple[str, str]], mode: str = "seasons", price: PriceRange | None = None,
 ) -> dict:
+    # A soft price range (see price_range.py): without it a $260 designer pump can win a slot,
+    # since price is only 10% of the score.
+    price = price or PriceRange.from_params(None, None, user.budget_per_item)
     analysis = analysis_rec.result if analysis_rec else None
     palette = Palette.from_analysis(analysis)
     styles = outfit_styles(user, analysis, trends)
@@ -146,7 +147,7 @@ def build_lookbook(
             style = styles[n % len(styles)]
             colours = palette.colours_for(n + len(sections), len(slots))
             pieces = [p for p in (
-                _fill_slot(catalog, user, palette, style, cat, desc, colour, used)
+                _fill_slot(catalog, user, palette, style, cat, desc, colour, used, price)
                 for (cat, desc), colour in zip(slots, colours)
             ) if p]
             if not pieces:
@@ -166,20 +167,19 @@ def build_lookbook(
         "analysis": analysis,
         "styles": [{"id": s, "label": STYLES[s]} for s in styles],
         "sections": sections,
+        "price_range": price.to_dict(),
     }
 
 
 def _fill_slot(catalog: Catalog, user: UserContext, palette: Palette, style: str,
-               category: str, desc: str, colour: str, used: set[str]) -> dict | None:
+               category: str, desc: str, colour: str, used: set[str], price: PriceRange | None = None) -> dict | None:
     flavour = " ".join(STYLE_KEYWORDS.get(style, [])[:2])
     query = f"{colour} {desc} {flavour}"
-    cap = user.budget_per_item * BUDGET_STRETCH
+    price = price or PriceRange.from_params(None, None, user.budget_per_item)
     candidates = (
-        catalog.search(query, k=CANDIDATES_PER_SLOT, category=category, max_price=cap, exclude=used)
-        or catalog.search(query, k=CANDIDATES_PER_SLOT, category=category, exclude=used)
+        search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, exclude=used)
         # small catalogs run out: reuse a piece rather than leave a gap
-        or catalog.search(query, k=CANDIDATES_PER_SLOT, category=category, max_price=cap)
-        or catalog.search(query, k=CANDIDATES_PER_SLOT, category=category)
+        or search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price)
     )
     best = None
     for c in candidates:
@@ -189,7 +189,7 @@ def _fill_slot(catalog: Catalog, user: UserContext, palette: Palette, style: str
         s_style, _ = style_score([style], user, text)
         s_fit = fit_adjustment(user.body_shape, p.category, text)
         score = (W_SIM * c.score + W_PALETTE * s_pal + W_STYLE * s_style + W_FIT * s_fit
-                 + W_PRICE * price_score(p.price, user.budget_per_item))
+                 + W_PRICE * price_score(p.price, price.high))
         if best is None or score > best[0]:
             best = (score, c, s_pal, s_style, s_fit)
     if best is None:
@@ -206,6 +206,6 @@ def _fill_slot(catalog: Catalog, user: UserContext, palette: Palette, style: str
         reasons.append(f"Matches your {style_name(style)} style" if mine else f"Gives a {style_name(style)} feel")
     if s_fit > 0:
         reasons.append(f"Cut suits your {BODY_SHAPES.get(user.body_shape, '').lower()} shape")
-    if p.price <= user.budget_per_item:
-        reasons.append("Within your budget")
+    note = price.note(p.price)
+    reasons.append(note or "In your price range")
     return {**p.to_dict(), "slot": desc, "score": round(score, 4), "reasons": reasons}

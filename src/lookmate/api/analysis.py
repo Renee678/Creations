@@ -14,6 +14,7 @@ from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES
 from ..models import PersonalAnalysis
 from ..services.lookbook import build_lookbook, latest_analysis
+from ..services.price_range import PriceRange
 from ..services.style_memory import user_context
 from ..services.trends import latest_batch
 from ..worker import analysis_job
@@ -87,9 +88,12 @@ def lookbook(
     user_id: int,
     request: Request,
     mode: Literal["seasons", "occasions"] = Query(default="seasons"),
+    price_min: float | None = Query(default=None, ge=0, le=10000),
+    price_max: float | None = Query(default=None, ge=0, le=10000),
     db: Session = Depends(get_db),
 ) -> dict:
-    user = get_user_or_404(db, user_id)
+    user = user_context(db, get_user_or_404(db, user_id))
     analysis = latest_analysis(db, user_id)
     trends = [(t.style_id, t.label) for t in latest_batch(db)]
-    return build_lookbook(request.app.state.runtime.catalog, user_context(db, user), analysis, trends, mode)
+    price = PriceRange.from_params(price_min, price_max, user.budget_per_item)
+    return build_lookbook(request.app.state.runtime.catalog, user, analysis, trends, mode, price)
