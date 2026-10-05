@@ -103,10 +103,59 @@ async function handleFile(file) {
   } catch (err) { setStatus(err.message, true); }
 }
 
+// ---------- price range (one per page, remembered on this device) ----------
+const priceRange = {};  // page -> {low, high}, or undefined for the server default (0 to 1.5x budget)
+
+function priceQuery(page) {
+  const r = priceRange[page];
+  return r ? `price_min=${r.low}&price_max=${r.high}` : "";
+}
+
+function showPriceRange(page, r) {
+  const box = $(`#price-${page}`);
+  if (!box || !r) return;
+  box.querySelector(".pr-min").value = r.low;
+  box.querySelector(".pr-max").value = r.high;
+  box.querySelector(".pr-out").textContent = `$${Math.round(r.low)} – $${Math.round(r.high)}`;
+}
+
+function setupPriceRange(page, reload) {
+  const box = $(`#price-${page}`);
+  try { priceRange[page] = JSON.parse(store.get(`price:${page}`)) || undefined; } catch { priceRange[page] = undefined; }
+  showPriceRange(page, priceRange[page]);
+  const lo = box.querySelector(".pr-min"), hi = box.querySelector(".pr-max");
+  const read = (moved) => {
+    let low = Number(lo.value), high = Number(hi.value);
+    if (low > high) { if (moved === lo) high = low; else low = high; }
+    return { low, high };
+  };
+  [lo, hi].forEach((el) => {
+    el.addEventListener("input", () => showPriceRange(page, read(el)));
+    el.addEventListener("change", () => {
+      priceRange[page] = read(el);
+      store.set(`price:${page}`, JSON.stringify(priceRange[page]));
+      reload();
+    });
+  });
+  box.querySelector(".pr-reset").addEventListener("click", () => {
+    priceRange[page] = undefined; store.set(`price:${page}`, ""); reload();
+  });
+}
+
+let currentLookId = null;
+setupPriceRange("find", () => currentLookId && refreshLook());
+
+async function refreshLook() {
+  try {
+    const look = await api(`/api/looks/${currentLookId}?${priceQuery("find")}`);
+    renderLook(look.result);
+  } catch (err) { setStatus(err.message, true); }
+}
+
 async function pollLook(id, tries) {
   try {
-    const look = await api(`/api/looks/${id}`);
-    if (look.status === "done") { setStatus(""); renderLook(look.result); return; }
+    const look = await api(`/api/looks/${id}?${priceQuery("find")}`);
+    if (look.status === "done") { setStatus(""); currentLookId = id; renderLook(look.result); return; }
     if (look.status === "failed") { setStatus(look.error || "Analysis failed. Please try another photo.", true); return; }
     setStatus(look.attempts > 1 ? `The AI is busy, retrying (attempt ${look.attempts})…` : "Spotting each piece and searching for dupes…");
     if (tries < 90) setTimeout(() => pollLook(id, tries + 1), 1500);
@@ -132,6 +181,7 @@ function productCard(p, styleTags) {
 }
 
 function renderLook(r) {
+  showPriceRange("find", r.price_range);
   const tags = (r.style_tags || []).map((t) => `<span class="chip">${esc(vocab.styles[t] || t)}</span>`).join("");
   let html = `<div class="vibe"><span class="tape"></span><h2>the vibe</h2><p>${esc(r.vibe)}</p><div class="chips static">${tags}</div></div>`;
   for (const s of r.sections) {
@@ -387,7 +437,8 @@ $("#lb-sections").addEventListener("click", async (e) => {
 async function loadLookbook() {
   lbOutfits.length = 0;
   try {
-    const lb = await api(`/api/users/${userId}/lookbook?mode=${lbMode}`);
+    const lb = await api(`/api/users/${userId}/lookbook?mode=${lbMode}&${priceQuery("lookbook")}`);
+    showPriceRange("lookbook", lb.price_range);
     renderAnalysis(lb.analysis);
     $("#lb-note").textContent = lb.personal
       ? `Built from your palette and your styles: ${lb.styles.map((s) => s.label).join(", ")}.`
@@ -405,6 +456,7 @@ $("#lb-mode").addEventListener("click", (e) => {
   loadLookbook();
 });
 $("#lb-sections").addEventListener("click", onSaveClick);
+setupPriceRange("lookbook", () => loadLookbook());
 
 // ---------- boot ----------
 (async function boot() {
