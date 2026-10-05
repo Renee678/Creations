@@ -458,6 +458,9 @@ $("#lb-mode").addEventListener("click", (e) => {
 $("#lb-sections").addEventListener("click", onSaveClick);
 setupPriceRange("lookbook", () => loadLookbook());
 
+// ---------- installable app ----------
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+
 // ---------- boot ----------
 (async function boot() {
   vocab = await api("/api/vocab");

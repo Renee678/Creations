@@ -41,3 +41,22 @@ def test_saved_catalog_photos_are_served(client):
         assert res.status_code == 200 and res.content.startswith(b"\xff\xd8")
     finally:
         (CATALOG_IMAGES / "polyvore" / "test_1.jpg").unlink()
+
+
+def test_app_is_installable_on_phones(client):
+    import json
+
+    manifest = client.get("/static/manifest.webmanifest")
+    assert manifest.status_code == 200
+    m = json.loads(manifest.content)
+    assert m["display"] == "standalone" and m["start_url"] == "/"
+    sizes = {i["sizes"] for i in m["icons"]}
+    assert {"192x192", "512x512"} <= sizes and any(i["purpose"] == "maskable" for i in m["icons"])
+    for icon in m["icons"]:
+        assert client.get(icon["src"]).content.startswith(b"\x89PNG")
+
+    sw = client.get("/sw.js")
+    assert sw.status_code == 200 and "javascript" in sw.headers["content-type"]
+    assert "/api" not in sw.text.split("const SHELL")[1].split(";")[0], "API responses are never cached"
+    page = client.get("/").text
+    assert 'rel="manifest"' in page and 'rel="apple-touch-icon"' in page

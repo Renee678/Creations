@@ -135,10 +135,34 @@ The catalog mixes two public datasets, half of `CATALOG_SIZE` each, women's fash
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
 | `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |
 
+## Cost and limits
+
+Lookmate calls Claude Opus 5.5 once per photo analysis: roughly $0.05–0.12 per outfit photo, and
+$0.10–0.20 for a personal colour analysis with several photos. These are estimates from token counts
+(Opus 5.5 at $4 / $20 per million input / output tokens), not a measured bill; the worker logs
+`claude usage=` for every call, so real numbers can be read from `docker compose logs worker`.
+Rendered try-ons run on Replicate and are billed there (a few cents per garment, at most two per outfit).
+
+Guardrails for a shared demo: `ACCESS_CODE` gates every upload, `DAILY_LOOK_LIMIT` caps Claude analyses
+per day across all users (50 is plenty for reviewers), `DAILY_TRYON_LIMIT` caps rendered try-ons, and
+re-uploading the same photo, or re-picking a look for another price range, never calls a model again.
+
+## Try it on your phone
+
+Lookmate is an installable web app (PWA), so no app store is needed:
+
+1. Open the site's link on your phone and enter the access code when asked.
+2. iPhone (Safari): tap **Share → Add to Home Screen**. Android (Chrome): tap **⋮ → Add to Home screen**
+   (or **Install app**).
+3. Lookmate now opens full screen from its own icon. The service worker caches only the app shell
+   (HTML, CSS, JS, icons); photos, results and API calls always go to the server.
+
 ## Deploying to a server
 
 `docker-compose.prod.yml` adds Caddy for automatic HTTPS and hides the gateway's dev port.
 On a fresh Ubuntu server with the project copied to it (`scripts/deploy-from-windows.ps1 <ip>` does the
 copy from Windows), run `bash scripts/deploy.sh`. It installs Docker if needed, fills in
 `SITE_ADDRESS` (`<ip>.sslip.io` if you have no domain) and a random `ACCESS_CODE`, starts the stack,
-and prints the URL and access code.
+and prints the URL and access code. It also sets `DAILY_LOOK_LIMIT=50` and `DAILY_TRYON_LIMIT=20` unless your
+`.env` already has values. A 2 vCPU / 4 GB server is comfortable (the first start embeds the catalog);
+1 GB servers can run out of memory during the build.

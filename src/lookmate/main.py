@@ -47,6 +47,12 @@ CATALOG_IMAGES.mkdir(parents=True, exist_ok=True)
 app.mount(IMAGE_ROUTE, StaticFiles(directory=CATALOG_IMAGES), name="catalog-images")
 
 
+@app.get("/sw.js", include_in_schema=False)
+def service_worker() -> FileResponse:
+    # Served from the root so its scope covers the whole app; never cached, so updates roll out.
+    return FileResponse(STATIC / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(STATIC / "index.html")
