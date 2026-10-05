@@ -12,6 +12,7 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 | **Personal lookbook** | 1-3 photos of you → colour season, palette, face shape, hair and makeup ideas → complete outfits for this season (or the next) or per occasion (work, weekend, date night, party, vacation), curated by an AI stylist with a one-line "why it works" |
 | **Make it mine** | In the Lookbook, start from a vibe ("quiet luxury autumn") or an inspiration photo: each piece is rebuilt in your colours and budget, shown as "original → your version" with the reason (e.g. camel → charcoal for a cool winter) |
 | **Virtual try-on** | Mix pieces from any lookbook outfit in the fitting room and "Try it on me" renders them on your own full-body photo (Nano Banana on Replicate by default); without a token it shows a collage of you next to the pieces |
+| **Outfit boards** | Every lookbook outfit is shown as a flat-lay board (each piece placed and labelled, Xiaohongshu style). Save it, or a mix from the fitting room, to **My outfits** in My Style, filtered by season and style |
 | **Style memory** | Every upload and save updates your style profile, which feeds back into ranking |
 | **Profile & fit** | Height, weight, age, body shape, preferred styles, budget → rule-based fit guidance |
 | **Trend radar** | A weekly job researches current styles (old money, coquette, …) with Claude web search and links each trend to catalog items |

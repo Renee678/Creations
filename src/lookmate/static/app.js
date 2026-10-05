@@ -23,7 +23,7 @@ async function api(path, opts = {}) {
 function show(tab) {
   for (const id of ["find", "lookbook", "style", "trends", "profile"]) $("#" + id).hidden = id !== tab;
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  if (tab === "style") loadStyle();
+  if (tab === "style") { loadStyle(); loadMyOutfits(); }
   if (tab === "trends") loadTrends();
   if (tab === "lookbook") loadLookbook(); else renderRoom();
 }
@@ -415,16 +415,103 @@ const WEARABLE = new Set(["top", "bottom", "dress", "outerwear"]);  // what the 
 const ROOM_SLOTS = ["outerwear", "top", "dress", "bottom", "shoes", "bag", "accessory"];  // one of each in the fitting room
 const lbProducts = new Map();  // every piece on the lookbook page, for the fitting room
 
-function outfitCard(o) {
+// ---------- outfit boards: a whole outfit laid flat, every piece labelled (the Xiaohongshu flat-lay) ----------
+// Grid lines (row-start / col-start / row-end / col-end) on a 3x3 board: layers on the left, the outfit's
+// core in the middle, bag and accessories on the right, shoes at the bottom left.
+const BOARD_AREA = { outerwear: "1 / 1 / 3 / 2", top: "1 / 2 / 2 / 3", bottom: "2 / 2 / 4 / 3", dress: "1 / 2 / 4 / 3",
+  shoes: "3 / 1 / 4 / 2", bag: "2 / 3 / 4 / 4", accessory: "1 / 3 / 2 / 4" };
+
+function boardHtml(pieces) {
+  const cats = new Set(pieces.map((p) => p.category));
+  const area = (c) => (c === "shoes" && !cats.has("outerwear") ? "2 / 1 / 4 / 2" : BOARD_AREA[c] || BOARD_AREA.accessory);
+  const twoCols = !cats.has("bag") && !cats.has("accessory");  // nothing for the right-hand column
+  return `<div class="board${twoCols ? " board-2" : ""}">${pieces.map((p) => `<figure class="bp bp-${esc(p.category)}" style="grid-area:${area(p.category)}">
+      ${p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'bp-none',textContent:'${esc(p.product_type)}'}))">`
+        : `<span class="bp-none">${esc(p.product_type)}</span>`}
+      <figcaption>${esc(boardLabel(p))}<b>$${p.price.toFixed(2)}</b></figcaption>
+    </figure>`).join("")}</div>`;
+}
+
+/** "Brown leather jacket": the colour first, as in a flat-lay caption, unless the name already says it. */
+function boardLabel(p) {
+  const name = p.name.length > 42 ? `${p.name.slice(0, 40)}…` : p.name;
+  return !p.colour || name.toLowerCase().includes(p.colour.toLowerCase()) ? name : cap(`${p.colour.toLowerCase()} ${name.replace(/^./, (c) => c.toLowerCase())}`);
+}
+
+const outfitsToSave = new Map();  // key -> what "♡ Save outfit" sends
+
+function saveButton(key, data) {
+  outfitsToSave.set(key, data);
+  return `<button type="button" class="gel save-outfit" data-save-outfit="${esc(key)}">♡ Save outfit</button>`;
+}
+
+async function saveOutfit(btn) {
+  const data = outfitsToSave.get(btn.dataset.saveOutfit);
+  if (!data || btn.classList.contains("saved")) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/users/${userId}/outfits`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    btn.classList.add("saved"); btn.textContent = "♥ Saved to My style";
+  } catch (err) { btn.textContent = err.message; }
+  finally { btn.disabled = false; }
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-save-outfit]");
+  if (b) saveOutfit(b);
+});
+
+function outfitCard(o, section) {
   o.pieces.forEach((p) => lbProducts.set(p.id, p));
   const trend = o.trend ? `<span class="tag">On trend: ${esc(o.trend)}</span>` : "";
   // Try-on happens in one place, the fitting room; an outfit card just fills it.
   const ids = o.pieces.map((p) => p.id).join(",");
+  const season = SEASON_NAMES[section && section.id] ? section.id : null;
+  const save = saveButton(`lb:${ids}`, { title: o.title, product_ids: o.pieces.map((p) => p.id), style_id: o.style_id, season, source: "lookbook" });
   return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>
-      <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></div>
+      <span class="outfit-actions">${save}<button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
     ${o.why ? `<p class="outfit-why">✦ ${esc(o.why)}</p>` : ""}
-    <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></div>`;
+    ${boardHtml(o.pieces)}
+    <details class="shop-pieces"><summary>Shop each piece (${o.pieces.length})</summary>
+      <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></details></div>`;
 }
+
+// ---------- My outfits (in My style): everything saved, by season and by style ----------
+let moSeason = "", moStyle = "";
+
+async function loadMyOutfits() {
+  const q = new URLSearchParams();
+  if (moSeason) q.set("season", moSeason);
+  if (moStyle) q.set("style", moStyle);
+  const r = await api(`/api/users/${userId}/outfits?${q}`);
+  const chip = (attr, id, label, on) => `<button type="button" class="chip ${on ? "on" : ""}" data-${attr}="${esc(id)}">${esc(label)}</button>`;
+  $("#mo-seasons").innerHTML = r.total ? chip("mo-season", "", "All seasons", !moSeason) + r.seasons.map((x) => chip("mo-season", x, SEASON_NAMES[x], moSeason === x)).join("") : "";
+  $("#mo-styles").innerHTML = r.total ? chip("mo-style", "", "All styles", !moStyle) + r.styles.map((x) => chip("mo-style", x.id, x.label, moStyle === x.id)).join("") : "";
+  if (!r.total) {
+    $("#mo-list").innerHTML = `<p class="muted">No outfits saved yet. Tap <strong>♡ Save outfit</strong> on any Lookbook outfit, or mix your own in the fitting room and save it.</p>`;
+    return;
+  }
+  $("#mo-list").innerHTML = r.outfits.map((o) => {
+    o.pieces.forEach((p) => lbProducts.set(p.id, p));
+    const ids = o.pieces.map((p) => p.id).join(",");
+    return `<div class="outfit mo-card"><div class="item-head"><h3>${esc(o.title)}</h3><span class="tag">${esc(o.style)}</span>
+        <span class="tag">${esc(SEASON_NAMES[o.season] || o.season)}</span><span class="muted">$${o.total_price.toFixed(2)} total</span>
+        <span class="outfit-actions"><button type="button" class="gel" data-room-all="${esc(ids)}" data-goto="lookbook">Try it on →</button>
+        <button type="button" class="linklike" data-mo-delete="${o.id}">delete</button></span></div>
+      ${boardHtml(o.pieces)}</div>`;
+  }).join("") || '<p class="muted">Nothing saved for this filter.</p>';
+}
+
+$("#my-outfits").addEventListener("click", async (e) => {
+  const s = e.target.closest("[data-mo-season]");
+  if (s) { moSeason = s.dataset.moSeason; return loadMyOutfits(); }
+  const st = e.target.closest("[data-mo-style]");
+  if (st) { moStyle = st.dataset.moStyle; return loadMyOutfits(); }
+  const del = e.target.closest("[data-mo-delete]");
+  if (del && confirm("Delete this outfit?")) {
+    await api(`/api/users/${userId}/outfits/${del.dataset.moDelete}`, { method: "DELETE" }).catch(() => {});
+    loadMyOutfits();
+  }
+});
 
 // ---------- virtual try-on ----------
 // The try-on photo stays on this device (localStorage); it's sent with each try-on and never kept by Lookmate.
@@ -650,6 +737,7 @@ function renderRoom() {
       ${tryonRunning ? `<button type="button" class="gel primary" disabled><span class="spinner small"></span> Dressing you…</button>`
         : canTry ? `<button type="button" class="gel primary" data-room-try>✨ Try it on me</button>`
         : `<span class="room-need">Add a top, bottom,<br>dress or jacket</span>`}
+      ${pieces.length > 1 ? saveButton(`room:${pieces.map((p) => p.id).join(",")}`, { title: "My mix", product_ids: pieces.map((p) => p.id), source: "fitting_room" }) : ""}
       <button type="button" class="linklike" data-room-clear>clear</button></div>`;
 }
 
@@ -712,7 +800,7 @@ async function loadLookbook(force = false) {
       return renderRoom();
     }
     $("#lb-sections").innerHTML = lb.sections.map((s) =>
-      `<div class="lb-section"><h2>${esc(s.title)}</h2>${s.outfits.map(outfitCard).join("") || `<p class="muted">${lb.styled ? "No outfit passed the stylist's review here. Try a wider price range." : "Nothing found for this one yet."}</p>`}</div>`).join("");
+      `<div class="lb-section"><h2>${esc(s.title)}</h2>${s.outfits.map((o) => outfitCard(o, s)).join("") || `<p class="muted">${lb.styled ? "No outfit passed the stylist's review here. Try a wider price range." : "Nothing found for this one yet."}</p>`}</div>`).join("");
     renderRoom();
   } catch (err) { setMeStatus(err.message, true); }
   finally { clearTimeout(slow); }
@@ -750,7 +838,9 @@ function mineCard(m) {
       ${productCard(x.pick, [m.style_id], { room: true })}</div>`).join("");
   return `<div class="lb-section"><h2>Your version</h2><p class="muted">${esc(m.vibe)}</p>
     <div class="outfit"><div class="item-head"><h3>${esc(m.title)}</h3><span class="muted">$${m.total_price.toFixed(2)} total</span>
-      <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></div>
+      <span class="outfit-actions">${saveButton(`mine:${ids}`, { title: m.title, product_ids: m.pieces.map((x) => x.pick.id), style_id: m.style_id, source: "mine" })}
+      <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
+    ${boardHtml(m.pieces.map((x) => x.pick))}
     ${m.why ? `<p class="outfit-why">✦ ${esc(m.why)}</p>` : `<p class="muted small">Not reviewed by the AI stylist.</p>`}
     <div class="grid mine-grid">${rows}</div></div></div>`;
 }

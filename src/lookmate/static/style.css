@@ -356,3 +356,32 @@ body.room-open { padding-bottom: 110px; }
 .mine-piece { display: flex; flex-direction: column; gap: 4px; }
 .mine-swap { margin: 0; font-size: 13px; }
 .mine-swap .was { color: var(--muted); text-decoration: line-through; }
+
+/* Outfit boards: the whole outfit laid flat on white, every piece labelled by hand */
+.board { display: grid; grid-template-columns: 1fr 1.2fr .9fr; grid-template-rows: repeat(3, auto); gap: 8px 18px;
+  align-items: center; justify-items: center; margin: 6px 0 10px; padding: 22px 18px; background: #fff; border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(18, 48, 90, .08); max-width: 720px; }
+.bp { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.bp img { max-width: 100%; max-height: 210px; object-fit: contain; mix-blend-mode: multiply; }
+.bp-bottom img, .bp-dress img { max-height: 320px; }
+.bp-shoes img, .bp-accessory img { max-height: 130px; }
+.bp-none { display: grid; place-items: center; width: 120px; height: 120px; border-radius: 14px; background: #f3f6fb; color: var(--muted); font-size: 13px; }
+.bp figcaption { font: 700 17px/1.15 var(--f-hand); color: #3d3d3d; text-align: center; max-width: 220px; }
+.bp figcaption b { display: block; font: 600 12px/1.4 var(--f-body); color: var(--muted); }
+.outfit-actions { margin-left: auto; display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.item-head .outfit-actions .room-all { margin-left: 0; }
+.save-outfit { font-size: 12px; color: var(--pink); }
+.save-outfit.saved { color: #fff; background: linear-gradient(135deg, #f49ac9, #a78bfa); }
+.shop-pieces summary { cursor: pointer; color: var(--gel-deep); font-size: 13px; margin: 2px 0 8px; }
+.my-outfits { margin-top: 34px; }
+.my-outfits h2 { font: 600 24px/1.2 var(--f-display); }
+.my-outfits .trend-filter { margin: 8px 0 14px; display: flex; flex-direction: column; gap: 8px; }
+@media (max-width: 600px) {
+  .board { gap: 6px 10px; padding: 14px 10px; }
+  .bp img { max-height: 140px; }
+  .bp-bottom img, .bp-dress img { max-height: 210px; }
+  .bp figcaption { font-size: 14px; }
+}
+.board.board-2 { grid-template-columns: 1fr 1.2fr; max-width: 520px; }
+.mo-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 8px 22px; }
+.mo-card .item-head h3 { font-size: 22px; }

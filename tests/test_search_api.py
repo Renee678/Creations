@@ -142,3 +142,13 @@ def test_lookbook_has_a_make_it_mine_mode(client):
     app_js = client.get("/static/app.js").text
     assert "/mine?" in app_js and "vibe=${encodeURIComponent(lbVibe)}" in app_js
     assert 'class="was"' in app_js, "each piece shows the original next to your version"
+
+
+def test_outfits_show_as_boards_and_can_be_saved_to_my_style(client):
+    html = client.get("/").text
+    assert 'id="my-outfits"' in html and 'id="mo-seasons"' in html and 'id="mo-styles"' in html
+    app_js = client.get("/static/app.js").text
+    card = app_js.split("function outfitCard")[1].split("\n}\n")[0]
+    assert "boardHtml(o.pieces)" in card and "saveButton(" in card, "a lookbook outfit is a board you can save"
+    assert 'source: "fitting_room"' in app_js, "a mix from the fitting room can be saved too"
+    assert "loadMyOutfits()" in app_js
