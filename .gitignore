@@ -6,3 +6,7 @@ __pycache__/
 data/cache/
 *.db
 *.egg-info/
+test-results/
+# Your own photos for live end-to-end runs stay on your computer
+tests/e2e/photos/*
+!tests/e2e/photos/README.md
