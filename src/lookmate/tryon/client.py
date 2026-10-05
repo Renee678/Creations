@@ -16,12 +16,15 @@ outfit pinned next to the photo (a collage) instead of a rendered try-on.
 
 import base64
 import logging
+import re
 import time
 from dataclasses import dataclass
 
 import httpx
 
 log = logging.getLogger(__name__)
+
+TRANSIENT = re.compile(r"overloaded|unavailable|temporar|timed? ?out|rate.?limit|try again|\b(429|500|502|503|504)\b", re.I)
 
 REPLICATE_API = "https://api.replicate.com/v1"
 DEFAULT_MODEL = "cuuupid/idm-vton"
@@ -145,7 +148,11 @@ class ReplicateTryOn:
             pred = self._request("GET", pred["urls"]["get"])
         if pred["status"] != "succeeded":
             log.warning("try-on prediction %s %s: %s", pred.get("id"), pred["status"], pred.get("error"))
-            raise TryOnError("The try-on model couldn't render this outfit. Please try again, or swap a piece.")
+            # A busy or briefly unavailable model is worth one more attempt (the worker retries with backoff);
+            # anything else, e.g. a refused image, fails at once.
+            busy = bool(TRANSIENT.search(str(pred.get("error") or "")))
+            raise TryOnError("The try-on model couldn't render this outfit. Please try again, or swap a piece.",
+                             retryable=busy)
         output = pred["output"][0] if isinstance(pred["output"], list) else pred["output"]
         try:
             img = self.http.get(output)

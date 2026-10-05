@@ -437,3 +437,23 @@ def test_a_try_on_photo_is_checked_before_it_is_used(client, runtime, user, monk
     res = client.post(url, files={"photo": ("me.jpg", PHOTO, "image/jpeg")}).json()
     assert res["good_for_tryon"] is False and "knees" in res["tip"]
     assert client.post(url, files={"photo": ("me.pdf", b"%PDF", "application/pdf")}).status_code == 415
+
+
+def test_a_busy_model_is_retried_but_a_refusal_is_not(monkeypatch):
+    from lookmate.tryon.client import TRANSIENT
+
+    assert TRANSIENT.search("Model is overloaded, please try again later")
+    assert TRANSIENT.search("upstream returned 503")
+    assert not TRANSIENT.search("CUDA out of memory") and not TRANSIENT.search("Input image flagged as sensitive")
+
+
+def test_a_shop_photo_the_model_cant_read_is_described_instead():
+    from lookmate.catalog.service import ProductView
+    from lookmate.tryon.garments import BROWSER_HEADERS, garment_for
+
+    assert "avif" not in BROWSER_HEADERS["Accept"], "never ask a CDN for AVIF"
+    avif = httpx.Client(transport=httpx.MockTransport(
+        lambda req: httpx.Response(200, content=b"avif", headers={"content-type": "image/avif"})))
+    p = ProductView("asos-3", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/z/1-2", 20)
+    g = garment_for(p, None, http=avif)
+    assert g.image is None and g.description, "drawn from its description rather than sent as AVIF"

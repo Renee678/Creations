@@ -11,10 +11,12 @@ from .client import Garment, TryOnError, REGIONS
 BROWSER_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/128.0 Safari/537.36",
-    "Accept": "image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8",
+    # No AVIF: shop CDNs serve it when asked, and the try-on models don't read it.
+    "Accept": "image/jpeg,image/png;q=0.9,image/webp;q=0.8",
     "Referer": "https://www.asos.com/",
 }
 _TYPES = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
+MODEL_TYPES = set(_TYPES.values())
 
 
 def garment_for(product: ProductView, data_dir: Path, http: httpx.Client | None = None) -> Garment:
@@ -33,8 +35,8 @@ def garment_for(product: ProductView, data_dir: Path, http: httpx.Client | None 
                 r = (http or httpx).get(url, follow_redirects=True, timeout=httpx.Timeout(10, read=read_s),
                                         headers=BROWSER_HEADERS)
                 r.raise_for_status()
-                if not r.headers.get("content-type", "").startswith("image/"):
-                    raise httpx.HTTPError("not an image")
+                if r.headers.get("content-type", "").split(";")[0] not in MODEL_TYPES:
+                    raise httpx.HTTPError("not an image the try-on model reads")
                 data, media_type = r.content, r.headers["content-type"].split(";")[0]
                 break
             except httpx.HTTPError:
