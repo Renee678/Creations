@@ -105,9 +105,11 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
   accent colour; the others accept only true neutrals (black, white, grey, cream, navy, plus camel and brown
   for warm palettes) and never words like neon or metallic, so two loud pieces can't meet. Rules alone have
   no taste, though, so Claude then sees the top 5 candidates per slot and a written definition of each style
-  (`STYLE_DEFINITIONS`), picks the most cohesive combination and says why in one line: one call per lookbook
+  (`STYLE_DEFINITIONS`), picks the most cohesive combination and says why in one line. It is also the quality gate: an outfit it
+doesn't approve (clashing colours, a piece off-style) is not shown. One call per lookbook
   page, cached for a week, capped by `DAILY_STYLIST_LIMIT`. Its answer is validated against the candidates,
-  and on any error, without a key or before a photo is analysed, the top-scored pieces stand. Colour families
+  and on any error, without a key or before a photo is analysed, the rule-checked picks stand, labelled as not
+reviewed. Colour families
   map the model's words ("dusty rose") and catalog names ("Light Pink") onto one vocabulary, so palette
   matching is a set lookup that can be unit-tested.
 - **Trends without scraping.** Xiaohongshu/TikTok/Instagram have no public API and forbid scraping, so the

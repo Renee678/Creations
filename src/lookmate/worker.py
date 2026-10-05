@@ -287,6 +287,8 @@ def _serve(rt: Runtime, stop_event: threading.Event, check_trends: bool) -> None
             log.exception("unexpected error on job %s", job)
             _fail_after_crash(job)
             rt.queue.ack(job)
+    if trend_thread is not None:
+        trend_thread.join(timeout=10)  # let a quick check finish; a long research is a daemon and is dropped
 
 
 def main() -> None:

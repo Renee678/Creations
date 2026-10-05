@@ -93,8 +93,12 @@ range, body shape and palette. Pick exactly one candidate per slot so the outfit
 - fabrics, weight and formality that belong together and suit the season or occasion;
 - faithful to the style definition (never something loud for a muted style).
 When candidates are equally good, prefer the one listed first.
-Return the chosen ids in slot order, and one short sentence (at most 20 words) for the client on why the outfit
-works, in English."""
+You are also the quality gate: nothing reaches the client unless you approve it. Approve an outfit only if you
+would proudly show it in a lookbook. If no combination of its candidates works (clashing colours, a piece that
+breaks the style, mismatched formality), set approved to false; it will not be shown. Don't reject over small
+matters of taste.
+Return the chosen ids in slot order and, for approved outfits, one short sentence (at most 20 words) for the
+client on why the outfit works; for rejected ones, what clashes. Write in English."""
 
 
 class ClaudeVision:
@@ -332,7 +336,7 @@ class FakeVision:
             base = sorted({c.colour.lower() for c, s in zip(picks, o.slots) if s.role == "neutral" and c.colour})
             why = (f"One {accent.colour.lower()} accent" if accent and accent.colour else "A calm base") + (
                 f" grounded by {' and '.join(base)}" if base else "") + f", true to {o.style.lower()}."
-            outfits.append(StyledOutfit(index=o.index, picks=[c.id for c in picks], why=why))
+            outfits.append(StyledOutfit(index=o.index, picks=[c.id for c in picks], approved=True, why=why))
         return StylingResult(outfits=outfits)
 
 

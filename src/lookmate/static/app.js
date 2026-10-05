@@ -690,7 +690,8 @@ async function loadLookbook(force = false) {
     renderSeasonChips(lb);
     $("#lb-note").textContent = lb.personal
       ? `Built from your palette and your styles: ${lb.styles.map((s) => s.label).join(", ")}.`
-        + (lb.styled && lb.stylist !== "fake" ? " An AI stylist picked each outfit from the best-matching pieces." : "")
+        + (lb.styled && lb.stylist !== "fake" ? " An AI stylist picked and approved every outfit."
+          : " These outfits follow the colour rules but haven't been reviewed by the AI stylist.")
       : "Upload a photo for outfits in your own colours. For now these use neutral colours and your styles.";
     if (!lb.personal && store.get("lbBrowse") !== "1") {
       // Photos first: outfits are built from your colours, and the full-body photo is what try-on dresses.
@@ -701,7 +702,7 @@ async function loadLookbook(force = false) {
       return renderRoom();
     }
     $("#lb-sections").innerHTML = lb.sections.map((s) =>
-      `<div class="lb-section"><h2>${esc(s.title)}</h2>${s.outfits.map(outfitCard).join("") || '<p class="muted">Nothing found for this one yet.</p>'}</div>`).join("");
+      `<div class="lb-section"><h2>${esc(s.title)}</h2>${s.outfits.map(outfitCard).join("") || `<p class="muted">${lb.styled ? "No outfit passed the stylist's review here. Try a wider price range." : "Nothing found for this one yet."}</p>`}</div>`).join("");
     renderRoom();
   } catch (err) { setMeStatus(err.message, true); }
   finally { clearTimeout(slow); }

@@ -18,12 +18,17 @@ log = logging.getLogger(__name__)
 CACHE_TTL_S = 7 * 24 * 3600
 
 
-def curate(llm, redis_client, request: StylingRequest, daily_limit: int) -> dict[int, tuple[list[str], str]]:
-    """Outfit index -> (one product id per slot, why it works). Empty when the scorer's picks should stand."""
+Curated = dict[int, tuple[list[str], str, bool]]
+
+
+def curate(llm, redis_client, request: StylingRequest, daily_limit: int) -> Curated:
+    """Outfit index -> (one product id per slot, why it works or what clashes, approved).
+
+    Empty when the stylist couldn't run: then the scorer's picks stand, unreviewed."""
     if not request.outfits:
         return {}
     body = request.model_dump_json()
-    key = f"stylist:{getattr(llm, 'name', '')}:{hashlib.sha256(body.encode()).hexdigest()}"
+    key = f"stylist:v2:{getattr(llm, 'name', '')}:{hashlib.sha256(body.encode()).hexdigest()}"
     cached = _cache_get(redis_client, key)
     if cached is None:
         if not _take_quota(redis_client, daily_limit):
@@ -38,7 +43,7 @@ def curate(llm, redis_client, request: StylingRequest, daily_limit: int) -> dict
     return _validated(request, cached)
 
 
-def _validated(request: StylingRequest, result_json: str) -> dict[int, tuple[list[str], str]]:
+def _validated(request: StylingRequest, result_json: str) -> Curated:
     result = StylingResult.model_validate_json(result_json)
     by_index = {o.index: o for o in request.outfits}
     out = {}
@@ -51,7 +56,7 @@ def _validated(request: StylingRequest, result_json: str) -> dict[int, tuple[lis
             ids = [c.id for c in slot.candidates]
             pick = styled.picks[i] if i < len(styled.picks) else None
             picks.append(pick if pick in ids else (ids[0] if ids else ""))
-        out[styled.index] = (picks, styled.why.strip())
+        out[styled.index] = (picks, styled.why.strip(), styled.approved)
     return out
 
 

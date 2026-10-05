@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+import logging
 import re
 from collections.abc import Callable
 
@@ -30,6 +31,8 @@ from .colours import NEUTRALS, colour_word, families, family, palette_score
 from .price_range import PriceRange, search_in_range
 from .ranking import STYLE_KEYWORDS, UserContext, price_score, style_score
 from .vocab import BODY_SHAPES, STYLE_DEFINITIONS, STYLES, style_name
+
+log = logging.getLogger(__name__)
 
 W_SIM, W_PALETTE, W_STYLE, W_FIT, W_PRICE = 0.55, 0.15, 0.10, 0.10, 0.10
 CANDIDATES_PER_SLOT = 30
@@ -43,7 +46,7 @@ LOUD = re.compile(r"\b(neon|fluro|fluoro|fluorescent|bright|metallic|sequin\w*|g
                   r"high[- ]shine|tie[- ]dye|electric|hot pink|lime)\b", re.I)
 MUTED_STYLES = {"quiet_luxury", "old_money", "minimalist", "clean_girl"}
 
-Stylist = Callable[[StylingRequest], dict[int, tuple[list[str], str]]]
+Stylist = Callable[[StylingRequest], dict[int, tuple[list[str], str, bool]]]
 
 Slot = tuple[str, str]  # (category, garment description)
 
@@ -185,6 +188,7 @@ def build_lookbook(
                 "style_id": style,
                 "trend": trend_labels.get(style),
                 "why": None,
+                "reviewed": False,  # True once the stylist has approved it
                 "slots": filled,
             })
         sections.append({"id": section_id, "title": title, "outfits": outfits})
@@ -205,7 +209,7 @@ def build_lookbook(
         "styles": [{"id": s, "label": STYLES[s]} for s in styles],
         "sections": sections,
         "price_range": price.to_dict(),
-        "styled": any(o["why"] for s in sections for o in s["outfits"]),
+        "styled": any(o["reviewed"] for s in sections for o in s["outfits"]),
     }
 
 
@@ -225,14 +229,26 @@ def _apply_stylist(stylist: Stylist, sections: list[dict], palette: Palette, ana
                 for p in opts[:STYLIST_CHOICES]]) for desc, role, opts in o["slots"]],
         ) for i, o in enumerate(outfits)],
     )
-    for i, (picks, why) in stylist(request).items():
-        outfit = outfits[i]
+    verdicts = stylist(request)
+    if not verdicts:
+        return  # the stylist couldn't run: the scorer's picks stand, marked unreviewed
+    for i, outfit in enumerate(outfits):
+        if i not in verdicts:
+            outfit["rejected"] = True  # the stylist reviewed the page but didn't pass this one
+            continue
+        picks, why, approved = verdicts[i]
         for (_, _, opts), pick in zip(outfit["slots"], picks):
             chosen = next((p for p in opts if p["id"] == pick), None)
             if chosen:
                 opts.remove(chosen)
                 opts.insert(0, chosen)
-        outfit["why"] = why or None
+        outfit["reviewed"] = True
+        outfit["why"] = (why or None) if approved else None
+        outfit["rejected"] = not approved
+        if not approved:
+            log.info("stylist rejected %r: %s", outfit["title"], why)
+    for section in sections:
+        section["outfits"] = [o for o in section["outfits"] if not o.pop("rejected", False)]
 
 
 def _colour_family(p) -> str | None:

@@ -303,7 +303,7 @@ def test_the_stylist_chooses_among_the_top_candidates(runtime):
         assert req.outfits[0].style_definition, "the stylist sees what the style means"
         picks = [s.candidates[-1].id for s in o.slots]
         picks[0] = "not-a-candidate"  # invented ids are ignored
-        return {0: (picks, "Tonal and calm.")}
+        return {0: (picks, "Tonal and calm.", True)}
 
     plain = build_lookbook(runtime.catalog, UserContext(), Rec, [], "seasons", season="autumn")
     styled = build_lookbook(runtime.catalog, UserContext(), Rec, [], "seasons", season="autumn", stylist=stylist)
@@ -344,7 +344,7 @@ def test_stylist_falls_back_and_caches(runtime):
             return super().curate_outfits(request)
 
     first = stylist.curate(Counting(), runtime.redis, req, 0)
-    assert first[0][0] == ["a", "b"] and "green" in first[0][1].lower()
+    assert first[0][0] == ["a", "b"] and "green" in first[0][1].lower() and first[0][2] is True
     assert stylist.curate(Counting(), runtime.redis, req, 0) == first and len(calls) == 1, "same page, no second call"
     assert stylist.curate(Counting(), runtime.redis, req.model_copy(update={"setting": "winter"}), 1)
     assert stylist.curate(Counting(), runtime.redis, req.model_copy(update={"setting": "spring"}), 1) == {}, \
@@ -357,3 +357,27 @@ def test_a_personal_lookbook_says_why_each_outfit_works(client, runtime, user):
     run_next_job(runtime)
     lb = client.get(f"/api/users/{user['id']}/lookbook").json()
     assert lb["styled"] and all(o["why"] for s in lb["sections"] for o in s["outfits"])
+
+
+def test_only_outfits_the_stylist_approves_are_shown(runtime):
+    from lookmate.services.lookbook import build_lookbook
+    from lookmate.services.ranking import UserContext
+
+    class Rec:
+        result = WINTER
+
+    def strict(req):
+        # Passes the first outfit, rejects the second, says nothing about the rest.
+        first, second = req.outfits[0], req.outfits[1]
+        return {0: ([s.candidates[0].id for s in first.slots], "Calm and tonal.", True),
+                1: ([s.candidates[0].id for s in second.slots], "Green and blue fight.", False)}
+
+    lb = build_lookbook(runtime.catalog, UserContext(), Rec, [], "seasons", season="autumn", stylist=strict)
+    shown = lb["sections"][0]["outfits"]
+    assert len(shown) == 1 and shown[0]["why"] == "Calm and tonal." and shown[0]["reviewed"]
+    assert all("slots" not in o and "rejected" not in o for o in shown)
+
+    # No stylist (no key, an error, the daily cap): the rule-checked outfits stand, marked unreviewed.
+    plain = build_lookbook(runtime.catalog, UserContext(), Rec, [], "seasons", season="autumn", stylist=lambda r: {})
+    assert len(plain["sections"][0]["outfits"]) == 3 and not plain["styled"]
+    assert not any(o["reviewed"] for o in plain["sections"][0]["outfits"])
