@@ -60,3 +60,12 @@ def test_app_is_installable_on_phones(client):
     assert "/api" not in sw.text.split("const SHELL")[1].split(";")[0], "API responses are never cached"
     page = client.get("/").text
     assert 'rel="manifest"' in page and 'rel="apple-touch-icon"' in page
+
+
+def test_tryon_asks_for_a_photo_instead_of_popping_the_picker(client):
+    # A new phone has no saved try-on photo: explain why and let the user tap to choose one,
+    # rather than opening the file picker by surprise.
+    app_js = client.get("/static/app.js").text
+    start = app_js.split("function startTryOn")[1].split("\n}\n")[0]
+    assert "data-tryon-pick" in start and '#tryon-file").click()' not in start
+    assert '[data-tryon-pick]")) return $("#tryon-file").click()' in app_js

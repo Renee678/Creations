@@ -379,8 +379,10 @@ function startTryOn(n) {
   pendingOutfit = n;
   tryonPhoto = tryonPhoto || savedTryonPhoto();
   if (!tryonPhoto) {
-    tryonBox(n, `<p class="muted">None of your photos is full-body yet. Pick one: standing, facing the camera, head to knees.</p>`);
-    $("#tryon-file").click();
+    // Photos never leave the device they were picked on, so a new phone or browser has to be given one once.
+    tryonBox(n, `<div class="tryon-need"><p><strong>Pick a full-body photo of you</strong> (standing, facing the camera, head to knees).</p>
+      <p class="muted small">Your photos stay on the device you picked them on, so this phone or browser needs one once. It remembers it after that.</p>
+      <button type="button" class="gel primary" data-tryon-pick>Choose a photo</button></div>`);
     return;
   }
   pendingOutfit = null;
@@ -425,8 +427,13 @@ function renderTryOn(n, t) {
 $("#lb-sections").addEventListener("click", async (e) => {
   const tryBtn = e.target.closest(".tryon-btn");
   if (tryBtn) return startTryOn(Number(tryBtn.dataset.outfit));
+  if (e.target.closest("[data-tryon-pick]")) return $("#tryon-file").click();
   const again = e.target.closest("[data-tryon-new]");
-  if (again) { tryonPhoto = null; store.set("tryonPhoto", ""); return startTryOn(Number(again.dataset.tryonNew)); }
+  if (again) {
+    tryonPhoto = null; store.set("tryonPhoto", "");
+    pendingOutfit = Number(again.dataset.tryonNew);
+    return $("#tryon-file").click();
+  }
   const del = e.target.closest("[data-tryon-delete]");
   if (del) {
     await api(`/api/tryons/${del.dataset.tryonDelete}`, { method: "DELETE" }).catch(() => {});

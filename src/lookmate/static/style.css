@@ -200,6 +200,8 @@ html, body { overflow-x: hidden; }
 .item-head .tryon-btn { margin-left: auto; align-self: center; }
 .tryon { margin: 0 0 20px; }
 .tryon-wait { display: flex; align-items: center; gap: 10px; color: var(--muted); padding: 14px 0; }
+.tryon-need { padding: 12px 0; }
+.tryon-need p { margin: 0 0 8px; }
 .spinner { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--sky-1); border-top-color: var(--gel);
   animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
