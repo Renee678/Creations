@@ -20,7 +20,7 @@ Requirements: Docker with Compose v2.
 
 ```bash
 cp .env.example .env          # optional: add ANTHROPIC_API_KEY for real image analysis
-docker compose up --build -d  # first boot downloads the H&M catalog (~250 MB) and embedding model
+docker compose up --build -d  # first boot downloads the ASOS + Polyvore catalogs (~480 MB) and embedding model
 open http://localhost:8080
 ```
 
@@ -39,7 +39,7 @@ python -m venv .venv && .venv/bin/pip install -e ".[ml]"   # Windows: .venv\Scri
 python scripts/run_local.py                                   # http://localhost:8000
 ```
 
-Local mode uses the H&M catalog (with product photos) by default; the first start downloads it.
+Local mode uses the ASOS + Polyvore catalog (with product photos) by default; the first start downloads it.
 Set `CATALOG_SOURCE=seed` in `.env` for the small offline catalog. Changing the source re-imports the
 catalog on the next start.
 
@@ -82,7 +82,7 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
   bad requests and refusals fail immediately.
 - **Photos are not kept.** Raw images (outfits and selfies) are deleted as soon as analysis finishes.
 - **Image → text → vector search.** Claude describes each item in catalog language; search runs on text
-  embeddings (BGE-small, the same model as the H&M dataset's precomputed vectors). No model training needed.
+  embeddings (BGE-small, computed locally with fastembed). No model training needed.
 - **Exact search in memory.** ~5k products × 384 dims is a few milliseconds with NumPy, so an ANN index
   (pgvector/HNSW) would add moving parts without a measurable gain. Revisit past ~200k items.
 - **LLM for perception, rules for decisions.** Ranking weights, fit guidance and style memory are
@@ -98,10 +98,20 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
 
 ## Data
 
-- Catalog: [H&M e-commerce products](https://huggingface.co/datasets/Qdrant/hm_ecommerce_products)
-  (CC BY 4.0), sampled to `CATALOG_SIZE` items from women's, Divided and men's lines.
-- Prices are **synthetic** (the dataset has none): a deterministic budget price per category; see
-  `catalog/pricing.py`.
+The catalog mixes two public datasets, half of `CATALOG_SIZE` each, women's fashion only:
+
+- [ASOS e-commerce products](https://huggingface.co/datasets/UniqueData/asos-e-commerce-dataset)
+  (CC BY-NC-ND 4.0, used unmodified for a non-commercial assessment): affordable pieces with **real prices**
+  (GBP converted at a fixed 1.27) and product photos hot-linked from the ASOS image CDN. Rows repeat per
+  size, so the import keeps one per SKU and reads the category from ASOS's own label ("Coats & Jackets by …").
+- [Polyvore](https://huggingface.co/datasets/Marqo/polyvore) (Apache 2.0, one of six shards): designer
+  pieces from Polyvore outfits. The photos ship inside the dataset, so the import saves the chosen ones
+  to `data/cache/images` and the app serves them at `/catalog-images/`. The dataset has no prices, so
+  designer pieces get a deterministic **synthetic** price in a designer band; see `catalog/pricing.py`.
+- Product cards link to a SHEIN and an ASOS **search** for the piece, not to product pages: both datasets
+  are snapshots and most product pages are gone. Nothing is scraped.
+- `CATALOG_SOURCE=hm` still loads the older [H&M dataset](https://huggingface.co/datasets/Qdrant/hm_ecommerce_products)
+  (CC BY 4.0), but its image bucket has been deleted, so those products show no photo.
 - `data/seed_products.json` and `data/seed_trends.json` are small hand-written fallbacks for offline runs.
 
 ## Configuration
@@ -110,9 +120,9 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
 |---|---|---|
 | `ANTHROPIC_API_KEY` | empty | Enables Claude; empty uses the offline fake |
 | `LLM_MODEL` | `claude-opus-5-5` | Model for vision and trend research |
-| `CATALOG_SOURCE` | `hm` (compose) | `hm` or `seed` |
+| `CATALOG_SOURCE` | `asos,polyvore` (compose, local mode) | Comma-separated mix of `asos`, `polyvore`, `hm`, `seed` |
 | `EMBEDDER` | `bge` (compose) | `bge` or `hash` (offline lexical) |
-| `CATALOG_SIZE` | `5000` | Products sampled from the H&M dataset |
+| `CATALOG_SIZE` | `5000` | Products in the catalog, split evenly across the sources |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
 | `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |
 

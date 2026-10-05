@@ -18,9 +18,9 @@ LOCAL_DEFAULTS = {
     "DATABASE_URL": "sqlite:///./lookmate.db",
     "REDIS_URL": "memory://",
     "INLINE_WORKER": "true",
-    # The H&M catalog has product photos; the first start downloads it (~250 MB) into data/cache.
-    # If the download fails, the app falls back to the small bundled catalog.
-    "CATALOG_SOURCE": "hm",
+    # ASOS (affordable, real prices) + Polyvore (designer pieces), both with product photos. The first
+    # start downloads ~480 MB into data/cache; if that fails, the app falls back to the bundled catalog.
+    "CATALOG_SOURCE": "asos,polyvore",
     "EMBEDDER": "bge",
 }
 
@@ -42,5 +42,5 @@ import uvicorn  # noqa: E402
 
 if __name__ == "__main__":
     print("Lookmate (local mode) starting: open http://localhost:8000 once it says 'Application startup complete'")
-    print("The first start downloads the H&M catalog and embedding model, which can take a few minutes.")
+    print("The first start downloads the ASOS + Polyvore catalogs and the embedding model, which can take a few minutes.")
     uvicorn.run("lookmate.main:app", host="127.0.0.1", port=8000)

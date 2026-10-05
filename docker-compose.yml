@@ -17,8 +17,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
-      # Real H&M catalog + semantic embeddings by default; set to seed/hash for a fully offline run.
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-hm}
+      # ASOS + Polyvore catalog (real photos) + semantic embeddings by default; set to seed/hash for a fully offline run.
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
     volumes:
@@ -44,7 +44,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-hm}
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
     volumes:

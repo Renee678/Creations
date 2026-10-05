@@ -18,8 +18,8 @@ def test_products_carry_shop_search_links(client):
     product = client.get("/api/search", params={"q": "puffer jacket", "k": 1}).json()["results"][0]
     links = product["shop_links"]
     assert links["shein"].startswith("https://us.shein.com/pdsearch/")
-    assert links["hm"].startswith("https://www2.hm.com/en_us/search-results.html?q=")
-    assert product["colour"].lower().split()[0] in links["hm"]
+    assert links["asos"].startswith("https://www.asos.com/us/search/?q=")
+    assert product["colour"].lower().split()[0] in links["asos"]
 
 
 def test_search_text_does_not_repeat_the_colour():
@@ -29,3 +29,15 @@ def test_search_text_does_not_repeat_the_colour():
     assert p.search_text == "black quilted jacket"
     assert ProductView("2", "Quilted jacket", "Jacket", "outerwear", "Beige", "", "", 20.0).search_text == "beige quilted jacket"
     assert p.shop_links()["shein"] == "https://us.shein.com/pdsearch/black%20quilted%20jacket/"
+
+
+def test_saved_catalog_photos_are_served(client):
+    from lookmate.main import CATALOG_IMAGES
+
+    (CATALOG_IMAGES / "polyvore").mkdir(parents=True, exist_ok=True)
+    (CATALOG_IMAGES / "polyvore" / "test_1.jpg").write_bytes(b"\xff\xd8\xff\xe0jpeg")
+    try:
+        res = client.get("/catalog-images/polyvore/test_1.jpg")
+        assert res.status_code == 200 and res.content.startswith(b"\xff\xd8")
+    finally:
+        (CATALOG_IMAGES / "polyvore" / "test_1.jpg").unlink()

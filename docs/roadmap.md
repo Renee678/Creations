@@ -15,8 +15,8 @@ Ideas captured during development, with a feasibility note for each. Items move 
 ## Next (proposed)
 - **Search modes** (Renee, 2026-10-04): not only cheaper dupes. Modes for *cheaper look-alike*, *closest
   match at any price* and *premium upgrade*. Ranking already separates the price term, so a mode
-  changes that weight and the price filter. A premium mode needs a higher price band, because the H&M
-  catalog is budget-only.
+  changes that weight and the price filter. The Polyvore designer pieces now give the premium mode
+  a higher price band to draw from.
 - **Image evaluation set**: about 20 labelled outfit photos, measuring item recall and category hit rate
   for look-alikes.
 
