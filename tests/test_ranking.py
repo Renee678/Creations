@@ -44,3 +44,20 @@ def test_style_name_keeps_acronyms():
     from lookmate.services.vocab import style_name
 
     assert style_name("old_money") == "old money" and style_name("y2k") == "Y2K"
+
+
+def test_a_sporty_piece_is_never_a_dupe_for_a_tailored_one():
+    from lookmate.services.ranking import register
+
+    assert register("Wide-leg tailored trousers in navy") == "tailored"
+    assert register("Jersey joggers with drawstring") == "sporty"
+    assert register("Plain cotton t-shirt") is None
+    assert register("Pumpkin knit jumper") is None, "words match whole, not inside other words"
+
+    item = DetectedItem(category="bottom", name="tailored trousers", colour="navy", fit="straight",
+                        details=["pressed crease"], style_tags=["office"], search_query="navy tailored trousers")
+    jogger = ProductView("j", "Navy track joggers", "Trousers", "bottom", "Navy", "", "", 20)
+    trouser = ProductView("t", "Navy pleated trousers", "Trousers", "bottom", "Navy", "", "", 25)
+    plain = ProductView("p", "Navy straight trousers", "Trousers", "bottom", "Navy", "", "", 22)
+    picks = rank(item, [SearchResult(jogger, 0.95), SearchResult(trouser, 0.8), SearchResult(plain, 0.7)], UserContext())
+    assert [p.product_id for p in picks] == ["t", "p"], "the closer-looking joggers are left out"

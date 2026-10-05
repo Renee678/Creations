@@ -10,6 +10,7 @@ terms only reorder close candidates. Each term also yields a human-readable
 reason so the UI can explain every recommendation.
 """
 
+import re
 from dataclasses import dataclass, field
 
 from ..catalog.service import SearchResult
@@ -63,6 +64,30 @@ def style_score(tags: list[str], user: UserContext, text: str) -> tuple[float, l
     return score, reasons
 
 
+# Two registers that never stand in for each other: a tracksuit is no dupe for a tailored trouser.
+REGISTERS = {
+    "sporty": ("sport", "athletic", "gym", "track", "jogger", "hoodie", "sweatshirt", "legging", "running",
+               "training", "active", "tracksuit", "fleece", "cycling short", "basketball", "football", "trainer"),
+    "tailored": ("tailored", "blazer", "suit", "pleat", "satin", "silk", "wool", "structured", "formal", "smart",
+                 "cigarette", "pencil", "court shoe", "pump", "loafer", "blouse", "trench"),
+}
+
+
+def register(text: str) -> str | None:
+    """'sporty', 'tailored' or None (neither, or both) for a piece's description."""
+    t = text.lower()
+    hits = {r for r, words in REGISTERS.items()
+            if any(re.search(rf"\b{re.escape(w)}(s|es|ed|y|ing)?\b", t) for w in words)}
+    return hits.pop() if len(hits) == 1 else None
+
+
+def same_register(item: DetectedItem, product_text: str) -> bool:
+    """False only when the original and the candidate sit in opposite registers."""
+    original = register(" ".join([item.name, item.fit, item.search_query, *item.details, *item.style_tags]))
+    candidate = register(product_text)
+    return not (original and candidate and original != candidate)
+
+
 def price_score(price: float, budget: float) -> float:
     """1.0 for free, 0.5 at exactly the budget, 0 at twice the budget."""
     return max(0.0, 1.0 - price / (2 * budget))
@@ -73,6 +98,8 @@ def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, 
     for c in candidates:
         p = c.product
         text = f"{p.name} {p.product_type} {p.description}"
+        if not same_register(item, text):
+            continue  # a sporty piece is never a dupe for a tailored one, or the other way round
         s_style, style_reasons = style_score(item.style_tags, user, text)
         s_fit = fit_adjustment(user.body_shape, p.category, text)
         s_price = price_score(p.price, user.budget_per_item)
