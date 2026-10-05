@@ -177,9 +177,9 @@ def _fill_slot(catalog: Catalog, user: UserContext, palette: Palette, style: str
     query = f"{colour} {desc} {flavour}"
     price = price or PriceRange.from_params(None, None, user.budget_per_item)
     candidates = (
-        search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, exclude=used)
+        search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, exclude=used, any_price=False)
         # small catalogs run out: reuse a piece rather than leave a gap
-        or search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price)
+        or search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, any_price=False)
     )
     best = None
     for c in candidates:

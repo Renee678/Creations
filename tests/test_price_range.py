@@ -14,6 +14,7 @@ def test_range_defaults_to_the_budget_and_orders_its_ends():
 def test_widening_steps_and_labels():
     r = PriceRange(20, 40)
     assert r.steps() == [(20, 40), (10, 60), (5, 120), (None, None)]
+    assert r.steps(any_price=False) == [(20, 40), (10, 60), (5, 120)]
     assert r.note(30) is None
     assert r.note(55) == "A bit above your price range"
     assert r.note(200).startswith("Above your price range")
@@ -32,6 +33,8 @@ def test_search_widens_only_as_far_as_needed(runtime):
     # Nothing at all under a tenth of the cheapest coat: the search still answers, from a wider step.
     res = search_in_range(runtime.catalog, "coat", 10, "outerwear", PriceRange(0, cheapest / 10))
     assert res, "never comes back empty"
+    # Outfits stop at 3x: no pick beats a wildly overpriced one.
+    assert search_in_range(runtime.catalog, "coat", 10, "outerwear", PriceRange(0, cheapest / 10), any_price=False) == []
     # A range that holds coats returns only those.
     res = search_in_range(runtime.catalog, "coat", 10, "outerwear", PriceRange(0, coats[-1]))
     assert all(r.product.price <= coats[-1] for r in res)

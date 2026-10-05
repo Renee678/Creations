@@ -23,8 +23,9 @@ class PriceRange:
         low = low if low is not None else 0.0
         return cls(min(low, high), max(low, high))
 
-    def steps(self) -> list[tuple[float | None, float | None]]:
-        return [(self.low, self.high), (self.low * 0.5, self.high * 1.5), (self.low * 0.25, self.high * 3), (None, None)]
+    def steps(self, any_price: bool = True) -> list[tuple[float | None, float | None]]:
+        steps = [(self.low, self.high), (self.low * 0.5, self.high * 1.5), (self.low * 0.25, self.high * 3)]
+        return steps + [(None, None)] if any_price else steps
 
     def note(self, price: float) -> str | None:
         """Why a pick sits outside the range, or None if it's inside."""
@@ -39,10 +40,14 @@ class PriceRange:
 
 
 def search_in_range(catalog: Catalog, query: str, k: int, category: str | None, price: PriceRange,
-                    want: int = 1, exclude: set[str] | None = None) -> list[SearchResult]:
-    """Candidates from the tightest step that yields at least `want` of them."""
+                    want: int = 1, exclude: set[str] | None = None, any_price: bool = True) -> list[SearchResult]:
+    """Candidates from the tightest step that yields at least `want` of them.
+
+    With `any_price=False` the search stops at a quarter to 3x the range: better no pick than a
+    $300 pump in a $45 outfit.
+    """
     found: dict[str, SearchResult] = {}
-    for low, high in price.steps():
+    for low, high in price.steps(any_price):
         for r in catalog.search(query, k=k, category=category, min_price=low, max_price=high, exclude=exclude):
             found.setdefault(r.product.id, r)
         if len(found) >= want:

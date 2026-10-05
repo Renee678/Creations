@@ -162,8 +162,23 @@ def test_lookbook_pieces_stay_in_the_price_range_when_they_can(runtime):
             if fits:
                 assert low <= piece["price"] <= high, (low, high, category, piece["name"])
                 assert "In your price range" in piece["reasons"]
+            elif piece is None:
+                near = [p for p in runtime.catalog.products.values() if p.category == category and p.price <= high * 3]
+                assert not near, "a slot is only left out when nothing is within 3x the range"
             else:
+                assert piece["price"] <= high * 3, "never a wildly overpriced piece in an outfit"
                 assert any("price range" in r for r in piece["reasons"]), "a widened pick says so"
+
+
+def test_an_outfit_leaves_out_a_piece_rather_than_blow_the_budget(runtime):
+    from lookmate.services.lookbook import Palette, _fill_slot
+    from lookmate.services.price_range import PriceRange
+    from lookmate.services.ranking import UserContext
+
+    cheapest = min(p.price for p in runtime.catalog.products.values() if p.category == "shoes")
+    piece = _fill_slot(runtime.catalog, UserContext(), Palette.from_analysis(None), "minimalist",
+                       "shoes", "shoes", "black", set(), PriceRange(0, cheapest / 4))
+    assert piece is None
 
 
 def test_lookbook_takes_a_price_range(client, user):
