@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from urllib.parse import quote, quote_plus
 
 import numpy as np
 from sqlalchemy import select
@@ -19,6 +20,23 @@ class ProductView:
     description: str
     image_url: str
     price: float
+
+    @property
+    def search_text(self) -> str:
+        """What a shopper would type to find this piece today, e.g. 'beige quilted puffer jacket'."""
+        name = self.name.lower()
+        colour = self.colour.lower()
+        return name if colour in name else f"{colour} {name}"
+
+    def shop_links(self) -> dict[str, str]:
+        # Search links, not product pages: the H&M dataset is 2018-2020 stock, so article pages are mostly gone.
+        return {
+            "shein": f"https://us.shein.com/pdsearch/{quote(self.search_text)}/",
+            "hm": f"https://www2.hm.com/en_us/search-results.html?q={quote_plus(self.search_text)}",
+        }
+
+    def to_dict(self) -> dict:
+        return asdict(self) | {"shop_links": self.shop_links()}
 
 
 @dataclass(frozen=True)

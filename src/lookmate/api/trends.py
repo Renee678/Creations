@@ -18,7 +18,7 @@ def list_trends(request: Request, db: Session = Depends(get_db)) -> dict:
             {
                 "style_id": t.style_id, "label": t.label, "description": t.description,
                 "keywords": t.keywords, "sources": t.sources,
-                "examples": [r.product.__dict__ for r in catalog.search(t.example_query, k=4)],
+                "examples": [r.product.to_dict() for r in catalog.search(t.example_query, k=4)],
             }
             for t in batch
         ],

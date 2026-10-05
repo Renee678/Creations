@@ -39,6 +39,10 @@ python -m venv .venv && .venv/bin/pip install -e ".[ml]"   # Windows: .venv\Scri
 python scripts/run_local.py                                   # http://localhost:8000
 ```
 
+Local mode uses the H&M catalog (with product photos) by default; the first start downloads it.
+Set `CATALOG_SOURCE=seed` in `.env` for the small offline catalog. Changing the source re-imports the
+catalog on the next start.
+
 ## Tests
 
 ```bash

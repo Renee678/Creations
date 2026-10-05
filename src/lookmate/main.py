@@ -66,4 +66,4 @@ def search(
 ) -> dict:
     rt: Runtime = request.app.state.runtime
     results = rt.catalog.search(q, k=k, category=category, max_price=max_price)
-    return {"results": [{**r.product.__dict__, "score": round(r.score, 4)} for r in results]}
+    return {"results": [{**r.product.to_dict(), "score": round(r.score, 4)} for r in results]}

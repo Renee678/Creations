@@ -200,4 +200,4 @@ def _fill_slot(catalog: Catalog, user: UserContext, palette: Palette, style: str
         reasons.append(f"Cut suits your {BODY_SHAPES.get(user.body_shape, '').lower()} shape")
     if p.price <= user.budget_per_item:
         reasons.append("Within your budget")
-    return {**p.__dict__, "slot": desc, "score": round(score, 4), "reasons": reasons}
+    return {**p.to_dict(), "slot": desc, "score": round(score, 4), "reasons": reasons}

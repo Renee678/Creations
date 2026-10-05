@@ -87,3 +87,7 @@ button.primary { margin-top: 12px; background: var(--accent); color: #fff; borde
 .outfit { margin: 14px 0 22px; }
 @media (max-width: 520px) { .beauty { grid-template-columns: 1fr; } }
 .outfit .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.shop { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: auto; padding-top: 4px; }
+.shop a { font-size: 12px; color: var(--accent); text-decoration: none; }
+.shop a:hover { text-decoration: underline; }
+.card .shop + button { margin-top: 6px; }

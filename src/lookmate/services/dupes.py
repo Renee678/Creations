@@ -21,7 +21,7 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext) -> d
             "item": item.model_dump(),
             "picks": [
                 {
-                    **catalog.products[p.product_id].__dict__,
+                    **catalog.products[p.product_id].to_dict(),
                     "score": p.score,
                     "reasons": p.reasons,
                     "saving_usd": (

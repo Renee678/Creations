@@ -122,6 +122,7 @@ function productCard(p, styleTags) {
       <span class="muted">${esc(p.colour)}</span>
       <span class="price">$${p.price.toFixed(2)}</span> ${saving}
       <span class="reasons">${(p.reasons || []).map(esc).join(" · ")}</span>
+      <div class="shop">${p.shop_links ? `<a href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">Search on SHEIN</a><a href="${esc(p.shop_links.hm)}" target="_blank" rel="noopener">Search on H&amp;M</a>` : ""}</div>
       <button data-save="${esc(p.id)}" data-tags="${esc((styleTags || []).join(","))}">♡ Save</button>
     </div></div>`;
 }

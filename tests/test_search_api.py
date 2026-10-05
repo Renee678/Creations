@@ -12,3 +12,20 @@ def test_search_respects_filters(client):
 def test_search_validates_input(client):
     assert client.get("/api/search", params={"q": ""}).status_code == 422
     assert client.get("/api/search", params={"q": "x", "k": 500}).status_code == 422
+
+
+def test_products_carry_shop_search_links(client):
+    product = client.get("/api/search", params={"q": "puffer jacket", "k": 1}).json()["results"][0]
+    links = product["shop_links"]
+    assert links["shein"].startswith("https://us.shein.com/pdsearch/")
+    assert links["hm"].startswith("https://www2.hm.com/en_us/search-results.html?q=")
+    assert product["colour"].lower().split()[0] in links["hm"]
+
+
+def test_search_text_does_not_repeat_the_colour():
+    from lookmate.catalog.service import ProductView
+
+    p = ProductView("1", "Black quilted jacket", "Jacket", "outerwear", "Black", "", "", 20.0)
+    assert p.search_text == "black quilted jacket"
+    assert ProductView("2", "Quilted jacket", "Jacket", "outerwear", "Beige", "", "", 20.0).search_text == "beige quilted jacket"
+    assert p.shop_links()["shein"] == "https://us.shein.com/pdsearch/black%20quilted%20jacket/"
