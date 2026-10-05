@@ -39,6 +39,8 @@ class VisionLLM(Protocol):
 
     def analyze_person(self, photos: list[tuple[bytes, str]]) -> PersonAnalysis: ...
 
+    def check_photo(self, image: bytes, media_type: str) -> PhotoCheck: ...
+
 
 SYSTEM_PROMPT = f"""You are a fashion stylist who breaks outfit photos down into shoppable items.
 
@@ -72,6 +74,13 @@ If no person's face is clearly visible, set usable to false and fill the rest wi
 Write everything in English."""
 
 
+PHOTO_CHECK_PROMPT = """You check one photo before a virtual try-on. Say how the person is framed, whether
+the face reads well for colour analysis, and whether it works for a try-on: one person, standing, facing
+the camera, visible from head to at least the knees, not cropped. The tip tells the user, kindly and in
+one short sentence, what the photo is good for or how to retake it. Never comment on weight or looks.
+Write in English."""
+
+
 class ClaudeVision:
     name = "claude"
 
@@ -93,6 +102,10 @@ class ClaudeVision:
         result = self._parse(PERSON_PROMPT, blocks, "Here are my photos. What suits me?", PersonAnalysis)
         log.info("claude person analysis: season=%s usable=%s", result.colour_season, result.usable)
         return result
+
+    def check_photo(self, image: bytes, media_type: str) -> PhotoCheck:
+        return self._parse(PHOTO_CHECK_PROMPT, [_image_block(image, media_type)], "Is this photo good for try-on?",
+                           PhotoCheck)
 
     def _parse(self, system: str, images: list[dict], text: str, output_format):
         a = self._anthropic
@@ -284,6 +297,11 @@ class FakeVision:
             for i in range(len(photos))
         ]
         return person
+
+
+    def check_photo(self, image: bytes, media_type: str) -> PhotoCheck:
+        # Offline there is nobody to look at the photo, so it is accepted.
+        return PhotoCheck(framing="full_body", good_for_colour=True, good_for_tryon=True, tip="Ready for try-on.")
 
 
 def make_vision_llm(api_key: str, model: str, timeout_s: float) -> VisionLLM:

@@ -347,3 +347,17 @@ def test_fashn_is_preferred_when_configured():
     assert make_tryon("rep-token", fashn_key="fa-key").name == "fashn"
     assert make_tryon("rep-token").name == "idm-vton"
     assert make_tryon("").name == "preview"
+
+
+def test_a_try_on_photo_is_checked_before_it_is_used(client, runtime, user, monkeypatch):
+    from lookmate.llm.schemas import PhotoCheck
+
+    url = f"/api/users/{user['id']}/photo-check"
+    ok = client.post(url, files={"photo": ("me.jpg", PHOTO, "image/jpeg")}).json()
+    assert ok["good_for_tryon"] is True, "offline, the fake model accepts the photo"
+    waist_up = PhotoCheck(framing="upper_body", good_for_colour=True, good_for_tryon=False,
+                          tip="Step back so your knees are in the photo.")
+    monkeypatch.setattr(runtime.llm, "check_photo", lambda data, media_type: waist_up)
+    res = client.post(url, files={"photo": ("me.jpg", PHOTO, "image/jpeg")}).json()
+    assert res["good_for_tryon"] is False and "knees" in res["tip"]
+    assert client.post(url, files={"photo": ("me.pdf", b"%PDF", "application/pdf")}).status_code == 415

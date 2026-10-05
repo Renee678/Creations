@@ -5,13 +5,14 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..db import get_db
-from ..llm.client import ALLOWED_MEDIA_TYPES
+from ..llm.client import ALLOWED_MEDIA_TYPES, LLMError
 from ..models import TryOn
 from ..tryon.client import REGIONS
 from ..worker import tryon_job
@@ -46,6 +47,31 @@ def take_tryon_quota(redis_client, limit: int) -> bool:
 def tryon_info(request: Request) -> dict:
     tryon = request.app.state.runtime.tryon
     return {"renders": tryon.renders, "model": tryon.name}
+
+
+@router.post("/api/users/{user_id}/photo-check")
+async def check_tryon_photo(
+    user_id: int,
+    request: Request,
+    photo: UploadFile = File(...),
+    x_access_code: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Is this photo usable for try-on (head to knees, facing the camera)? Checked before it's saved,
+    so a waist-up photo is turned away with a tip instead of producing a broken render."""
+    settings = get_settings()
+    require_access_code(x_access_code)
+    get_user_or_404(db, user_id)
+    if photo.content_type not in ALLOWED_MEDIA_TYPES - {"image/gif"}:
+        raise HTTPException(415, "use a JPEG, PNG or WebP photo")
+    data = await photo.read(settings.max_upload_bytes + 1)
+    if not data or len(data) > settings.max_upload_bytes:
+        raise HTTPException(413 if data else 400, "use a photo under 8 MB")
+    try:
+        check = await run_in_threadpool(request.app.state.runtime.llm.check_photo, data, photo.content_type)
+    except LLMError as e:
+        raise HTTPException(503, f"couldn't check the photo: {e}") from e
+    return check.model_dump()
 
 
 @router.post("/api/users/{user_id}/tryons")
