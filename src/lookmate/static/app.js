@@ -511,22 +511,29 @@ function renderRoom() {
   document.body.classList.toggle("room-open", !tray.hidden);
   if (!pieces.length) return;
   const photo = store.get("tryonPhoto");
-  const me = photo && photo.startsWith("data:image/")
-    ? `<img src="${photo}" alt="You">` : `<span class="room-me-empty">you</span>`;
+  const hasPhoto = photo && photo.startsWith("data:image/");
+  const me = hasPhoto ? `<img src="${photo}" alt="You">` : `<span class="room-me-empty">+ your photo</span>`;
   const canTry = pieces.some((p) => WEARABLE.has(p.category));
   const total = pieces.reduce((s, p) => s + p.price, 0);
-  tray.innerHTML = `<div class="room-me" title="Your try-on photo">${me}</div>
+  tray.innerHTML = `<button type="button" class="room-me" data-room-photo title="${hasPhoto ? "Change your try-on photo" : "Add a full-body photo of you"}">${me}</button>
     <div class="room-pieces">${pieces.map((p) => `<button type="button" class="room-piece" data-room="${esc(p.id)}" title="Remove ${esc(p.name)}">
       ${p.image_url ? `<img src="${esc(p.image_url)}" alt="">` : `<span>${esc(p.product_type)}</span>`}<i>×</i></button>`).join("")}</div>
     <div class="room-actions"><span class="room-total">$${total.toFixed(2)}</span>
-      <button type="button" class="gel primary" data-room-try ${canTry ? "" : "disabled"} title="${canTry ? "" : "Add a top, bottom, dress or jacket"}">✨ Try it on me</button>
+      ${canTry ? `<button type="button" class="gel primary" data-room-try>✨ Try it on me</button>`
+        : `<span class="room-need">Add a top, bottom,<br>dress or jacket</span>`}
       <button type="button" class="linklike" data-room-clear>clear</button></div>`;
 }
 
 document.addEventListener("click", (e) => {
   const add = e.target.closest("button[data-room]");
   if (add) return toggleRoom(add.dataset.room);
-  if (e.target.closest("[data-room-try]")) return startTryOn("room");
+  if (e.target.closest("[data-room-try]")) {
+    // No photo on this device yet: open the picker straight away, then try on.
+    if (!(tryonPhoto || savedTryonPhoto())) { pendingOutfit = "room"; return $("#tryon-file").click(); }
+    return startTryOn("room");
+  }
+  if (e.target.closest("[data-room-photo]")) { pendingOutfit = null; return $("#tryon-file").click(); }
+  if (e.target.closest("[data-lb-browse]")) { store.set("lbBrowse", "1"); return loadLookbook(true); }
   if (e.target.closest("[data-room-clear]")) { room = {}; store.set("room", "{}"); renderRoom(); }
 });
 
@@ -547,6 +554,14 @@ async function loadLookbook(force = false) {
     $("#lb-note").textContent = lb.personal
       ? `Built from your palette and your styles: ${lb.styles.map((s) => s.label).join(", ")}.`
       : "Upload a photo for outfits in your own colours. For now these use neutral colours and your styles.";
+    if (!lb.personal && store.get("lbBrowse") !== "1") {
+      // Photos first: outfits are built from your colours, and the full-body photo is what try-on dresses.
+      $("#lb-note").textContent = "";
+      $("#lb-sections").innerHTML = `<div class="lb-gate"><span class="tape"></span><h2>Start with your photos ♡</h2>
+        <p>Add a selfie and a full-body photo above. Your lookbook is then built in your own colours, and the full-body photo is what <strong>Try it on me</strong> dresses.</p>
+        <button type="button" class="linklike" data-lb-browse>or browse outfits without a photo</button></div>`;
+      return renderRoom();
+    }
     $("#lb-sections").innerHTML = lb.sections.map((s) =>
       `<div class="lb-section"><h2>${esc(s.title)}</h2>${s.outfits.map(outfitCard).join("") || '<p class="muted">Nothing found for this one yet.</p>'}</div>`).join("");
     renderRoom();

@@ -84,3 +84,11 @@ def test_lookbook_has_a_fitting_room_for_mixing_outfits(client, runtime, user):
     res = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(ids)},
                       files={"photo": ("me.jpg", b"\xff\xd8\xff\xe0me", "image/jpeg")})
     assert res.status_code == 202 and res.json()["product_ids"] == ids
+
+
+def test_lookbook_asks_for_photos_before_showing_outfits(client):
+    app_js = client.get("/static/app.js").text
+    gate = app_js.split("async function loadLookbook")[1]
+    assert "!lb.personal" in gate and "lb-gate" in gate and "data-lb-browse" in gate
+    # The fitting room tray can add the try-on photo itself, so Try it on me always works.
+    assert "data-room-photo" in app_js and 'pendingOutfit = "room"' in app_js
