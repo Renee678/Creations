@@ -1,5 +1,5 @@
 def test_healthz(client):
-    assert client.get("/healthz").json() == {"status": "ok"}
+    assert client.get("/healthz").json()["status"] == "ok"
 
 
 def test_web_app_and_vocab_are_served(client):

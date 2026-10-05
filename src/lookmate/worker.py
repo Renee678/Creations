@@ -16,7 +16,7 @@ from .config import get_settings
 from .db import SessionLocal
 from .llm.client import LLMError
 from .models import Look, PersonalAnalysis, TryOn, User, utcnow
-from .runtime import Runtime, build_runtime
+from .runtime import Runtime, build_runtime, reload_catalog_if_changed
 from .services.dupes import find_dupes
 from .services.style_memory import record_look, user_context
 from .services.trends import refresh_if_due
@@ -28,6 +28,7 @@ log = logging.getLogger("lookmate.worker")
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_S = 2.0
+CATALOG_CHECK_EVERY_S = 15.0
 GARMENT_BUDGET_S = 7.0  # all garment photos, fetched together; a cache hit is instant
 TREND_CHECK_EVERY_S = 600
 
@@ -274,10 +275,12 @@ def run_forever(rt: Runtime, stop_event: threading.Event | None = None) -> None:
         signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
         signal.signal(signal.SIGINT, lambda *_: stop_event.set())
     log.info("worker started (llm=%s, catalog=%d products)", rt.llm.name, len(rt.catalog.index))
+    shares = []
     if rt.tryon_queue is not None:
         tryons = replace(rt, queue=rt.tryon_queue)  # handlers ack and retry on rt.queue
+        shares.append(tryons)
         threading.Thread(target=_serve, args=(tryons, stop_event, False), daemon=True, name="tryon-worker").start()
-    _serve(rt, stop_event, True)
+    _serve(rt, stop_event, True, shares)
 
 
 def _check_trends(rt: Runtime) -> None:
@@ -289,13 +292,23 @@ def _check_trends(rt: Runtime) -> None:
         log.exception("trend refresh check failed")
 
 
-def _serve(rt: Runtime, stop_event: threading.Event, check_trends: bool) -> None:
+def _serve(rt: Runtime, stop_event: threading.Event, check_trends: bool, shares: list[Runtime] = ()) -> None:
     recovered = rt.queue.recover()
     if recovered:
         log.warning("re-queued %d jobs left over from a previous run", recovered)
     next_trend_check = 0.0 if check_trends else float("inf")
     trend_thread: threading.Thread | None = None
+    next_catalog_check = 0.0 if check_trends else float("inf")
     while not stop_event.is_set():
+        if time.monotonic() >= next_catalog_check:
+            # The API imports a new catalog in the background; pick it up here (and on the try-on thread).
+            next_catalog_check = time.monotonic() + CATALOG_CHECK_EVERY_S
+            try:
+                if reload_catalog_if_changed(rt):
+                    for other in shares:
+                        other.catalog, other.catalog_version = rt.catalog, rt.catalog_version
+            except Exception:
+                log.exception("catalog reload check failed")
         if time.monotonic() >= next_trend_check:
             next_trend_check = time.monotonic() + TREND_CHECK_EVERY_S
             # Research with web search takes minutes: run it beside the queue, not in front of it.

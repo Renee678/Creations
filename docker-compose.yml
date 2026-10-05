@@ -11,6 +11,7 @@ services:
 
   api:
     build: .
+    restart: unless-stopped  # a crash mid-import comes back serving; embedded chunks are cached, so it resumes
     env_file:
       - path: .env
         required: false
@@ -32,11 +33,12 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 5s
       timeout: 3s
-      retries: 480  # first boot streams the catalogs and embeds ~50k products (cached after that)
+      retries: 120  # healthy once it serves; a first-boot catalog import runs in the background (see /healthz)
       start_period: 20s
 
   worker:
     build: .
+    restart: unless-stopped
     command: ["python", "-m", "lookmate.worker"]
     env_file:
       - path: .env

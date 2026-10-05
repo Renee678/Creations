@@ -324,12 +324,15 @@ def test_the_worker_serves_tryons_on_a_separate_thread(runtime, monkeypatch):
     from lookmate import worker
 
     served = []
-    monkeypatch.setattr(worker, "_serve", lambda rt, stop, trends: served.append((rt.queue, trends)))
+    shared = []
+    monkeypatch.setattr(worker, "_serve", lambda rt, stop, trends, shares=(): (
+        served.append((rt.queue, trends)), shared.extend(shares)))
     worker.run_forever(runtime, threading.Event())
     for t in threading.enumerate():
         if t.name == "tryon-worker":
             t.join(timeout=2)
     assert (runtime.queue, True) in served and (runtime.tryon_queue, False) in served
+    assert [r.queue for r in shared] == [runtime.tryon_queue], "a reloaded catalog reaches the try-on thread too"
 
 
 def test_an_old_tryon_on_the_shared_queue_is_handed_over(client, runtime, user, monkeypatch):

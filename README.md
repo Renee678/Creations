@@ -23,7 +23,7 @@ Requirements: Docker with Compose v2.
 
 ```bash
 cp .env.example .env          # optional: add ANTHROPIC_API_KEY for real image analysis
-docker compose up --build -d  # first boot downloads the ASOS + Polyvore catalogs (~480 MB) and embedding model
+docker compose up --build -d  # serves within a minute; the full catalog downloads and embeds in the background
 open http://localhost:8080
 ```
 
@@ -141,6 +141,10 @@ adds its own `AMAZON_MAX_ITEMS` on top:
   (`/dp/<asin>`). The filtered list is cached in `data/cache/amazon_rows_*.jsonl.gz`, and embeddings are
   cached in chunks in `data/cache/embeddings/`, so a failed or repeated import resumes instead of
   starting over.
+- Imports never take the site down. The API serves the catalog it already has (the bundled seed catalog on
+  a new database) and imports on a background thread; the new catalog replaces the old one in a single
+  transaction once it is fully embedded, and the worker reloads it. `/healthz` shows the product count and
+  whether an import is running.
 - Product cards link to a SHEIN and an ASOS **search** for the piece, not to product pages: both datasets
   are snapshots and most product pages are gone. Nothing is scraped.
 - `CATALOG_SOURCE=hm` still loads the older [H&M dataset](https://huggingface.co/datasets/Qdrant/hm_ecommerce_products)

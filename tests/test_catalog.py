@@ -337,3 +337,53 @@ def test_embeddings_are_cached_in_chunks_so_an_import_resumes(tmp_path, monkeypa
     again = importer._embed(rows, Counting(), tmp_path)
     assert Counting.calls == 5, "nothing re-embedded"
     assert (first == again).all()
+
+
+def test_a_catalog_import_runs_behind_a_site_that_already_serves(tmp_path, monkeypatch, fake_redis):
+    """2026-10-05: a redeploy that switched on Amazon took the site down for the whole import.
+
+    Now the API is up at once with the catalog it has (the seed catalog on a new database), imports on a
+    thread, swaps the new catalog in when it is complete, and the worker reloads it.
+    """
+    import threading
+    import time
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from lookmate import runtime as rtmod
+    from lookmate.catalog import importer
+    from lookmate.config import Settings
+
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    monkeypatch.setattr(rtmod, "engine", eng)
+    monkeypatch.setattr(rtmod, "SessionLocal", sessionmaker(eng))
+    _asos_csv(tmp_path / "asos.csv")
+    release = threading.Event()
+    monkeypatch.setattr(importer, "download_asos", lambda cache: (release.wait(10), tmp_path / "asos.csv")[1])
+    data_dir = Path(__file__).resolve().parents[1] / "data"
+    settings = Settings(catalog_source="asos", embedder="hash", data_dir=str(data_dir), catalog_size=50,
+                        database_url=f"sqlite:///{tmp_path}/cat.db")
+
+    api = rtmod.build_runtime(settings, redis_client=fake_redis)
+    assert api.catalog_import["running"], "the import runs behind the site"
+    assert api.catalog.products and all(i.startswith("seed-") for i in api.catalog.products), "seed meanwhile"
+    worker = rtmod.build_runtime(settings, redis_client=fake_redis, import_catalog=False)
+    assert not rtmod.reload_catalog_if_changed(worker), "nothing new yet"
+
+    release.set()
+    deadline = time.monotonic() + 10
+    while api.catalog_import["running"] and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not api.catalog_import["running"] and "error" not in api.catalog_import
+    assert api.catalog.products and all(i.startswith("asos-") for i in api.catalog.products), "swapped in when done"
+    assert rtmod.reload_catalog_if_changed(worker) and set(worker.catalog.products) == set(api.catalog.products)
+    assert not rtmod.reload_catalog_if_changed(worker), "loaded once"
+
+    again = rtmod.build_runtime(settings, redis_client=fake_redis)
+    assert not again.catalog_import["running"], "a restart with the same catalog imports nothing"
+
+
+def test_health_reports_a_background_catalog_import(client):
+    body = client.get("/healthz").json()
+    assert body["status"] == "ok" and body["catalog"]["products"] > 0 and body["catalog"]["running"] is False

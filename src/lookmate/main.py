@@ -75,8 +75,10 @@ def vocab() -> dict:
 
 
 @app.get("/healthz")
-def healthz() -> dict:
-    return {"status": "ok"}
+def healthz(request: Request) -> dict:
+    # Healthy as soon as it serves; a catalog import still running in the background is reported, not waited on.
+    rt = request.app.state.runtime
+    return {"status": "ok", "catalog": {"products": len(rt.catalog.index), **rt.catalog_import}}
 
 
 @app.get("/api/search")
