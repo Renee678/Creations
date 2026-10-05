@@ -1,0 +1,78 @@
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
+      REDIS_URL: redis://redis:6379/0
+      # ASOS + Polyvore + Amazon catalog (real photos) + semantic embeddings by default; set to seed/hash for a fully offline run.
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
+      EMBEDDER: ${EMBEDDER:-bge}
+      FASTEMBED_CACHE_PATH: /app/data/cache/models
+    volumes:
+      - catalog-cache:/app/data/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 5s
+      timeout: 3s
+      retries: 480  # first boot streams the catalogs and embeds ~50k products (cached after that)
+      start_period: 20s
+
+  worker:
+    build: .
+    command: ["python", "-m", "lookmate.worker"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
+      REDIS_URL: redis://redis:6379/0
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
+      EMBEDDER: ${EMBEDDER:-bge}
+      FASTEMBED_CACHE_PATH: /app/data/cache/models
+    volumes:
+      - catalog-cache:/app/data/cache
+    depends_on:
+      api:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lookmate
+      POSTGRES_PASSWORD: lookmate
+      POSTGRES_DB: lookmate
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lookmate"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+volumes:
+  pgdata:
+  catalog-cache:

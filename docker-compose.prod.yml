@@ -1,0 +1,35 @@
+# Production overlay: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Adds Caddy for HTTPS on 80/443 and stops publishing the gateway's dev port.
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - gateway
+
+  gateway:
+    restart: unless-stopped
+    ports: !reset []
+
+  api:
+    restart: unless-stopped
+
+  worker:
+    restart: unless-stopped
+
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+volumes:
+  caddy-data:

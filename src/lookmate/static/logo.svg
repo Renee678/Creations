@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Lookmate">
+  <defs>
+    <!-- iridescent blue → lilac → pink, like the tape and star on the board -->
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8fc3ff"/>
+      <stop offset=".5" stop-color="#a78bfa"/>
+      <stop offset="1" stop-color="#f49ac9"/>
+    </linearGradient>
+    <radialGradient id="gloss" cx=".5" cy="0" r=".7">
+      <stop offset="0" stop-color="#fff" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#g)"/>
+  <ellipse cx="32" cy="9" rx="24" ry="9" fill="url(#gloss)"/>
+  <!-- clothes hanger -->
+  <path d="M32 17a4.5 4.5 0 1 1 4.5 4.5c-1.6 0-4.5 1-4.5 3.6v1.4" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M32 26.5 12.5 40.5c-1.6 1.2-.8 3.5 1.2 3.5h36.6c2 0 2.8-2.3 1.2-3.5L32 26.5Z" fill="none" stroke="#fff" stroke-width="3.2" stroke-linejoin="round"/>
+  <!-- sparkle -->
+  <path d="M48 10l1.6 4.4L54 16l-4.4 1.6L48 22l-1.6-4.4L42 16l4.4-1.6Z" fill="#fff"/>
+</svg>

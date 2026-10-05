@@ -1,0 +1,6 @@
+# Public HTTPS entrypoint. Caddy obtains and renews a Let's Encrypt certificate automatically.
+# SITE_ADDRESS is a domain you own, or <server-ip>.sslip.io when you don't have one.
+{$SITE_ADDRESS} {
+	encode gzip
+	reverse_proxy gateway:80
+}

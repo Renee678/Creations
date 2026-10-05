@@ -1,0 +1,151 @@
+import hashlib
+from datetime import datetime, timezone
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..db import get_db
+from ..models import SavedOutfit
+from ..services.body import guide_for
+from ..services.lookbook import latest_analysis
+from ..services.ranking import STYLE_KEYWORDS
+from ..services.style_memory import record_saved, style_counts, user_context
+from ..services.trends import SEASONS, season_of
+from ..services.vocab import BODY_SHAPES, STYLES, style_name
+from .profiles import get_user_or_404
+
+router = APIRouter(prefix="/api/users/{user_id}", tags=["style"])
+
+
+class SaveIn(BaseModel):
+    product_id: str = Field(min_length=1, max_length=32)
+    style_tags: list[str] = Field(default_factory=list, max_length=12)
+
+
+@router.post("/saved", status_code=201)
+def save_product(user_id: int, body: SaveIn, request: Request, db: Session = Depends(get_db)) -> dict:
+    get_user_or_404(db, user_id)
+    product = request.app.state.runtime.catalog.products.get(body.product_id)
+    if product is None:
+        raise HTTPException(404, "product not found")
+    record_saved(db, user_id, product, body.style_tags)
+    db.commit()
+    return {"saved": body.product_id}
+
+
+@router.get("/style")
+def style_profile(user_id: int, db: Session = Depends(get_db)) -> dict:
+    user = get_user_or_404(db, user_id)
+    counts = style_counts(db, user_id)
+    ctx = user_context(db, user)
+    top_styles = sorted(ctx.style_weights.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    analysis = latest_analysis(db, user_id)
+    return {
+        "analysis": analysis.result if analysis else None,  # the colour and face report from their photos
+        "fit": fit_report(user.body_shape),
+        "styles": [{"id": s, "label": STYLES.get(s, s), "weight": w} for s, w in top_styles],
+        "colours": counts["colour"].most_common(5),
+        "categories": counts["category"].most_common(5),
+        "signals": sum(counts["category"].values()),
+        "summary": summarise(top_styles, counts["colour"].most_common(3)),
+    }
+
+
+def summarise(top_styles, top_colours) -> str:
+    """Template summary: deterministic and free. (An LLM paragraph is a possible upgrade.)"""
+    if not top_styles:
+        return "Not enough to go on yet. Upload a few outfits you like and I'll learn your style."
+    names = " and ".join(style_name(s) for s, _ in top_styles[:2])
+    text = f"You lean towards {names}"
+    if top_colours:
+        text += ", and you often wear " + ", ".join(c for c, _ in top_colours)
+    return text + "."
+
+
+def fit_report(body_shape: str) -> dict:
+    """The same fit rules the ranking uses, as words to look for and to skip."""
+    g = guide_for(body_shape)
+    flat = lambda d: list(dict.fromkeys(w for words in d.values() for w in words))[:8]
+    return {"shape": BODY_SHAPES.get(body_shape), "summary": g.summary, "look_for": flat(g.prefer), "skip": flat(g.avoid)}
+
+
+# ---------- saved outfits ("My outfits" in My Style) ----------
+
+Season = Literal["spring", "summer", "autumn", "winter"]
+
+
+class OutfitIn(BaseModel):
+    title: str = Field(default="", max_length=80)
+    product_ids: list[str] = Field(min_length=2, max_length=8)
+    season: Season | None = None
+    style_id: str | None = None
+    source: Literal["lookbook", "mine", "fitting_room"] = "lookbook"
+
+
+def outfit_out(o: SavedOutfit, catalog) -> dict:
+    pieces = [catalog.products[i].to_dict() for i in o.product_ids if i in catalog.products]
+    return {"id": o.id, "title": o.title, "season": o.season, "style_id": o.style_id,
+            "style": STYLES.get(o.style_id, o.style_id), "source": o.source, "pieces": pieces,
+            "total_price": round(sum(p["price"] for p in pieces), 2), "created_at": o.created_at.isoformat()}
+
+
+def guess_style(products, fallback: str) -> str:
+    """The style whose keywords the pieces mention most; deterministic, used when the caller doesn't say."""
+    text = " ".join(f"{p.name} {p.product_type} {p.description}" for p in products).lower()
+    hits = {s: sum(text.count(k) for k in words) for s, words in STYLE_KEYWORDS.items()}
+    best = max(hits, key=hits.get)
+    return best if hits[best] else fallback
+
+
+@router.post("/outfits")
+def save_outfit(user_id: int, body: OutfitIn, request: Request, db: Session = Depends(get_db)):
+    user = get_user_or_404(db, user_id)
+    catalog = request.app.state.runtime.catalog
+    ids = list(dict.fromkeys(body.product_ids))
+    products = [catalog.products.get(i) for i in ids]
+    if None in products:
+        raise HTTPException(404, "product not found")
+    key = hashlib.sha256(",".join(sorted(ids)).encode()).hexdigest()
+    existing = db.scalar(select(SavedOutfit).where(SavedOutfit.user_id == user_id, SavedOutfit.pieces_key == key))
+    if existing is not None:  # idempotent: saving the same set again (a double tap) keeps one copy
+        return JSONResponse(outfit_out(existing, catalog), status_code=200)
+    favourite = next(iter(user.preferred_styles or []), "minimalist")
+    style = body.style_id if body.style_id in STYLES else guess_style(products, favourite)
+    season = body.season or season_of(datetime.now(timezone.utc).month)
+    title = body.title.strip() or f"{STYLES[style]} {season}"
+    outfit = SavedOutfit(user_id=user_id, title=title, product_ids=ids, pieces_key=key, season=season,
+                         style_id=style, source=body.source)
+    db.add(outfit)
+    for p in products:  # each piece also teaches the style memory, like a single save
+        record_saved(db, user_id, p, [style])
+    db.commit()
+    return JSONResponse(outfit_out(outfit, catalog), status_code=201)
+
+
+@router.get("/outfits")
+def list_outfits(user_id: int, request: Request, season: Season | None = None,
+                 style: str | None = Query(default=None, max_length=30), db: Session = Depends(get_db)) -> dict:
+    get_user_or_404(db, user_id)
+    catalog = request.app.state.runtime.catalog
+    rows = list(db.scalars(select(SavedOutfit).where(SavedOutfit.user_id == user_id)
+                           .order_by(SavedOutfit.created_at.desc(), SavedOutfit.id.desc())))
+    shown = [o for o in rows if (season is None or o.season == season) and (style is None or o.style_id == style)]
+    return {
+        "outfits": [outfit_out(o, catalog) for o in shown],
+        "seasons": [s for s in SEASONS if any(o.season == s for o in rows)],
+        "styles": [{"id": s, "label": STYLES.get(s, s)} for s in dict.fromkeys(o.style_id for o in rows)],
+        "total": len(rows),
+    }
+
+
+@router.delete("/outfits/{outfit_id}", status_code=204)
+def delete_outfit(user_id: int, outfit_id: int, db: Session = Depends(get_db)) -> None:
+    outfit = db.get(SavedOutfit, outfit_id)
+    if outfit is None or outfit.user_id != user_id:
+        raise HTTPException(404, "outfit not found")
+    db.delete(outfit)
+    db.commit()

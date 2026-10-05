@@ -1,0 +1,40 @@
+[project]
+name = "lookmate"
+version = "0.1.0"
+description = "Turn outfit inspiration into affordable, personalised look-alikes"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "sqlalchemy>=2.0",
+  "psycopg[binary]>=3.2",
+  "pydantic-settings>=2.4",
+  "jinja2>=3.1",
+  "python-multipart>=0.0.9",
+  "redis>=5.0",
+  "numpy>=1.26",
+  "anthropic>=0.40",
+  "pyarrow>=16",
+  "httpx>=0.27",
+  "prometheus-client>=0.20",
+  "fakeredis>=2.23",  # in-process Redis for the no-Docker local mode
+]
+
+[project.optional-dependencies]
+ml = ["fastembed>=0.4"]
+dev = ["pytest>=8"]
+e2e = ["pytest>=8", "playwright>=1.45"]  # browser tests in tests/e2e
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+lookmate = ["templates/*.html", "static/*", "static/icons/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
