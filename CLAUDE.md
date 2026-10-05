@@ -18,8 +18,9 @@ FastAPI + Redis job queue + worker + Postgres behind an Nginx gateway. See READM
 - Never put API keys in tracked files. Keys live only in `.env` (git-ignored); `tests/test_no_secrets.py` enforces this.
 - Every behaviour change ships with a test. Run `make test` before committing.
 - Commit in small, descriptive steps. Never squash or rewrite history (the assessment requires the full history).
-- The LLM only does perception (image → structured attributes) and trend research. Ranking, fit rules and
-  style memory stay deterministic and unit-tested.
+- The LLM does perception (image → structured attributes), trend research and outfit curation. Retrieval,
+  scoring, fit rules, colour rules and style memory stay deterministic and unit-tested; Claude curates the final
+  lookbook outfit only from scored candidates, with a deterministic fallback.
 - Anything that calls Claude must also work with `FakeVision` / no researcher, so the app runs without a key.
 - Job handlers must be idempotent: the Redis queue delivers at least once.
 - Everything is English: UI text, data, docs, code, comments and commit messages.

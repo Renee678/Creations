@@ -39,7 +39,7 @@ and a crowded LLM-gateway space (LiteLLM, GPTCache). That led us to pivot to a p
 | **Claude Code** (cloud sessions in a Claude Project), model Claude Opus 5.5 | Primary development interface: market research, product plan, architecture, implementation, tests, debugging, docs, commits |
 | Claude Code web search | Competitor and dataset research, checking API details |
 | Headless Chromium driven by Claude Code | Screenshot-based UI review |
-| **Inside the app:** Claude (`claude-opus-5-5`) via the Anthropic SDK | Outfit image → structured items (`messages.parse` with a Pydantic schema); weekly trend research with the web search tool |
+| **Inside the app:** Claude (`claude-opus-5-5`) via the Anthropic SDK | Outfit image → structured items (`messages.parse` with a Pydantic schema); weekly trend research with the web search tool; the lookbook stylist, which picks each outfit from pre-scored candidates |
 
 No other AI coding assistant (Copilot, Cursor) was used.
 
@@ -58,7 +58,7 @@ No other AI coding assistant (Copilot, Cursor) was used.
    end-to-end smoke test through the gateway (which also asserts that rate limiting returns `429`), and drove the UI
    in headless Chromium to review screenshots.
 5. **Guardrails in the repo.** `CLAUDE.md` records project rules for Claude Code (no keys in tracked files,
-   tests with every change, LLM only for perception). Tests enforce the rules that matter.
+   tests with every change, retrieval and scoring deterministic). Tests enforce the rules that matter.
 
 ## Where AI significantly helped
 
@@ -101,6 +101,21 @@ tool. This could not be exercised without an API key in the development sandbox,
 the last good batch or to seed data on any failure. **TODO(Renee):** record the result of the first real
 run with your key (works / needed changes).
 
+**5. Rules alone had no taste.** The first lookbook was fully rule-based: fixed outfit formulas, each slot
+filled by vector search and a score, the LLM only reading my photos. Testing it, I got a "Quiet luxury
+spring" outfit (in autumn) that paired a bright green satin blazer with bright blue faux-leather trousers.
+Claude traced it to the code: slots were filled independently, nothing judged the outfit as a whole, a
+"navy trousers" search matched bright blue, and blue still counted as "in my palette". The fix has two
+layers. Deterministic rules got stricter (one accent per outfit; neutral slots accept only true neutrals and
+reject words like neon or metallic; muted styles reject loud pieces; the current season comes first), and
+these are unit-tested with the exact failing case. On top, Claude now acts as a stylist: it sees the top 5
+scored candidates per slot plus a written definition of each style, picks the most cohesive combination and
+says why in one line. Its answer is validated (an id that wasn't offered keeps the scorer's pick), cached,
+capped per day, and on any error the scorer's picks stand. The project rule in `CLAUDE.md` changed from
+"the LLM only perceives" to "retrieval and scoring stay deterministic; Claude curates the final outfit from
+scored candidates, with a deterministic fallback". **TODO(Renee):** compare a few outfits with and without
+the stylist on the live server.
+
 ## How generated code was evaluated
 
 - **Tests as the contract.** Over 40 unit and integration tests run fully offline (SQLite, fakeredis, a
@@ -111,5 +126,6 @@ run with your key (works / needed changes).
 - **LLM output is never trusted raw.** The vision model must return a Pydantic schema. Anything
   downstream depends only on validated fields, and refusals or invalid output become explicit failures.
 - **Deterministic where possible.** Prices, fit guidance, ranking and the style profile are rule-based, so
-  their behaviour can be tested exactly. The LLM is used only where perception is needed.
+  their behaviour can be tested exactly. The LLM perceives (photos, trends) and, for lookbooks, only
+  chooses among candidates the rules already scored, with a rule-based fallback.
 - **TODO(Renee):** results of the image evaluation set (category recall, look-alike relevance) once it has run.

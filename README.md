@@ -9,7 +9,7 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 | | |
 |---|---|
 | **Find look-alikes** | Photo → Claude vision → per-item search → personalised ranking with reasons |
-| **Personal lookbook** | 1-3 photos of you → colour season, palette, face shape, hair and makeup ideas → complete outfits per season (spring to winter) or occasion (work, weekend, date night, party, vacation) |
+| **Personal lookbook** | 1-3 photos of you → colour season, palette, face shape, hair and makeup ideas → complete outfits for this season (or the next) or per occasion (work, weekend, date night, party, vacation), curated by an AI stylist with a one-line "why it works" |
 | **Virtual try-on** | Mix pieces from any lookbook outfit in the fitting room and "Try it on me" renders them on your own full-body photo (Nano Banana on Replicate by default); without a token it shows a collage of you next to the pieces |
 | **Style memory** | Every upload and save updates your style profile, which feeds back into ranking |
 | **Profile & fit** | Height, weight, age, body shape, preferred styles, budget → rule-based fit guidance |
@@ -96,11 +96,18 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
   embeddings (BGE-small, computed locally with fastembed). No model training needed.
 - **Exact search in memory.** ~5k products × 384 dims is a few milliseconds with NumPy, so an ANN index
   (pgvector/HNSW) would add moving parts without a measurable gain. Revisit past ~200k items.
-- **LLM for perception, rules for decisions.** Ranking weights, fit guidance and style memory are
-  deterministic and unit-tested; the LLM only turns pixels into structured attributes.
-- **Lookbooks are built, not generated.** The model only reads the photos (colour season, palette, face
-  shape). Outfits come from fixed formulas per season or occasion, flavoured by the user's styles and current
-  trends, coloured from their palette, and filled by catalog search with a transparent score. Colour families
+- **LLM for perception and taste, rules for retrieval and scoring.** Ranking weights, fit guidance, colour
+  rules and style memory are deterministic and unit-tested; the LLM turns pixels into structured attributes
+  and, in the lookbook, chooses among candidates the rules already scored.
+- **Lookbooks: rules shortlist, a stylist chooses.** Outfits come from fixed formulas for the current season
+  (the next one is a tap away) or an occasion, flavoured by the user's styles and current trends, coloured
+  from their palette, and filled by catalog search with a transparent score. One slot per outfit carries the
+  accent colour; the others accept only true neutrals (black, white, grey, cream, navy, plus camel and brown
+  for warm palettes) and never words like neon or metallic, so two loud pieces can't meet. Rules alone have
+  no taste, though, so Claude then sees the top 5 candidates per slot and a written definition of each style
+  (`STYLE_DEFINITIONS`), picks the most cohesive combination and says why in one line: one call per lookbook
+  page, cached for a week, capped by `DAILY_STYLIST_LIMIT`. Its answer is validated against the candidates,
+  and on any error, without a key or before a photo is analysed, the top-scored pieces stand. Colour families
   map the model's words ("dusty rose") and catalog names ("Light Pink") onto one vocabulary, so palette
   matching is a set lookup that can be unit-tested.
 - **Trends without scraping.** Xiaohongshu/TikTok/Instagram have no public API and forbid scraping, so the
@@ -140,6 +147,7 @@ The catalog mixes two public datasets, half of `CATALOG_SIZE` each, women's fash
 | `DAILY_TRYON_LIMIT` | `30` | Global cap on rendered try-ons per UTC day; `0` disables it |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
 | `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |
+| `DAILY_STYLIST_LIMIT` | `200` | Global cap on lookbook stylist calls per UTC day (cached pages are free); past it the top-scored outfits are shown |
 
 ## Cost and limits
 
@@ -147,6 +155,7 @@ Lookmate calls Claude Opus 5.5 once per photo analysis: roughly $0.05–0.12 per
 $0.10–0.20 for a personal colour analysis with several photos. These are estimates from token counts
 (Opus 5.5 at $4 / $20 per million input / output tokens), not a measured bill; the worker logs
 `claude usage=` for every call, so real numbers can be read from `docker compose logs worker`.
+The lookbook stylist is one text-only call per new lookbook page (a few cents; repeat views are cached).
 Rendered try-ons are billed by the try-on service: one Nano Banana call per outfit on Replicate (a few
 cents; see the model page), or per garment, at most two per outfit, on IDM-VTON (about $0.02) or FASHN
 (about $0.075). Keeping a Replicate deployment warm instead would cost $3.51/h
