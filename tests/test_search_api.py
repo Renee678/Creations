@@ -157,3 +157,18 @@ def test_outfits_show_as_boards_and_can_be_saved_to_my_style(client):
 def test_find_dupes_says_when_it_shows_fewer_or_relaxed_matches(client):
     render = client.get("/static/app.js").text.split("function renderLook")[1].split("\n}\n")[0]
     assert "s.note" in render and "s.relaxed" not in render
+
+
+def test_shop_links_drop_the_brand_so_other_shops_find_look_alikes():
+    """Renee: SHEIN has no 'ASOS DESIGN Petite ...'; search for the piece itself."""
+    from lookmate.catalog.service import ProductView, shop_query
+
+    assert shop_query("ASOS DESIGN Petite cropped jumper in mini cable stitch in grey marl", "grey marl") == \
+        "grey marl cropped jumper mini cable stitch"
+    assert shop_query("& Other Stories wrap cardigan in light grey melange", "") == "light grey melange wrap cardigan"
+    assert shop_query("ASYOU hook and eye knitted wrap top in charcoal", "charcoal") == \
+        "charcoal hook and eye knitted wrap top"
+    assert shop_query("Monki wrap cardigan", "Black") == "black wrap cardigan"
+    assert shop_query("Fine-knit V-neck cardigan", "Grey") == "grey fine-knit v-neck cardigan", "no brand: unchanged"
+    p = ProductView("1", "ASOS DESIGN Petite crop top in white", "Top", "top", "white", "", "", 9.0)
+    assert "asos" not in p.shop_links()["shein"].lower()
