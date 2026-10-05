@@ -47,8 +47,10 @@ class VisionLLM(Protocol):
 
 SYSTEM_PROMPT = f"""You are a fashion stylist who breaks outfit photos down into shoppable items.
 
-For the image, list every clearly visible garment, pair of shoes, bag and accessory (at most 6),
-most prominent first. Describe each one in plain English the way a product catalogue would:
+For the image, list the main pieces of the outfit: each garment, pair of shoes, bag and accessory
+that is mostly in frame (about half or more visible), at most 6, most prominent first. A piece that
+is only a sliver at the edge of the photo is not what the user is asking about: list it only if it is
+still clearly identifiable, last, with partial set to true. Describe each one in plain English the way a product catalogue would:
 category, colour, fit, distinguishing details, and a one-sentence search_query that a shopper
 would type to find a similar product (include colour, garment type, fit and key details).
 

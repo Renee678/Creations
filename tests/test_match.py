@@ -122,3 +122,18 @@ def test_a_pick_above_the_range_says_so_first():
     pricey = [(p("ivory-maxi-dear", "Satin maxi skirt", "Ivory", price=90), 0.8)]
     reasons = dupes(pricey)["picks"][0]["reasons"]
     assert "price range" in reasons[0] and "Within your budget" not in reasons
+
+
+def test_a_piece_cut_off_at_the_edge_is_hidden_and_never_takes_a_main_pieces_pick():
+    """Renee's cardigan photo: a sliver of trousers at the bottom edge became a trousers search."""
+    cardigan = DetectedItem(category="top", name="button-front cardigan", colour="charcoal", fit="regular",
+                            details=["knit"], style_tags=[], search_query="charcoal knit cardigan")
+    sliver = DetectedItem(category="bottom", name="knit lounge trousers", colour="heather grey", fit="relaxed",
+                          details=[], style_tags=[], search_query="grey knit trousers", partial=True)
+    knits = FakeCatalog([(ProductView("c1", "Knit cardigan", "Cardigans", "top", "Charcoal", "", "", 25.0), 0.9),
+                         (ProductView("t1", "Knit trousers", "Trousers", "bottom", "Grey", "", "", 25.0), 0.8)])
+    result = find_dupes(LookAnalysis(is_outfit=True, vibe="", style_tags=[], items=[sliver, cardigan]),
+                        knits, UserContext(), PriceRange(0, 100))
+    first, second = result["sections"]
+    assert first["item"]["name"] == "button-front cardigan" and not first["hidden"], "main pieces come first"
+    assert second["hidden"] and second["item"]["partial"], "the sliver is hidden until the user ticks it"

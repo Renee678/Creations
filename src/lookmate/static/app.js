@@ -185,12 +185,17 @@ function renderLook(r) {
   showPriceRange("find", r.price_range);
   const tags = (r.style_tags || []).map((t) => `<span class="chip">${esc(vocab.styles[t] || t)}</span>`).join("");
   let html = `<div class="vibe"><span class="tape"></span><h2>the vibe</h2><p>${esc(r.vibe)}</p><div class="chips static">${tags}</div></div>`;
-  for (const s of r.sections) {
+  // One chip per piece found in the photo: untick what you didn't mean. A piece cut off at the edge starts unticked.
+  if (r.sections.length > 1 || r.sections.some((s) => s.hidden)) {
+    html += `<div class="chips piece-chips"><span class="muted small">Pieces in your photo:</span>${r.sections.map((s, i) =>
+      `<button type="button" class="chip${s.hidden ? "" : " on"}" data-piece="${i}">${esc(s.item.colour)} ${esc(s.item.name)}${s.hidden ? " (cut off)" : ""}</button>`).join("")}</div>`;
+  }
+  for (const [i, s] of r.sections.entries()) {
     const it = s.item;
     const orig = it.estimated_original_price_usd ? `<span class="muted">Original about $${Math.round(it.estimated_original_price_usd)}</span>` : "";
     const count = s.picks.length ? `<span class="tag">${s.picks.length} dupes</span>` : "";
     const notes = s.picks.length && s.note ? `<p class="muted small dupe-note">${esc(s.note)}</p>` : "";
-    html += `<div class="item"><div class="item-head"><h3>${esc(it.colour)} ${esc(it.name)}</h3>${count}${orig}</div>${notes}
+    html += `<div class="item" data-piece-section="${i}"${s.hidden ? " hidden" : ""}><div class="item-head"><h3>${esc(it.colour)} ${esc(it.name)}</h3>${count}${orig}</div>${notes}
       <div class="grid">${s.picks.map((p) => productCard(p, it.style_tags)).join("") || `<p class="muted">${esc(s.note || "No good dupes found.")}</p>`}</div></div>`;
   }
   $("#results").innerHTML = html;
@@ -208,6 +213,12 @@ async function onSaveClick(e) {
   } catch (err) { setStatus(err.message, true); }
 }
 $("#results").addEventListener("click", onSaveClick);
+$("#results").addEventListener("click", (e) => {
+  const chip = e.target.closest("button[data-piece]");
+  if (!chip) return;
+  const on = chip.classList.toggle("on");
+  $(`#results [data-piece-section="${chip.dataset.piece}"]`).hidden = !on;
+});
 
 // ---------- my style report ----------
 const pct = (x, total) => Math.round((x / total) * 100);

@@ -23,6 +23,9 @@ class DetectedItem(BaseModel):
     estimated_original_price_usd: float | None = Field(
         default=None, description="Rough retail price of the item as pictured if it looks designer/premium, else null"
     )
+    partial: bool = Field(
+        default=False, description="True if less than about half of the item is in frame, e.g. cut off at the edge"
+    )
 
 
 class LookAnalysis(BaseModel):

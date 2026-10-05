@@ -18,7 +18,9 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext, pric
     user = replace(user, budget_per_item=price.high)  # the price score aims at the top of the range
     sections = []
     used: set[str] = set()  # never show the same product for two items
-    for item in analysis.items:
+    # Main pieces first, so a sliver at the photo's edge never takes a product from them. Partial pieces
+    # still get a section, but it is hidden until the user asks for it.
+    for item in sorted(analysis.items, key=lambda i: i.partial):
         query = f"{item.colour} {item.name}. {item.search_query}. {' '.join(item.details)}"
         target = Target(item.category, item.name, item.colour, item.details, item.fit)
         # Accuracy over a full page (Renee): same garment type, colour and length, always. Only the price
@@ -35,6 +37,7 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext, pric
         sections.append({
             "item": item.model_dump(),
             "note": note,
+            "hidden": item.partial,
             "picks": [
                 {
                     **catalog.products[p.product_id].to_dict(),
