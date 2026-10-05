@@ -73,7 +73,7 @@ class ReplicateTryOn:
     name = "idm-vton"
     renders = True
 
-    def __init__(self, token: str, model: str = DEFAULT_MODEL, timeout_s: float = 180.0,
+    def __init__(self, token: str, model: str = DEFAULT_MODEL, timeout_s: float = 420.0,
                  http: httpx.Client | None = None):
         self.model = model
         self.timeout_s = timeout_s

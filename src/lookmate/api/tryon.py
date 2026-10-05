@@ -82,8 +82,11 @@ async def create_tryon(
     # Idempotent: the same photo and outfit return the existing try-on instead of paying again.
     key = hashlib.sha256(hashlib.sha256(data).digest() + ",".join(ids).encode()).hexdigest()
     existing = db.scalar(select(TryOn).where(TryOn.user_id == user_id, TryOn.request_sha256 == key))
-    if existing is not None:
+    if existing is not None and existing.status != "failed":
         return JSONResponse(tryon_out(existing) | {"deduplicated": True}, status_code=200)
+    if existing is not None:  # a failed try-on is retried, not handed back
+        db.delete(existing)
+        db.flush()
 
     if rt.tryon.renders and not take_tryon_quota(rt.redis, settings.daily_tryon_limit):
         raise HTTPException(429, "Today's try-on quota is used up. Please come back tomorrow.")

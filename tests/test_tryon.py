@@ -229,3 +229,18 @@ def test_shop_photo_falls_back_to_its_url_when_the_cdn_stalls():
     ReplicateTryOn("t", http=replicate_stub(["succeeded"], seen)).dress(b"p", "image/jpeg", g)
     body = next(s for s in seen if isinstance(s, dict))
     assert body["input"]["garm_img"] == url, "the try-on service fetches it instead"
+
+
+def test_a_failed_tryon_can_be_tried_again(client, runtime, user, renderer, monkeypatch):
+    ids = pick(runtime, "dress")
+    monkeypatch.setattr(renderer, "dress", lambda *a: (_ for _ in ()).throw(TryOnError("model down")))
+    first = request_tryon(client, user["id"], ids).json()["id"]
+    assert run_next_job(runtime) == "failed"
+    monkeypatch.undo()
+    monkeypatch.setattr(runtime, "tryon", renderer)
+    monkeypatch.setattr("lookmate.worker.garment_for",
+                        lambda p, data_dir: Garment(b"img", "image/jpeg", "dresses", p.name))
+    again = request_tryon(client, user["id"], ids)
+    assert again.status_code == 202 and again.json()["id"] != first, "a failure isn't handed back as the answer"
+    assert run_next_job(runtime) == "done"
+    assert client.get(f"/api/tryons/{first}").status_code == 404
