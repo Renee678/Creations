@@ -9,6 +9,8 @@ FastAPI + Redis job queue + worker + Postgres behind an Nginx gateway. See READM
 ## Commands
 - Install: `make install` (creates `.venv`, installs `.[dev]`)
 - Tests: `make test` — offline; uses SQLite, fakeredis, the hash embedder and the fake vision model
+- Browser tests: `make e2e` (Playwright; offline by default, `LOOKMATE_URL=https://… make e2e` for a deployed site).
+  Every bug Renee reports while clicking through the app gets a test in `tests/e2e/test_regressions.py`.
 - Full stack: `docker compose up --build -d`, then `./scripts/smoke_test.sh`
 - No Docker: `python scripts/run_local.py` (SQLite + in-memory Redis + inline worker, port 8000)
 - Offline stack: `CATALOG_SOURCE=seed EMBEDDER=hash docker compose up --build -d`
