@@ -32,4 +32,4 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext) -> d
                 for p in picks
             ],
         })
-    return {"vibe_zh": analysis.vibe_zh, "style_tags": analysis.style_tags, "sections": sections}
+    return {"vibe": analysis.vibe, "style_tags": analysis.style_tags, "sections": sections}

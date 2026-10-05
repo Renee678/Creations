@@ -16,37 +16,37 @@ class FitGuide:
 
 GUIDES: dict[str, FitGuide] = {
     "pear": FitGuide(
-        "肩部和上身可以多些细节，下装选 A 字或阔腿来平衡胯部。",
+        "Add detail at the shoulders and choose A-line or wide-leg bottoms to balance the hips.",
         prefer={"top": ["puff", "bow", "boat", "square", "cropped"], "bottom": ["wide", "a-line", "straight", "high-waisted"],
                 "dress": ["a-line", "flared", "wrap"]},
         avoid={"bottom": ["skinny", "low-rise", "tight"], "dress": ["bodycon"]},
     ),
     "apple": FitGuide(
-        "选择 V 领和有垂感的面料拉长上身，避免腰腹紧身。",
+        "V-necks and fabrics with drape lengthen the torso; avoid anything tight at the waist.",
         prefer={"top": ["v-neck", "flowing", "relaxed", "wrap"], "dress": ["empire", "wrap", "a-line", "flowing"],
                 "outerwear": ["long", "open"]},
         avoid={"top": ["cropped", "tight"], "dress": ["bodycon", "fitted"]},
     ),
     "hourglass": FitGuide(
-        "突出腰线就对了：收腰、裹身、系带款都很合适。",
+        "Show off your waist: wrap, belted and fitted styles all work well.",
         prefer={"top": ["wrap", "fitted", "belted"], "dress": ["wrap", "belted", "fitted", "bodycon"],
                 "bottom": ["high-waisted"]},
         avoid={"top": ["boxy", "oversized"], "dress": ["shift", "boxy"]},
     ),
     "rectangle": FitGuide(
-        "可以用腰带、褶皱和层次感制造曲线。",
+        "Use belts, ruffles and layers to create curves.",
         prefer={"top": ["peplum", "ruffle", "belted", "wrap"], "dress": ["belted", "tiered", "ruffle"],
                 "bottom": ["pleated", "flared"]},
         avoid={},
     ),
     "inverted_triangle": FitGuide(
-        "上身保持简洁，用阔腿裤、A 字裙增加下半身的分量。",
+        "Keep the top simple and add volume below with wide-leg trousers or A-line skirts.",
         prefer={"top": ["v-neck", "simple", "fitted"], "bottom": ["wide", "flared", "a-line", "pleated", "cargo"],
                 "dress": ["a-line", "flared"]},
         avoid={"top": ["puff", "shoulder", "boat"]},
     ),
 }
-DEFAULT_GUIDE = FitGuide("先告诉我你的身形，我会给出更具体的版型建议。")
+DEFAULT_GUIDE = FitGuide("Tell me your body shape and I'll give you more specific fit advice.")
 
 
 def guide_for(body_shape: str) -> FitGuide:

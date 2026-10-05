@@ -9,9 +9,12 @@ from .catalog.embedder import make_embedder
 from .catalog.importer import ensure_catalog
 from .catalog.service import Catalog
 from .config import Settings
+from sqlalchemy import inspect
+
 from .db import Base, SessionLocal, engine
 from .jobqueue import JobQueue
 from .llm.client import VisionLLM, make_vision_llm
+from .models import Trend
 from .services.trends import ClaudeTrendResearcher
 
 LOOK_QUEUE = "looks"
@@ -29,6 +32,13 @@ def make_redis(url: str) -> redis.Redis:
     return redis.Redis.from_url(url)
 
 
+def _drop_outdated_trends(eng) -> None:
+    """Trends are a cache, so an old schema (label_zh/description_zh) is dropped and rebuilt, not migrated."""
+    insp = inspect(eng)
+    if "trends" in insp.get_table_names() and "label" not in {c["name"] for c in insp.get_columns("trends")}:
+        Trend.__table__.drop(eng)
+
+
 @dataclass
 class Runtime:
     catalog: Catalog
@@ -40,6 +50,7 @@ class Runtime:
 
 
 def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, import_catalog: bool = True) -> Runtime:
+    _drop_outdated_trends(engine)
     Base.metadata.create_all(engine)
     embedder = make_embedder(settings.embedder)
     with SessionLocal() as session:

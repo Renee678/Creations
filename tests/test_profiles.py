@@ -10,13 +10,13 @@ def test_create_read_update_profile(client):
     created = client.post("/api/users", json=PROFILE)
     assert created.status_code == 201
     body = created.json()
-    assert body["bmi"] == 20.2 and "A 字" in body["fit_advice"]
+    assert body["bmi"] == 20.2 and "A-line" in body["fit_advice"]
 
     uid = body["id"]
     assert client.get(f"/api/users/{uid}").json()["nickname"] == "Renee"
 
     updated = client.put(f"/api/users/{uid}", json={**PROFILE, "body_shape": "hourglass"}).json()
-    assert updated["body_shape"] == "hourglass" and "腰线" in updated["fit_advice"]
+    assert updated["body_shape"] == "hourglass" and "waist" in updated["fit_advice"]
 
 
 def test_profile_validation(client):

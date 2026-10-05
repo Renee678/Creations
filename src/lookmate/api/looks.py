@@ -33,7 +33,7 @@ async def upload_look(
 ):
     settings = get_settings()
     if settings.access_code and not hmac.compare_digest(x_access_code, settings.access_code):
-        raise HTTPException(401, "需要体验码")
+        raise HTTPException(401, "access code required")
     get_user_or_404(db, user_id)
     if image.content_type not in ALLOWED_MEDIA_TYPES:
         raise HTTPException(415, f"unsupported image type {image.content_type}; use JPEG, PNG, WebP or GIF")
@@ -51,7 +51,7 @@ async def upload_look(
         return JSONResponse(look_out(existing) | {"deduplicated": True}, status_code=200)
 
     if not take_daily_quota(request.app.state.runtime.redis, settings.daily_look_limit):
-        raise HTTPException(429, "今天的 AI 识图额度已用完，明天再来吧。")
+        raise HTTPException(429, "Today's AI analysis quota is used up. Please come back tomorrow.")
 
     look = Look(user_id=user_id, image_sha256=digest, media_type=image.content_type, image=data)
     db.add(look)

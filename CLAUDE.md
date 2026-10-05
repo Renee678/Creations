@@ -22,4 +22,4 @@ FastAPI + Redis job queue + worker + Postgres behind an Nginx gateway. See READM
   style memory stay deterministic and unit-tested.
 - Anything that calls Claude must also work with `FakeVision` / no researcher, so the app runs without a key.
 - Job handlers must be idempotent: the Redis queue delivers at least once.
-- UI text is Simplified Chinese; code, comments and commit messages are English.
+- Everything is English: UI text, data, docs, code, comments and commit messages.

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from ..catalog.service import SearchResult
 from ..llm.schemas import DetectedItem
 from .body import fit_adjustment
-from .vocab import BODY_SHAPES, STYLES
+from .vocab import BODY_SHAPES, style_name
 
 W_SIM, W_STYLE, W_FIT, W_PRICE = 0.60, 0.15, 0.10, 0.15
 
@@ -57,9 +57,9 @@ def style_score(tags: list[str], user: UserContext, text: str) -> tuple[float, l
     score = min(1.0, 0.5 * len(matched) + sum(user.style_weights.get(t, 0) for t in personal))
     reasons = []
     if personal:
-        reasons.append(f"符合你偏爱的{STYLES[personal[0]]}")
+        reasons.append(f"Matches your {style_name(personal[0])} style")
     elif matched:
-        reasons.append(f"保留了原图的{STYLES[matched[0]]}感觉")
+        reasons.append(f"Keeps the {style_name(matched[0])} feel of the original")
     return score, reasons
 
 
@@ -80,12 +80,12 @@ def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, 
 
         reasons = []
         if item.colour.lower() in p.colour.lower():
-            reasons.append("颜色一致")
+            reasons.append("Same colour")
         reasons += style_reasons
         if s_fit > 0:
-            reasons.append(f"版型适合{BODY_SHAPES.get(user.body_shape, '')}身材")
+            reasons.append(f"Cut suits your {BODY_SHAPES.get(user.body_shape, '').lower()} shape")
         if p.price <= user.budget_per_item:
-            reasons.append("在你的单品预算内")
+            reasons.append("Within your budget")
         picks.append(RankedPick(p.id, round(score, 4), reasons))
     picks.sort(key=lambda r: r.score, reverse=True)
     return diversify(picks, candidates, k)

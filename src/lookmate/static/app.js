@@ -13,7 +13,7 @@ async function api(path, opts = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = Array.isArray(body.detail) ? body.detail.map((d) => d.msg).join("; ") : body.detail;
-    throw new Error(res.status === 429 ? "操作太频繁了，请稍后再试。" : detail || `请求失败 (${res.status})`);
+    throw new Error(res.status === 429 ? "Too many requests. Please try again in a moment." : detail || `Request failed (${res.status})`);
   }
   return body;
 }
@@ -51,8 +51,8 @@ async function openProfile() {
   for (const k of ["nickname", "height_cm", "weight_kg", "age", "budget_per_item"]) if (p[k] != null) f.elements[k].value = p[k];
   chips($("#shape-options"), vocab.body_shapes, false, [p.body_shape || "unsure"]);
   chips($("#style-options"), vocab.styles, true, p.preferred_styles || []);
-  $("#profile-title").textContent = userId ? "我的档案" : "先认识一下你";
-  $("#profile-msg").textContent = p.fit_advice ? `穿衣建议：${p.fit_advice}` : "";
+  $("#profile-title").textContent = userId ? "My profile" : "Tell us about you";
+  $("#profile-msg").textContent = p.fit_advice ? `Fit advice: ${p.fit_advice}` : "";
 }
 
 $("#profile-form").addEventListener("submit", async (e) => {
@@ -70,7 +70,7 @@ $("#profile-form").addEventListener("submit", async (e) => {
     const isNew = !userId;
     userId = String(saved.id); store.set("userId", userId);
     $("#tabs").hidden = false;
-    $("#profile-msg").textContent = `已保存。穿衣建议：${saved.fit_advice}`;
+    $("#profile-msg").textContent = `Saved. Fit advice: ${saved.fit_advice}`;
     if (isNew) show("find");
   } catch (err) { $("#profile-msg").textContent = err.message; }
 });
@@ -87,18 +87,18 @@ function setStatus(text, isError = false) {
 }
 
 async function handleFile(file) {
-  $("#preview").src = URL.createObjectURL(file); $("#preview").hidden = false; $("#drop-text").textContent = "换一张";
+  $("#preview").src = URL.createObjectURL(file); $("#preview").hidden = false; $("#drop-text").textContent = "Try another photo";
   $("#results").innerHTML = "";
-  setStatus("上传中…");
+  setStatus("Uploading…");
   const form = new FormData(); form.append("user_id", userId); form.append("image", file);
   let code = store.get("accessCode") || "";
   if (vocab.access_code_required && !code) {
-    code = prompt("请输入体验码") || "";
+    code = prompt("Enter your access code") || "";
     store.set("accessCode", code);
   }
   try {
     const look = await api("/api/looks", { method: "POST", body: form, headers: { "X-Access-Code": code } }).catch((err) => {
-      if (err.message === "需要体验码") store.set("accessCode", "");
+      if (err.message === "access code required") store.set("accessCode", "");
       throw err;
     });
     pollLook(look.id, 0);
@@ -109,16 +109,16 @@ async function pollLook(id, tries) {
   try {
     const look = await api(`/api/looks/${id}`);
     if (look.status === "done") { setStatus(""); renderLook(look.result); return; }
-    if (look.status === "failed") { setStatus(look.error || "分析失败，请换一张图再试。", true); return; }
-    setStatus(look.attempts > 1 ? `AI 有点忙，正在重试（第 ${look.attempts} 次）…` : "AI 正在识别单品、搜索平替…");
+    if (look.status === "failed") { setStatus(look.error || "Analysis failed. Please try another photo.", true); return; }
+    setStatus(look.attempts > 1 ? `The AI is busy, retrying (attempt ${look.attempts})…` : "Spotting each piece and searching for dupes…");
     if (tries < 90) setTimeout(() => pollLook(id, tries + 1), 1500);
-    else setStatus("等待时间太长了，请稍后刷新页面查看。", true);
+    else setStatus("This is taking too long. Refresh the page in a little while.", true);
   } catch (err) { setStatus(err.message, true); }
 }
 
 function productCard(p, styleTags) {
   const img = p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.parentElement.textContent='${esc(p.product_type)}'">` : esc(p.product_type);
-  const saving = p.saving_usd > 0 ? `<span class="saving">比原款约省 $${Math.round(p.saving_usd)}</span>` : "";
+  const saving = p.saving_usd > 0 ? `<span class="saving">Save about $${Math.round(p.saving_usd)}</span>` : "";
   return `<div class="card">
     <div class="img">${img}</div>
     <div class="body">
@@ -126,18 +126,18 @@ function productCard(p, styleTags) {
       <span class="muted">${esc(p.colour)}</span>
       <span class="price">$${p.price.toFixed(2)}</span> ${saving}
       <span class="reasons">${(p.reasons || []).map(esc).join(" · ")}</span>
-      <button data-save="${esc(p.id)}" data-tags="${esc((styleTags || []).join(","))}">♡ 收藏</button>
+      <button data-save="${esc(p.id)}" data-tags="${esc((styleTags || []).join(","))}">♡ Save</button>
     </div></div>`;
 }
 
 function renderLook(r) {
   const tags = (r.style_tags || []).map((t) => `<span class="tag">${esc(vocab.styles[t] || t)}</span>`).join(" ");
-  let html = `<div class="vibe"><strong>${esc(r.vibe_zh)}</strong><div>${tags}</div></div>`;
+  let html = `<div class="vibe"><strong>${esc(r.vibe)}</strong><div>${tags}</div></div>`;
   for (const s of r.sections) {
     const it = s.item;
-    const orig = it.estimated_original_price_usd ? `<span class="muted">原款估价约 $${Math.round(it.estimated_original_price_usd)}</span>` : "";
+    const orig = it.estimated_original_price_usd ? `<span class="muted">Original about $${Math.round(it.estimated_original_price_usd)}</span>` : "";
     html += `<div class="item"><div class="item-head"><h3>${esc(it.colour)} ${esc(it.name)}</h3>${orig}</div>
-      <div class="grid">${s.picks.map((p) => productCard(p, it.style_tags)).join("") || '<p class="muted">没有找到合适的平替。</p>'}</div></div>`;
+      <div class="grid">${s.picks.map((p) => productCard(p, it.style_tags)).join("") || '<p class="muted">No good dupes found.</p>'}</div></div>`;
   }
   $("#results").innerHTML = html;
 }
@@ -150,7 +150,7 @@ async function onSaveClick(e) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ product_id: b.dataset.save, style_tags: b.dataset.tags ? b.dataset.tags.split(",") : [] }),
     });
-    b.classList.add("saved"); b.textContent = "♥ 已收藏";
+    b.classList.add("saved"); b.textContent = "♥ Saved";
   } catch (err) { setStatus(err.message, true); }
 }
 $("#results").addEventListener("click", onSaveClick);
@@ -158,25 +158,25 @@ $("#results").addEventListener("click", onSaveClick);
 // ---------- style memory ----------
 async function loadStyle() {
   const [s, p] = await Promise.all([api(`/api/users/${userId}/style`), api(`/api/users/${userId}`)]);
-  $("#style-summary").textContent = s.summary_zh;
+  $("#style-summary").textContent = s.summary;
   const max = Math.max(...s.styles.map((x) => x.weight), 0.01);
   $("#style-bars").innerHTML = s.styles.map((x) =>
     `<div class="bar"><span>${esc(x.label)}</span><div style="width:${Math.round((x.weight / max) * 100)}%"></div></div>`).join("");
-  $("#style-colours").innerHTML = s.colours.map(([c, n]) => `<span class="chip">${esc(c)} × ${n}</span>`).join("") || '<span class="muted">还没有记录</span>';
-  $("#style-fit").textContent = `基于 ${s.signals} 条记录（上传和收藏）。身形建议：${p.fit_advice}`;
+  $("#style-colours").innerHTML = s.colours.map(([c, n]) => `<span class="chip">${esc(c)} × ${n}</span>`).join("") || '<span class="muted">Nothing yet</span>';
+  $("#style-fit").textContent = `Based on ${s.signals} signals (uploads and saves). Fit advice: ${p.fit_advice}`;
 }
 
 // ---------- trends ----------
 async function loadTrends() {
   const t = await api("/api/trends");
-  if (!t.trends.length) { $("#trends-meta").textContent = "趋势还在整理中，稍后再来看看。"; return; }
-  const when = new Date(t.refreshed_at).toLocaleDateString("zh-CN");
-  $("#trends-meta").textContent = t.origin === "seed" ? `示例趋势（离线数据），更新于 ${when}` : `AI 联网整理，更新于 ${when}`;
+  if (!t.trends.length) { $("#trends-meta").textContent = "Trends are still being gathered. Check back soon."; return; }
+  const when = new Date(t.refreshed_at).toLocaleDateString("en-US");
+  $("#trends-meta").textContent = t.origin === "seed" ? `Sample trends (offline data), updated ${when}` : `Researched by AI on the web, updated ${when}`;
   $("#trend-list").innerHTML = t.trends.map((x) => `<div class="trend">
-      <h3>${esc(x.label_zh)}</h3><p>${esc(x.description_zh)}</p>
+      <h3>${esc(x.label)}</h3><p>${esc(x.description)}</p>
       <div class="chips static">${x.keywords.map((k) => `<span class="chip">#${esc(k)}</span>`).join("")}</div>
       <div class="grid">${x.examples.map((p) => productCard(p, [x.style_id])).join("")}</div>
-      <div class="sources">${(x.sources || []).map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener">来源 ${i + 1}</a>`).join("")}</div>
+      <div class="sources">${(x.sources || []).map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener">Source ${i + 1}</a>`).join("")}</div>
     </div>`).join("");
 }
 $("#trend-list").addEventListener("click", onSaveClick);

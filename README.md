@@ -9,7 +9,7 @@ ranked by similarity, your style memory, your body shape and your budget, and ex
 | **Find look-alikes** | Photo → Claude vision → per-item search → personalised ranking with reasons |
 | **Style memory** | Every upload and save updates your style profile, which feeds back into ranking |
 | **Profile & fit** | Height, weight, age, body shape, preferred styles, budget → rule-based fit guidance |
-| **Trend radar** | A weekly job researches current styles (老钱风, 千金风, …) with Claude web search and links each trend to catalog items |
+| **Trend radar** | A weekly job researches current styles (old money, coquette, …) with Claude web search and links each trend to catalog items |
 
 ## Quick start
 

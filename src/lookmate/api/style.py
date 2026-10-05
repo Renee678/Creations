@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..services.style_memory import record_saved, style_counts, user_context
-from ..services.vocab import STYLES
+from ..services.vocab import STYLES, style_name
 from .profiles import get_user_or_404
 
 router = APIRouter(prefix="/api/users/{user_id}", tags=["style"])
@@ -37,16 +37,16 @@ def style_profile(user_id: int, db: Session = Depends(get_db)) -> dict:
         "colours": counts["colour"].most_common(5),
         "categories": counts["category"].most_common(5),
         "signals": sum(counts["category"].values()),
-        "summary_zh": summarise(top_styles, counts["colour"].most_common(3)),
+        "summary": summarise(top_styles, counts["colour"].most_common(3)),
     }
 
 
 def summarise(top_styles, top_colours) -> str:
     """Template summary: deterministic and free. (An LLM paragraph is a possible upgrade.)"""
     if not top_styles:
-        return "还没有足够的信息。上传几张喜欢的穿搭，我会慢慢了解你的风格。"
-    names = "、".join(STYLES.get(s, s) for s, _ in top_styles[:2])
-    text = f"你的穿搭偏向{names}"
+        return "Not enough to go on yet. Upload a few outfits you like and I'll learn your style."
+    names = " and ".join(style_name(s) for s, _ in top_styles[:2])
+    text = f"You lean towards {names}"
     if top_colours:
-        text += "，常出现的颜色是" + "、".join(c for c, _ in top_colours)
-    return text + "。"
+        text += ", and you often wear " + ", ".join(c for c, _ in top_colours)
+    return text + "."

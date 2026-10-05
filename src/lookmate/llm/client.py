@@ -48,7 +48,7 @@ would type to find a similar product (include colour, garment type, fit and key 
 Use only these style labels for style_tags: {", ".join(STYLES)}.
 Estimate the original retail price only when the item looks premium or designer; otherwise null.
 If the image shows no clothing, set is_outfit to false and return no items.
-Write vibe_zh in Simplified Chinese; everything else in English."""
+Write everything in English."""
 
 
 class ClaudeVision:
@@ -102,7 +102,7 @@ class ClaudeVision:
 # gets the same analysis, which keeps demos and tests reproducible.
 _FAKE_LOOKS = [
     LookAnalysis(
-        is_outfit=True, vibe_zh="法式老钱风：柔和米色针织配高腰阔腿裤，低调又有质感。",
+        is_outfit=True, vibe="French old money: a soft beige knit with high-waisted wide-leg trousers, understated and polished.",
         style_tags=["old_money", "quiet_luxury"],
         items=[
             DetectedItem(category="top", name="fine-knit V-neck cardigan", colour="beige", fit="relaxed",
@@ -120,7 +120,7 @@ _FAKE_LOOKS = [
         ],
     ),
     LookAnalysis(
-        is_outfit=True, vibe_zh="海边度假风：亚麻长裙配草编包和遮阳帽，轻松又上镜。",
+        is_outfit=True, vibe="Seaside resort: a linen maxi dress with a straw bag and sun hat, easy and photogenic.",
         style_tags=["resort", "boho"],
         items=[
             DetectedItem(category="dress", name="linen maxi dress", colour="white", fit="flowing",
@@ -138,7 +138,7 @@ _FAKE_LOOKS = [
         ],
     ),
     LookAnalysis(
-        is_outfit=True, vibe_zh="千金甜美风：缎面蝴蝶结衬衫配百褶短裙和玛丽珍鞋。",
+        is_outfit=True, vibe="Sweet coquette: a satin bow blouse with a pleated mini skirt and Mary Janes.",
         style_tags=["coquette", "ballet_core"],
         items=[
             DetectedItem(category="top", name="satin bow blouse", colour="light pink", fit="flowing",

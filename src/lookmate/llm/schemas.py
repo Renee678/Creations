@@ -26,6 +26,6 @@ class DetectedItem(BaseModel):
 
 class LookAnalysis(BaseModel):
     is_outfit: bool = Field(description="False if the image does not show clothing")
-    vibe_zh: str = Field(description="One sentence in Simplified Chinese describing the overall look")
+    vibe: str = Field(description="One short sentence describing the overall look")
     style_tags: list[str] = Field(description="Overall style labels from the allowed vocabulary")
     items: list[DetectedItem] = Field(description="Each visible garment, shoe, bag or accessory; at most 6")

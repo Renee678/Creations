@@ -8,7 +8,7 @@ Lookmate turns outfit inspiration from social media into affordable look-alikes.
 a screenshot from Xiaohongshu, TikTok or Instagram. A vision model breaks the outfit into items, and the
 app finds cheaper alternatives in a product catalog. Results are ranked by similarity, the user's body
 shape, budget and a style memory that learns from every upload and save. A weekly job researches current
-trends (老钱风, 千金风, clean girl …) and links each one to catalog items.
+trends (old money, coquette, clean girl …) and links each one to catalog items.
 
 Under the hood: an Nginx API gateway (rate limits, upload cap, request IDs), a FastAPI service, a reliable
 Redis job queue with a worker (at-least-once delivery, idempotent handlers, backoff retries, crash
@@ -18,9 +18,9 @@ an API key.
 ## Why this project
 
 - **Relevant to SHEIN.** SHEIN's model depends on turning fast-moving demand into orders. Social platforms
-  create the demand ("种草"), but the step from "I like this look" to "I bought something like it" is
-  broken. Price-led "平替" (dupe) culture on Xiaohongshu fits SHEIN's low-price positioning.
-- **Not just photo search.** Taobao (拍立淘) and SHEIN's own Camera Search already find *identical* items. This
+  create the demand, but the step from "I like this look" to "I bought something like it" is
+  broken. Price-led "dupe" culture on Xiaohongshu fits SHEIN's low-price positioning.
+- **Not just photo search.** Taobao's photo search and SHEIN's own Camera Search already find *identical* items. This
   project focuses on what they don't do: personalisation (body shape, budget, learned style), explanations
   for each pick, and trend context.
 - **Real system-design and SRE content.** Slow, costly LLM calls behind a public endpoint force decisions

@@ -79,8 +79,8 @@ class Trend(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     batch_id: Mapped[str] = mapped_column(String(40), index=True)  # all trends from one refresh
     style_id: Mapped[str] = mapped_column(String(40))
-    label_zh: Mapped[str] = mapped_column(String(80))
-    description_zh: Mapped[str] = mapped_column(Text)
+    label: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str] = mapped_column(Text)
     keywords: Mapped[list] = mapped_column(JSON)
     example_query: Mapped[str] = mapped_column(String(300))
     sources: Mapped[list] = mapped_column(JSON, default=list)

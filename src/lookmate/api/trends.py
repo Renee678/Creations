@@ -16,7 +16,7 @@ def list_trends(request: Request, db: Session = Depends(get_db)) -> dict:
         "origin": batch[0].origin if batch else None,
         "trends": [
             {
-                "style_id": t.style_id, "label_zh": t.label_zh, "description_zh": t.description_zh,
+                "style_id": t.style_id, "label": t.label, "description": t.description,
                 "keywords": t.keywords, "sources": t.sources,
                 "examples": [r.product.__dict__ for r in catalog.search(t.example_query, k=4)],
             }

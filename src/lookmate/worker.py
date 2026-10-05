@@ -55,7 +55,7 @@ def process_look(rt: Runtime, look_id: int) -> str:
             return "failed"
 
         if not analysis.is_outfit or not analysis.items:
-            _finish(session, look, "failed", error="图片里没有识别到衣服，换一张穿搭图试试？")
+            _finish(session, look, "failed", error="No clothing found in this image. Try another outfit photo?")
             rt.queue.ack(look_id)
             return "failed"
 

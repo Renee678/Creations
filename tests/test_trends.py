@@ -21,7 +21,7 @@ class FakeResearcher:
         return self.items
 
 
-ITEM = TrendItem(style_id="old_money", label_zh="老钱风", description_zh="低调", keywords=["a"],
+ITEM = TrendItem(style_id="old_money", label="Old money", description="Understated", keywords=["a"],
                  example_query="beige cardigan", sources=["https://example.com"])
 
 
@@ -38,7 +38,7 @@ def test_researched_trends_replace_seed(client):
         trends.refresh(s, None, DATA)
         trends.refresh(s, FakeResearcher([ITEM]), DATA)
     body = client.get("/api/trends").json()
-    assert body["origin"] == "web" and [t["label_zh"] for t in body["trends"]] == ["老钱风"]
+    assert body["origin"] == "web" and [t["label"] for t in body["trends"]] == ["Old money"]
 
 
 def test_failed_research_keeps_last_good_batch(client):
@@ -61,3 +61,17 @@ def test_lock_prevents_concurrent_refresh(client, fake_redis):
     fake_redis.set(trends.LOCK_KEY, "1")
     with SessionLocal() as s:
         assert trends.refresh_if_due(s, fake_redis, FakeResearcher([ITEM]), DATA) is False
+
+
+def test_outdated_trends_table_is_rebuilt(tmp_path):
+    from sqlalchemy import create_engine, inspect, text
+
+    from lookmate.db import Base
+    from lookmate.runtime import _drop_outdated_trends
+
+    eng = create_engine(f"sqlite:///{tmp_path}/old.db")
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE trends (id INTEGER PRIMARY KEY, label_zh TEXT, description_zh TEXT)"))
+    _drop_outdated_trends(eng)
+    Base.metadata.create_all(eng)
+    assert "label" in {c["name"] for c in inspect(eng).get_columns("trends")}

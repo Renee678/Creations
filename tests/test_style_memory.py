@@ -14,7 +14,7 @@ def test_style_memory_learns_from_uploads_and_saves(client, runtime, user):
     after = client.get(f"/api/users/{user['id']}/style").json()
     assert after["signals"] > before["signals"]
     assert after["colours"], "colours observed in uploads are remembered"
-    assert "你的穿搭偏向" in after["summary_zh"]
+    assert "You lean towards" in after["summary"]
 
 
 def test_saving_unknown_product_is_404(client, user):

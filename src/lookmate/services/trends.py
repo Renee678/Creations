@@ -30,9 +30,9 @@ LOCK_KEY = "lock:trends-refresh"
 
 class TrendItem(BaseModel):
     style_id: str = Field(description=f"Closest label from: {', '.join(STYLES)}")
-    label_zh: str = Field(description="Trend name in Simplified Chinese as Xiaohongshu users say it, e.g. 老钱风")
-    description_zh: str = Field(description="Two sentences in Simplified Chinese: what it looks like and key pieces")
-    keywords: list[str] = Field(description="5 hot search keywords (Chinese or English)")
+    label: str = Field(description="Short English trend name as people search for it, e.g. 'Old money'")
+    description: str = Field(description="Two English sentences: what it looks like and its key pieces")
+    keywords: list[str] = Field(description="5 popular search keywords in English")
     example_query: str = Field(description="English product-search sentence listing 2-4 signature pieces")
     sources: list[str] = Field(default_factory=list, description="URLs of the articles this is based on")
 
@@ -44,7 +44,7 @@ class TrendReport(BaseModel):
 RESEARCH_PROMPT = """Research the women's fashion styles trending right now ({month}) on Xiaohongshu (RED),
 TikTok, Instagram and YouTube. Use web search over public articles and trend reports; prefer
 sources from the last three months. Group what you find into 6-8 distinct, recognisable
-style trends (for example 老钱风, 千金风, clean girl) rather than single items, and keep only
+style trends (for example old money, coquette, clean girl) rather than single items, and keep only
 trends you saw evidence for. Cite the URLs you relied on in each trend's sources."""
 
 
@@ -84,7 +84,7 @@ def store_batch(session: Session, items: list[TrendItem], origin: str) -> str:
     for t in items:
         session.add(Trend(
             batch_id=batch, style_id=t.style_id if t.style_id in STYLES else "minimalist",
-            label_zh=t.label_zh, description_zh=t.description_zh, keywords=t.keywords[:8],
+            label=t.label, description=t.description, keywords=t.keywords[:8],
             example_query=t.example_query, sources=t.sources[:5], origin=origin,
         ))
     session.commit()

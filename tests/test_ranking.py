@@ -26,7 +26,7 @@ def test_body_shape_fit_reorders_close_candidates():
 def test_reasons_explain_the_pick():
     cands = [SearchResult(product("a", "Tailored trousers", desc="old money, tailored"), 0.7)]
     reasons = rank(ITEM, cands, UserContext(style_weights={"old_money": 0.3}))[0].reasons
-    assert "颜色一致" in reasons and "符合你偏爱的老钱风" in reasons and "在你的单品预算内" in reasons
+    assert "Same colour" in reasons and "Matches your old money style" in reasons and "Within your budget" in reasons
 
 
 def test_colour_variants_of_one_design_do_not_crowd_out_other_designs():
@@ -38,3 +38,9 @@ def test_colour_variants_of_one_design_do_not_crowd_out_other_designs():
 
 def test_price_score_bounds():
     assert price_score(0, 30) == 1 and price_score(30, 30) == 0.5 and price_score(90, 30) == 0
+
+
+def test_style_name_keeps_acronyms():
+    from lookmate.services.vocab import style_name
+
+    assert style_name("old_money") == "old money" and style_name("y2k") == "Y2K"
