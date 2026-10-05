@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end smoke test against a running stack (docker compose up).
-# Creates a profile, uploads a look, waits for the worker, and checks the gateway's rate limit.
+# Creates a profile, uploads a look and a selfie, waits for the worker, builds a lookbook,
+# and checks the gateway's rate limit.
 set -euo pipefail
 BASE=${BASE:-http://localhost:8080}
 json() { python3 -c "import sys, json; print(json.load(sys.stdin)$1)"; }
@@ -25,6 +26,15 @@ echo "== look done, first item has $PICKS picks"
 
 TRENDS=$(curl -fsS "$BASE/api/trends" | json '["trends"].__len__()')
 echo "== $TRENDS trends"
+
+ANALYSIS_ID=$(curl -fsS -F "photos=@$IMG;type=image/png" "$BASE/api/users/$USER_ID/analyses" | json '["id"]')
+for _ in $(seq 1 40); do
+  STATUS=$(curl -fsS "$BASE/api/analyses/$ANALYSIS_ID" | json '["status"]')
+  [[ "$STATUS" == done || "$STATUS" == failed ]] && break; sleep 1
+done
+echo "== analysis $ANALYSIS_ID: $STATUS"; [[ "$STATUS" == done ]]
+OUTFITS=$(curl -fsS "$BASE/api/users/$USER_ID/lookbook?mode=seasons" | json '["sections"][0]["outfits"].__len__()')
+echo "== $OUTFITS spring outfits"; (( OUTFITS > 0 ))
 
 CODES=$(for _ in $(seq 1 15); do curl -s -o /dev/null -w "%{http_code}\n" -F "user_id=$USER_ID" -F "image=@$IMG;type=image/png" "$BASE/api/looks"; done)
 grep -q 429 <<<"$CODES" || { echo "gateway did not rate-limit uploads"; exit 1; }

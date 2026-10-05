@@ -8,10 +8,13 @@ Ideas captured during development, with a feasibility note for each. Items move 
 - Style memory from uploads and saves
 - Weekly trend radar
 - Logo and favicon
+- English UI (Renee, 2026-10-05)
+- Personal lookbook (Renee, 2026-10-05): colour season, palette, face shape, hair and makeup ideas from
+  1-3 photos, and outfits per season or occasion. This also covers the "outfit board" idea below.
 
 ## Next (proposed)
-- **Search modes** (Renee, 2026-10-04): not only cheaper "平替". Modes for *cheaper look-alike*, *closest
-  match at any price* and *premium upgrade (贵替)*. Ranking already separates the price term, so a mode
+- **Search modes** (Renee, 2026-10-04): not only cheaper dupes. Modes for *cheaper look-alike*, *closest
+  match at any price* and *premium upgrade*. Ranking already separates the price term, so a mode
   changes that weight and the price filter. A premium mode needs a higher price band, because the H&M
   catalog is budget-only.
 - **Image evaluation set**: about 20 labelled outfit photos, measuring item recall and category hit rate
@@ -19,7 +22,7 @@ Ideas captured during development, with a feasibility note for each. Items move 
 
 ## Later: virtual try-on (Renee, 2026-10-04)
 Idea: from the user's photo or measurements, show how a recommended item, hairstyle, makeup, shoes or bag
-would look on them, like the dress-up games 奇迹暖暖 / 无限暖暖. Recommendations are only useful if you
+would look on them, like the dress-up games Shining Nikki / Infinity Nikki. Recommendations are only useful if you
 can see they suit you.
 
 Feasibility:

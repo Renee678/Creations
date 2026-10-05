@@ -3,10 +3,13 @@
 Turn outfit inspiration from Xiaohongshu, TikTok or Instagram into **affordable look-alikes that suit you**.
 Upload a screenshot: the app identifies each garment, then finds cheaper alternatives in a product catalog,
 ranked by similarity, your style memory, your body shape and your budget, and explains every pick.
+Or start from yourself: share a selfie and the app reads your colour season, face shape and best colours,
+suggests hair and makeup, and builds a personal lookbook for every season or occasion from shoppable items.
 
 | | |
 |---|---|
 | **Find look-alikes** | Photo → Claude vision → per-item search → personalised ranking with reasons |
+| **Personal lookbook** | 1-3 photos of you → colour season, palette, face shape, hair and makeup ideas → complete outfits per season (spring to winter) or occasion (work, weekend, date night, party, vacation) |
 | **Style memory** | Every upload and save updates your style profile, which feeds back into ranking |
 | **Profile & fit** | Height, weight, age, body shape, preferred styles, budget → rule-based fit guidance |
 | **Trend radar** | A weekly job researches current styles (old money, coquette, …) with Claude web search and links each trend to catalog items |
@@ -58,12 +61,12 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
 | Component | Role |
 |---|---|
 | `gateway/nginx.conf` | Single entrypoint. Per-IP rate limits (tighter on uploads, which cost LLM money), 8 MB upload cap, request IDs, timeouts |
-| `src/lookmate/api/` | REST API: profiles, looks, style memory, trends; also serves the web app |
-| `src/lookmate/worker.py` | Processes look jobs; schedules the weekly trend refresh |
+| `src/lookmate/api/` | REST API: profiles, looks, personal analysis and lookbook, style memory, trends; also serves the web app |
+| `src/lookmate/worker.py` | Processes look and personal-analysis jobs; schedules the weekly trend refresh |
 | `src/lookmate/jobqueue.py` | Reliable Redis queue: atomic reserve (BLMOVE), ack, delayed retries, crash recovery |
 | `src/lookmate/llm/` | Claude vision client with structured output, plus the offline fake |
 | `src/lookmate/catalog/` | Catalog import, embeddings, exact vector search |
-| `src/lookmate/services/` | Ranking, body-shape rules, style memory, trend radar |
+| `src/lookmate/services/` | Ranking, body-shape rules, colour families, lookbook builder, style memory, trend radar |
 
 ## Key design decisions
 
@@ -73,13 +76,18 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
   double-clicks and retries never pay for a second LLM call.
 - **Retries only for transient errors.** Rate limits, timeouts and 5xx retry with exponential backoff (max 3);
   bad requests and refusals fail immediately.
-- **Photos are not kept.** The raw image is deleted as soon as analysis finishes.
+- **Photos are not kept.** Raw images (outfits and selfies) are deleted as soon as analysis finishes.
 - **Image → text → vector search.** Claude describes each item in catalog language; search runs on text
   embeddings (BGE-small, the same model as the H&M dataset's precomputed vectors). No model training needed.
 - **Exact search in memory.** ~5k products × 384 dims is a few milliseconds with NumPy, so an ANN index
   (pgvector/HNSW) would add moving parts without a measurable gain. Revisit past ~200k items.
 - **LLM for perception, rules for decisions.** Ranking weights, fit guidance and style memory are
   deterministic and unit-tested; the LLM only turns pixels into structured attributes.
+- **Lookbooks are built, not generated.** The model only reads the photos (colour season, palette, face
+  shape). Outfits come from fixed formulas per season or occasion, flavoured by the user's styles and current
+  trends, coloured from their palette, and filled by catalog search with a transparent score. Colour families
+  map the model's words ("dusty rose") and catalog names ("Light Pink") onto one vocabulary, so palette
+  matching is a set lookup that can be unit-tested.
 - **Trends without scraping.** Xiaohongshu/TikTok/Instagram have no public API and forbid scraping, so the
   trend job uses Claude web search over public coverage, keeps the last good result on failure, and falls
   back to bundled seed trends.
