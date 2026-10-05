@@ -3,8 +3,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..services.body import guide_for
+from ..services.lookbook import latest_analysis
 from ..services.style_memory import record_saved, style_counts, user_context
-from ..services.vocab import STYLES, style_name
+from ..services.vocab import BODY_SHAPES, STYLES, style_name
 from .profiles import get_user_or_404
 
 router = APIRouter(prefix="/api/users/{user_id}", tags=["style"])
@@ -32,7 +34,10 @@ def style_profile(user_id: int, db: Session = Depends(get_db)) -> dict:
     counts = style_counts(db, user_id)
     ctx = user_context(db, user)
     top_styles = sorted(ctx.style_weights.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    analysis = latest_analysis(db, user_id)
     return {
+        "analysis": analysis.result if analysis else None,  # the colour and face report from their photos
+        "fit": fit_report(user.body_shape),
         "styles": [{"id": s, "label": STYLES.get(s, s), "weight": w} for s, w in top_styles],
         "colours": counts["colour"].most_common(5),
         "categories": counts["category"].most_common(5),
@@ -50,3 +55,10 @@ def summarise(top_styles, top_colours) -> str:
     if top_colours:
         text += ", and you often wear " + ", ".join(c for c, _ in top_colours)
     return text + "."
+
+
+def fit_report(body_shape: str) -> dict:
+    """The same fit rules the ranking uses, as words to look for and to skip."""
+    g = guide_for(body_shape)
+    flat = lambda d: list(dict.fromkeys(w for words in d.values() for w in words))[:8]
+    return {"shape": BODY_SHAPES.get(body_shape), "summary": g.summary, "look_for": flat(g.prefer), "skip": flat(g.avoid)}

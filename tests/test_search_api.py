@@ -92,3 +92,12 @@ def test_lookbook_asks_for_photos_before_showing_outfits(client):
     assert "!lb.personal" in gate and "lb-gate" in gate and "data-lb-browse" in gate
     # The fitting room tray can add the try-on photo itself, so Try it on me always works.
     assert "data-room-photo" in app_js and 'pendingOutfit = "room"' in app_js
+
+
+def test_my_style_is_a_report_and_trends_filter_by_season_and_style(client):
+    page = client.get("/").text
+    assert 'id="style-report"' in page and 'id="trend-seasons"' in page and 'id="trend-styles"' in page
+    app_js = client.get("/static/app.js").text
+    assert "Your colour season" in app_js and "Your style DNA" in app_js
+    assert "See your full report" in app_js, "the Lookbook links to the report instead of repeating it"
+    assert "/api/trends${userId ? `?user_id=${userId}`" in app_js, "trends are fetched with the user, for fit verdicts"

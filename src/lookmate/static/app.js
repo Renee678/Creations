@@ -208,30 +208,117 @@ async function onSaveClick(e) {
 }
 $("#results").addEventListener("click", onSaveClick);
 
-// ---------- style memory ----------
+// ---------- my style report ----------
+const pct = (x, total) => Math.round((x / total) * 100);
+
 async function loadStyle() {
   const [s, p] = await Promise.all([api(`/api/users/${userId}/style`), api(`/api/users/${userId}`)]);
-  $("#style-summary").textContent = s.summary;
-  const max = Math.max(...s.styles.map((x) => x.weight), 0.01);
-  $("#style-bars").innerHTML = s.styles.map((x) =>
-    `<div class="bar"><span>${esc(x.label)}</span><div style="width:${Math.round((x.weight / max) * 100)}%"></div></div>`).join("");
-  $("#style-colours").innerHTML = s.colours.map(([c, n]) => `<span class="chip">${esc(c)} × ${n}</span>`).join("") || '<span class="muted">Nothing yet</span>';
-  $("#style-fit").textContent = `Based on ${s.signals} signals (uploads and saves). Fit advice: ${p.fit_advice}`;
+  const a = s.analysis;
+  const list = (xs) => `<ul>${(xs || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  const hero = a ? `<div class="sr-hero" style="--g:${esc(a.best_colours.map((c) => c.hex).join(", "))}">
+      <div class="sr-hero-band"></div>
+      <div class="sr-hero-body">
+        <span class="sr-kicker">Your colour season</span>
+        <h2>${esc(cap(a.season_detail))}</h2>
+        <div class="sr-stats">
+          <span><small>Undertone</small>${esc(cap(a.undertone))}</span>
+          <span><small>Contrast</small>${esc(cap(a.contrast))}</span>
+          <span><small>Metals</small>${esc(cap(a.metals))}</span>
+          <span><small>Face</small>${esc(cap(a.face_shape))}</span>
+        </div>
+        <p>${esc(a.colouring_notes)}</p>
+      </div></div>`
+    : `<div class="sr-hero sr-empty"><div class="sr-hero-body"><span class="sr-kicker">Your colour season</span>
+        <h2>Not analysed yet</h2><p>Add a selfie and a full-body photo in the Lookbook tab to get your colour season,
+        palette, face shape and hair and makeup ideas.</p>
+        <button type="button" class="gel primary" data-goto="lookbook">Add my photos</button></div></div>`;
+  const palette = a ? `<div class="sr-card"><h3>Your palette</h3><p class="muted small">Wear these near your face.</p>
+      <div class="sr-dots">${a.best_colours.map((c) => `<figure><i style="background:${esc(c.hex)}"></i><figcaption>${esc(c.name)}</figcaption></figure>`).join("")}</div>
+      <h3>Keep away from your face</h3>
+      <div class="sr-dots sr-avoid">${a.avoid_colours.map((c) => `<figure><i style="background:${esc(c.hex)}"></i><figcaption>${esc(c.name)}</figcaption></figure>`).join("")}</div></div>` : "";
+  const beauty = a ? `<div class="sr-pair">
+      <div class="sr-card"><h3>Hair</h3><p class="muted">${esc(a.hair_now)}</p>${list(a.hair_suggestions)}</div>
+      <div class="sr-card"><h3>Makeup</h3>${list(a.makeup_suggestions)}</div></div>` : "";
+  const fit = s.fit;
+  const body = `<div class="sr-card"><h3>Body and fit${fit.shape ? ` · ${esc(fit.shape)}` : ""}</h3><p>${esc(fit.summary)}</p>
+      ${a && a.silhouette_notes ? `<p class="muted">${esc(a.silhouette_notes)}</p>` : ""}
+      ${fit.look_for.length ? `<div class="sr-tags"><span class="sr-label">Look for</span>${fit.look_for.map((w) => `<span class="chip">${esc(w)}</span>`).join("")}</div>` : ""}
+      ${fit.skip.length ? `<div class="sr-tags"><span class="sr-label">Skip</span>${fit.skip.map((w) => `<span class="chip skip">${esc(w)}</span>`).join("")}</div>` : ""}</div>`;
+  const total = s.styles.reduce((t, x) => t + x.weight, 0) || 1;
+  const dna = `<div class="sr-card"><h3>Your style DNA</h3><p>${esc(s.summary)}</p>
+      <div class="sr-dna">${s.styles.map((x) => `<div class="sr-dna-row"><span>${esc(x.label)}</span><div><i style="width:${pct(x.weight, total)}%"></i></div><b>${pct(x.weight, total)}%</b></div>`).join("")}</div>
+      <h3>Colours you wear most</h3>
+      <div class="chips static">${s.colours.map(([c, n]) => `<span class="chip">${esc(c)} × ${n}</span>`).join("") || '<span class="muted">Nothing yet</span>'}</div>
+      <p class="muted small">Learned from ${s.signals} signals: outfits you upload and pieces you save.</p></div>`;
+  $("#style-report").innerHTML = hero + `<div class="sr-grid">${palette}${beauty}${body}${dna}</div>`
+    + (a ? `<p class="muted small">${esc(a.caveats)}</p>` : "");
 }
+document.addEventListener("click", (e) => {
+  const go = e.target.closest("[data-goto]");
+  if (go) { show(go.dataset.goto); window.scrollTo({ top: 0, behavior: "smooth" }); }
+});
 
 // ---------- trends ----------
+// By season, then style; each grouped into key pieces, bags and shoes, makeup and hair, colours.
+let trendData = null;
+let trendSeason = null;
+let trendStyle = "mine";
+const SEASON_NAMES = { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" };
+const FIT_BADGE = { suits: ["fit-suits", "✓ Suits you"], adapt: ["fit-adapt", "♡ Adapt it"], neutral: ["fit-neutral", "Neutral for you"] };
+
 async function loadTrends() {
-  const t = await api("/api/trends");
+  const t = await api(`/api/trends${userId ? `?user_id=${userId}` : ""}`);
   if (!t.trends.length) { $("#trends-meta").textContent = "Trends are still being gathered. Check back soon."; return; }
+  trendData = t;
+  trendSeason = trendSeason && t.seasons.includes(trendSeason) ? trendSeason : t.current_season;
   const when = new Date(t.refreshed_at).toLocaleDateString("en-US");
   $("#trends-meta").textContent = t.origin === "seed" ? `Sample trends (offline data), updated ${when}` : `Researched by AI on the web, updated ${when}`;
-  $("#trend-list").innerHTML = t.trends.map((x) => `<div class="trend"><span class="tape"></span>
-      <h3>${esc(x.label)}</h3><p>${esc(x.description)}</p>
-      <div class="chips static">${x.keywords.map((k) => `<span class="chip">#${esc(k)}</span>`).join("")}</div>
-      <div class="grid">${x.examples.map((p) => productCard(p, [x.style_id])).join("")}</div>
-      <div class="sources">${(x.sources || []).map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener">Source ${i + 1}</a>`).join("")}</div>
-    </div>`).join("");
+  renderTrends();
 }
+
+function renderTrends() {
+  const t = trendData;
+  const mine = new Set(t.my_styles.map((s) => s.id));
+  const personal = t.trends.some((x) => x.fit);
+  $("#trend-seasons").innerHTML = t.seasons.map((s) =>
+    `<button type="button" class="chip ${s === trendSeason ? "on" : ""}" data-season="${s}">${SEASON_NAMES[s]}${s === t.current_season ? " · now" : ""}</button>`).join("");
+  const inSeason = t.trends.filter((x) => x.season === trendSeason);
+  const styles = [...new Map(inSeason.map((x) => [x.style_id, x.style])).entries()];
+  const forYou = (x) => mine.has(x.style_id) || (x.fit && x.fit.verdict === "suits");
+  if (trendStyle === "mine" && !inSeason.some(forYou)) trendStyle = "all";
+  $("#trend-styles").innerHTML = [["mine", "For you"], ["all", "All styles"], ...styles].map(([id, label]) =>
+    `<button type="button" class="chip ${id === trendStyle ? "on" : ""}" data-style="${esc(id)}">${esc(label)}</button>`).join("");
+  $("#trend-note").textContent = personal
+    ? "“For you” = your styles plus trends in your colours. Each card says whether it suits you."
+    : "Add your photos in the Lookbook tab to see which trends suit your colouring.";
+  const shown = inSeason.filter((x) => trendStyle === "all" || (trendStyle === "mine" ? forYou(x) : x.style_id === trendStyle));
+  $("#trend-list").innerHTML = Object.entries(t.kinds).map(([kind, title]) => {
+    const cards = shown.filter((x) => x.kind === kind);
+    if (!cards.length) return "";
+    return `<div class="trend-kind"><h2>${esc(title)}</h2>${cards.map(trendCard).join("")}</div>`;
+  }).join("") || '<p class="muted">Nothing for this style this season yet.</p>';
+}
+
+function trendCard(x) {
+  const fit = x.fit ? `<div class="fit ${FIT_BADGE[x.fit.verdict][0]}"><strong>${FIT_BADGE[x.fit.verdict][1]}</strong><span>${x.fit.notes.map(esc).join(" · ")}</span></div>` : "";
+  const colours = x.colours.length ? `<div class="swatches">${x.colours.map((c) => `<span class="swatch"><i style="background:${esc(c.hex)}"></i>${esc(c.name)}</span>`).join("")}</div>` : "";
+  return `<div class="trend"><span class="tape"></span>
+      <div class="trend-head"><h3>${esc(x.label)}</h3><span class="tag">${esc(x.style)}</span></div>
+      ${fit}<p>${esc(x.description)}</p>${colours}
+      <div class="chips static">${x.keywords.map((k) => `<span class="chip">#${esc(k)}</span>`).join("")}</div>
+      ${x.examples.length ? `<div class="grid">${x.examples.map((p) => productCard(p, [x.style_id])).join("")}</div>` : ""}
+      <div class="sources">${(x.sources || []).map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener">Source ${i + 1}</a>`).join("")}</div>
+    </div>`;
+}
+
+$("#trend-seasons").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-season]");
+  if (b) { trendSeason = b.dataset.season; trendStyle = "mine"; renderTrends(); }
+});
+$("#trend-styles").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-style]");
+  if (b) { trendStyle = b.dataset.style; renderTrends(); }
+});
 $("#trend-list").addEventListener("click", onSaveClick);
 
 // ---------- personal analysis + lookbook ----------
@@ -284,7 +371,6 @@ async function pollAnalysis(id, tries) {
   } catch (err) { setMeStatus(err.message, true); }
 }
 
-const swatch = (s) => `<span class="swatch"><i style="background:${esc(s.hex)}"></i>${esc(s.name)}</span>`;
 const cap = (s) => String(s || "").replace(/^./, (c) => c.toUpperCase());
 
 const FRAMING = { face: "Selfie", upper_body: "Waist up", full_body: "Full body", no_person: "No person found" };
@@ -307,19 +393,10 @@ function applyPhotoChecks(checks) {
 function renderAnalysis(a) {
   if (!a) { $("#me-analysis").innerHTML = ""; return; }
   applyPhotoChecks(a.photo_checks);
-  const list = (xs) => `<ul>${(xs || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
-  $("#me-analysis").innerHTML = `<div class="analysis"><span class="tape"></span>
-    <div class="season"><span class="muted">Your colour season</span><strong>${esc(cap(a.season_detail))}</strong>
-      <span>${esc(cap(a.undertone))} undertone · ${esc(a.contrast)} contrast · ${esc(a.metals)} jewellery</span>
-      <p class="muted">${esc(a.colouring_notes)}</p></div>
-    <h3>Colours that light you up</h3><div class="swatches">${a.best_colours.map(swatch).join("")}</div>
-    <h3>Keep away from your face</h3><div class="swatches">${a.avoid_colours.map(swatch).join("")}</div>
-    <div class="beauty">
-      <div><h3>Hair · ${esc(cap(a.face_shape))} face</h3><p class="muted">${esc(a.hair_now)}</p>${list(a.hair_suggestions)}</div>
-      <div><h3>Makeup</h3>${list(a.makeup_suggestions)}</div>
-    </div>
-    ${a.silhouette_notes ? `<h3>Silhouette</h3><p>${esc(a.silhouette_notes)}</p>` : ""}
-    <p class="muted small">${esc(a.caveats)}</p></div>`;
+  // The full report lives in My Style; the Lookbook just shows which palette it is dressing.
+  $("#me-analysis").innerHTML = `<div class="me-summary"><span>Dressing you as a <strong>${esc(cap(a.season_detail))}</strong></span>
+    <span class="me-mini">${a.best_colours.slice(0, 6).map((c) => `<i style="background:${esc(c.hex)}" title="${esc(c.name)}"></i>`).join("")}</span>
+    <button type="button" class="linklike" data-goto="style">See your full report →</button></div>`;
 }
 
 const WEARABLE = new Set(["top", "bottom", "dress", "outerwear"]);  // what the try-on model can render

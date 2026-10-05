@@ -194,3 +194,29 @@ def test_photo_checks_say_which_photo_is_for_try_on(client, runtime, user):
     checks = client.get(f"/api/analyses/{res.json()['id']}").json()["result"]["photo_checks"]
     assert [c["framing"] for c in checks] == ["face", "full_body"]
     assert [c["good_for_tryon"] for c in checks] == [False, True]
+
+
+def test_my_style_carries_the_colour_report(client, runtime, user):
+    assert client.get(f"/api/users/{user['id']}/style").json()["analysis"] is None
+    upload(client, user["id"], SELFIE, FULL_BODY)
+    run_next_job(runtime)
+    report = client.get(f"/api/users/{user['id']}/style").json()["analysis"]
+    assert report["colour_season"] and report["best_colours"], "My Style shows the colour season and palette"
+
+
+def test_trends_say_which_suit_you_once_you_have_an_analysis(client, runtime, user):
+    from lookmate.db import SessionLocal
+    from lookmate.services import trends
+
+    with SessionLocal() as s:
+        trends.refresh(s, None, runtime.data_dir)
+    upload(client, user["id"], SELFIE, FULL_BODY)
+    run_next_job(runtime)
+    body = client.get("/api/trends", params={"user_id": user["id"]}).json()
+    verdicts = {t["fit"]["verdict"] for t in body["trends"]}
+    assert verdicts <= {"suits", "adapt", "neutral"} and "suits" in verdicts
+
+
+def test_my_style_explains_the_fit_rules(client, user):
+    fit = client.get(f"/api/users/{user['id']}/style").json()["fit"]
+    assert fit["shape"] == "Pear" and "wide" in fit["look_for"] and "skinny" in fit["skip"]
