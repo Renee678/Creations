@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
@@ -16,7 +17,7 @@ from ..models import PersonalAnalysis
 from ..services.lookbook import build_lookbook, latest_analysis
 from ..services.price_range import PriceRange
 from ..services.style_memory import user_context
-from ..services.trends import latest_batch
+from ..services.trends import latest_batch, season_of
 from ..worker import analysis_job
 from .looks import require_access_code, take_daily_quota
 from .profiles import get_user_or_404
@@ -94,6 +95,12 @@ def lookbook(
 ) -> dict:
     user = user_context(db, get_user_or_404(db, user_id))
     analysis = latest_analysis(db, user_id)
-    trends = [(t.style_id, t.label) for t in latest_batch(db)]
+    # Outfits are labelled with clothing trends only (not a lipstick or a colour), current season first.
+    now = season_of(datetime.now(timezone.utc).month)
+    pieces = sorted((t for t in latest_batch(db) if t.kind == "pieces"), key=lambda t: t.season != now)
+    first: dict[str, tuple[str, str]] = {}
+    for t in pieces:
+        first.setdefault(t.style_id, (t.style_id, t.label))
+    trends = list(first.values())
     price = PriceRange.from_params(price_min, price_max, user.budget_per_item)
     return build_lookbook(request.app.state.runtime.catalog, user, analysis, trends, mode, price)

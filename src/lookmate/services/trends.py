@@ -15,6 +15,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,24 +30,50 @@ REFRESH_EVERY = timedelta(days=7)
 LOCK_KEY = "lock:trends-refresh"
 
 
+SEASONS = ("spring", "summer", "autumn", "winter")
+KINDS = {
+    "pieces": "Key pieces",
+    "bags_shoes": "Bags and shoes",
+    "beauty": "Makeup and hair",
+    "colour": "Colours",
+}
+
+
+def season_of(month: int) -> str:
+    """Northern-hemisphere fashion season for a month (1-12)."""
+    return SEASONS[((month - 3) % 12) // 3]
+
+
+class TrendColour(BaseModel):
+    name: str = Field(description="Plain English colour name, e.g. 'berry', 'butter yellow'")
+    hex: str = Field(description="Hex code like #7d2448")
+
+
 class TrendItem(BaseModel):
+    season: Literal["spring", "summer", "autumn", "winter"] = Field(description="Season this trend is for")
+    kind: Literal["pieces", "bags_shoes", "beauty", "colour"] = Field(
+        description="pieces = clothing; bags_shoes = bags, shoes, jewellery; beauty = makeup, nails, hair; colour = a trend colour")
     style_id: str = Field(description=f"Closest label from: {', '.join(STYLES)}")
     label: str = Field(description="Short English trend name as people search for it, e.g. 'Old money'")
     description: str = Field(description="Two English sentences: what it looks like and its key pieces")
     keywords: list[str] = Field(description="5 popular search keywords in English")
-    example_query: str = Field(description="English product-search sentence listing 2-4 signature pieces")
+    example_query: str = Field(
+        description="English product-search sentence listing 2-4 signature pieces; empty for beauty trends")
+    colours: list[TrendColour] = Field(default_factory=list, description="1-3 colours that define the trend")
     sources: list[str] = Field(default_factory=list, description="URLs of the articles this is based on")
 
 
 class TrendReport(BaseModel):
-    trends: list[TrendItem] = Field(description="6 to 8 distinct trends")
+    trends: list[TrendItem] = Field(description="12 to 20 distinct trends across the two seasons and four kinds")
 
 
-RESEARCH_PROMPT = """Research the women's fashion styles trending right now ({month}) on Xiaohongshu (RED),
-TikTok, Instagram and YouTube. Use web search over public articles and trend reports; prefer
-sources from the last three months. Group what you find into 6-8 distinct, recognisable
-style trends (for example old money, coquette, clean girl) rather than single items, and keep only
-trends you saw evidence for. Cite the URLs you relied on in each trend's sources."""
+RESEARCH_PROMPT = """Research women's fashion and beauty trends for {season} and {next_season} {year} on
+Xiaohongshu (RED), TikTok, Instagram and Pinterest, plus trend reports such as Pinterest Predicts,
+the Lyst Index and Vogue. Use web search over public articles; prefer sources from the last three
+months. For each of the two seasons, return trends of all four kinds: key clothing pieces, bags and
+shoes, makeup and hair, and colours. Name each one the way people search for it, map it to the
+closest style label, give the 1-3 colours that define it, and keep only trends you saw evidence for.
+Cite the URLs you relied on in each trend's sources."""
 
 
 def load_seed(data_dir: Path) -> list[TrendItem]:
@@ -62,7 +90,11 @@ class ClaudeTrendResearcher:
         self._model = model
 
     def research(self) -> list[TrendItem]:
-        messages = [{"role": "user", "content": RESEARCH_PROMPT.format(month=datetime.now(timezone.utc).strftime("%B %Y"))}]
+        now = datetime.now(timezone.utc)
+        season = season_of(now.month)
+        next_season = SEASONS[(SEASONS.index(season) + 1) % 4]
+        year = now.year
+        messages = [{"role": "user", "content": RESEARCH_PROMPT.format(season=season, next_season=next_season, year=year)}]
         for _ in range(3):  # server tools may pause a long turn; resume it
             response = self._client.messages.parse(
                 model=self._model,
@@ -86,6 +118,7 @@ def store_batch(session: Session, items: list[TrendItem], origin: str) -> str:
             batch_id=batch, style_id=t.style_id if t.style_id in STYLES else "minimalist",
             label=t.label, description=t.description, keywords=t.keywords[:8],
             example_query=t.example_query, sources=t.sources[:5], origin=origin,
+            season=t.season, kind=t.kind, colours=[c.model_dump() for c in t.colours[:3]],
         ))
     session.commit()
     return batch
@@ -135,3 +168,31 @@ def refresh_if_due(session: Session, redis_client, researcher, data_dir: Path) -
         return True
     finally:
         redis_client.delete(LOCK_KEY)
+
+
+def trend_fit(trend: Trend, palette, styles: list[str]) -> dict | None:
+    """Does this trend suit you? Deterministic: your colour palette and your styles, no model call.
+
+    Returns {"verdict": "suits" | "adapt" | "neutral", "notes": [...]}, or None without an analysis.
+    """
+    from .colours import families, family
+
+    if not palette.personal:
+        return None
+    names = [c["name"] for c in trend.colours or []]
+    good = [n for n in names if family(n) in palette.good]
+    bad = [n for n in names if family(n) in palette.bad and family(n) not in families(good)]
+    notes = []
+    if good:
+        verdict = "suits"
+        notes.append(f"{good[0].capitalize()} is in your colours")
+    elif bad:
+        verdict = "adapt"
+        swap = next((c for c in palette.colours if family(c) not in families(names)), palette.colours[0])
+        notes.append(f"{bad[0].capitalize()} isn't your best colour near the face: try it in {swap}")
+    else:
+        verdict = "neutral"
+        notes.append("Neutral for your colouring")
+    if trend.style_id in styles:
+        notes.append("Matches your style")
+    return {"verdict": verdict, "notes": notes}

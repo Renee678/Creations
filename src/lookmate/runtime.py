@@ -35,9 +35,9 @@ def make_redis(url: str) -> redis.Redis:
 
 
 def _drop_outdated_trends(eng) -> None:
-    """Trends are a cache, so an old schema (label_zh/description_zh) is dropped and rebuilt, not migrated."""
+    """Trends are a cache, so an old schema (e.g. before seasons) is dropped and rebuilt, not migrated."""
     insp = inspect(eng)
-    if "trends" in insp.get_table_names() and "label" not in {c["name"] for c in insp.get_columns("trends")}:
+    if "trends" in insp.get_table_names() and not {"label", "season"} <= {c["name"] for c in insp.get_columns("trends")}:
         Trend.__table__.drop(eng)
 
 

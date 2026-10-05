@@ -84,6 +84,9 @@ class Trend(Base):
     keywords: Mapped[list] = mapped_column(JSON)
     example_query: Mapped[str] = mapped_column(String(300))
     sources: Mapped[list] = mapped_column(JSON, default=list)
+    season: Mapped[str] = mapped_column(String(10), default="autumn")  # spring|summer|autumn|winter
+    kind: Mapped[str] = mapped_column(String(20), default="pieces")  # pieces|bags_shoes|beauty|colour
+    colours: Mapped[list] = mapped_column(JSON, default=list)  # [{"name": "berry", "hex": "#7d2448"}]
     origin: Mapped[str] = mapped_column(String(20))  # "web" (researched) or "seed" (bundled fallback)
     refreshed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
