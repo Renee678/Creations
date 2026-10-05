@@ -1,12 +1,14 @@
 """Virtual try-on: dress the user's own photo in catalog pieces.
 
-Two image models are supported; both swap one garment per call, so an outfit is applied step by
-step (the output of one step is the person photo for the next):
+Three image models are supported. The per-garment ones swap one garment per call, so an outfit is
+applied step by step (the output of one step is the person photo for the next):
 
 - FASHN try-on (hosted API, FASHN_API_KEY): always warm, about 5-10 seconds a garment, about $0.075
   an image. Preferred when configured, because a demo can't wait for a cold GPU.
-- IDM-VTON (open source, https://github.com/yisol/IDM-VTON) on Replicate (REPLICATE_API_TOKEN):
-  about $0.02 a run, but a public model that has gone idle can take minutes to boot.
+- Nano Banana (Google's image model, official on Replicate; the default with REPLICATE_API_TOKEN):
+  always warm, and one call dresses the whole outfit, shoes and bags included.
+- IDM-VTON (open source, https://github.com/yisol/IDM-VTON) on Replicate (TRYON_MODEL=cuuupid/idm-vton):
+  about $0.02 a run, but a community model that has gone idle can take minutes to boot.
 
 Without either, the app uses PreviewTryOn, which returns the photo unchanged; the UI then shows the
 outfit pinned next to the photo (a collage) instead of a rendered try-on.
@@ -24,7 +26,8 @@ log = logging.getLogger(__name__)
 REPLICATE_API = "https://api.replicate.com/v1"
 DEFAULT_MODEL = "cuuupid/idm-vton"
 
-# App category -> IDM-VTON garment region. Shoes, bags and accessories can't be rendered.
+# App category -> IDM-VTON garment region. Shoes, bags and accessories can't be rendered by the
+# per-garment models; Nano Banana renders them too ("accessory").
 REGIONS = {"top": "upper_body", "outerwear": "upper_body", "bottom": "lower_body", "dress": "dresses"}
 
 
@@ -124,6 +127,10 @@ class ReplicateTryOn:
             "crop": True,  # accept photos that aren't 3:4
         }}
         pred = self._request("POST", f"{REPLICATE_API}/predictions", json=body, headers={"Prefer": "wait=60"})
+        return self._finish(pred)
+
+    def _finish(self, pred: dict) -> tuple[bytes, str]:
+        """Wait for a prediction, cancelling it past the timeout, and download its image."""
         deadline = time.monotonic() + self.timeout_s
         while pred["status"] in ("starting", "processing"):
             if time.monotonic() > deadline:
@@ -145,6 +152,40 @@ class ReplicateTryOn:
         except httpx.HTTPError as e:
             raise TryOnError(f"couldn't download the try-on image: {e}", retryable=True) from e
         return img.content, img.headers.get("content-type", "image/png").split(";")[0]
+
+
+NANO_BANANA = "google/nano-banana"
+NANO_BANANA_PROMPT = """The first image is a photo of a person. Dress this same person in the clothes and accessories
+shown in the other images: {pieces}. Replace what they are wearing now with exactly these pieces, keeping each
+piece's colour, pattern, fabric and cut. Keep the person's face, hair, skin tone, body shape and the background
+unchanged. Show a natural, realistic full-length photo of them standing and facing the camera."""
+
+
+class NanoBananaTryOn(ReplicateTryOn):
+    """Google's Nano Banana image model, an official model on Replicate: always warm, and one call
+    dresses the whole outfit (shoes and bags included), so there are no per-garment steps."""
+
+    name = "nano-banana"
+    whole_outfit = True
+
+    def __init__(self, token: str, model: str = NANO_BANANA, timeout_s: float = 150.0, http: httpx.Client | None = None):
+        super().__init__(token, model, timeout_s, http)
+
+    def dress_outfit(self, person: bytes, media_type: str, garments: list[Garment]) -> tuple[bytes, str]:
+        images = [self._file_input(person, media_type)] + [
+            self._file_input(g.image, g.media_type) if g.image else g.url for g in garments]
+        body = {"input": {
+            "prompt": NANO_BANANA_PROMPT.format(pieces="; ".join(g.description for g in garments)),
+            "image_input": images,
+            "output_format": "jpg",
+        }}
+        # Official models take predictions on the model itself, without a version id.
+        pred = self._request("POST", f"{REPLICATE_API}/models/{self.model}/predictions", json=body,
+                             headers={"Prefer": "wait=60"})
+        return self._finish(pred)
+
+    def dress(self, person: bytes, media_type: str, garment: Garment) -> tuple[bytes, str]:
+        return self.dress_outfit(person, media_type, [garment])
 
 
 FASHN_API = "https://api.fashn.ai/v1"
@@ -207,7 +248,9 @@ class FashnTryOn:
         return img.content, img.headers.get("content-type", "image/jpeg").split(";")[0]
 
 
-def make_tryon(token: str, model: str = DEFAULT_MODEL, fashn_key: str = ""):
+def make_tryon(token: str, model: str = NANO_BANANA, fashn_key: str = ""):
     if fashn_key:
         return FashnTryOn(fashn_key)
-    return ReplicateTryOn(token, model) if token else PreviewTryOn()
+    if not token:
+        return PreviewTryOn()
+    return NanoBananaTryOn(token, model) if model.startswith(NANO_BANANA) else ReplicateTryOn(token, model)

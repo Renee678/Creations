@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Virtual try-on (IDM-VTON on Replicate). Empty token: the UI shows a collage preview instead.
     replicate_api_token: str = ""
     fashn_api_key: str = ""        # preferred try-on model when set: warm, seconds per garment
-    tryon_model: str = "cuuupid/idm-vton"
+    tryon_model: str = "google/nano-banana"  # or "cuuupid/idm-vton" (cheaper, slow cold starts)
     daily_tryon_limit: int = 30    # rendered try-ons per UTC day across all users (0 = unlimited)
 
     # Cost guardrails for a public deployment.

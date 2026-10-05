@@ -130,6 +130,20 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
 
         def render():
             image, media_type, done = rec.photo, rec.media_type, []
+            if rt.tryon.renders and getattr(rt.tryon, "whole_outfit", False):
+                # One call for the whole outfit, shoes and bags included.
+                garments = []
+                for p in pieces:
+                    try:
+                        garments.append((p.id, garment_for(p, rt.data_dir)))
+                    except TryOnError as e:
+                        if e.retryable:
+                            raise
+                        log.warning("try-on %s: skipping %s (%s)", tryon_id, p.id, e)
+                if not garments:
+                    raise TryOnError("None of these pieces has a photo the try-on model can use.")
+                image, media_type = rt.tryon.dress_outfit(image, media_type, [g for _, g in garments])
+                return image, media_type, [pid for pid, _ in garments]
             if rt.tryon.renders:
                 for step in steps:
                     try:

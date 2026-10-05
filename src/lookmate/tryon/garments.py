@@ -38,5 +38,5 @@ def garment_for(product: ProductView, data_dir: Path, http: httpx.Client | None 
     else:
         raise TryOnError(f"{product.name} has no photo to try on")
     colour = "" if product.colour.lower() in product.name.lower() else f"{product.colour} "
-    return Garment(data, media_type, REGIONS[product.category], f"{colour}{product.name}".strip()[:120],
+    return Garment(data, media_type, REGIONS.get(product.category, "accessory"), f"{colour}{product.name}".strip()[:120],
                    url=url if url.startswith("https://") else None)

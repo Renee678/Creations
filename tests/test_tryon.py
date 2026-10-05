@@ -345,8 +345,60 @@ def test_fashn_failure_is_explained(monkeypatch):
 
 def test_fashn_is_preferred_when_configured():
     assert make_tryon("rep-token", fashn_key="fa-key").name == "fashn"
-    assert make_tryon("rep-token").name == "idm-vton"
+    assert make_tryon("rep-token").name == "nano-banana", "the Replicate default is warm and does whole outfits"
+    assert make_tryon("rep-token", "cuuupid/idm-vton").name == "idm-vton"
     assert make_tryon("").name == "preview"
+
+
+def test_nano_banana_dresses_the_whole_outfit_in_one_call(monkeypatch):
+    from lookmate.tryon.client import NanoBananaTryOn
+
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append((req.method, req.url.path))
+        if req.url.path == "/v1/models/google/nano-banana/predictions":
+            seen.append(json.loads(req.content))
+            return httpx.Response(201, json={"id": "n1", "status": "processing",
+                                             "urls": {"get": "https://api.replicate.com/v1/predictions/n1",
+                                                      "cancel": "https://api.replicate.com/v1/predictions/n1/cancel"}})
+        if req.url.path == "/v1/predictions/n1":
+            return httpx.Response(200, json={"id": "n1", "status": "succeeded", "output": "https://replicate.delivery/n1.jpg"})
+        if req.url.host == "replicate.delivery":
+            return httpx.Response(200, content=b"JPG", headers={"content-type": "image/jpeg"})
+        return httpx.Response(404)
+
+    nano = NanoBananaTryOn("token", http=httpx.Client(transport=httpx.MockTransport(handler)))
+    out = nano.dress_outfit(b"me", "image/jpeg", [
+        Garment(b"t", "image/jpeg", "upper_body", "white satin blouse"),
+        Garment(None, "image/jpeg", "accessory", "black ballet flats", url="https://img/flats.jpg")])
+    assert out == (b"JPG", "image/jpeg")
+    body = next(s for s in seen if isinstance(s, dict))["input"]
+    assert len(body["image_input"]) == 3 and body["image_input"][2] == "https://img/flats.jpg"
+    assert "white satin blouse; black ballet flats" in body["prompt"]
+    assert not any(p == "/v1/models/google/nano-banana" for _, p in [x for x in seen if isinstance(x, tuple)]), \
+        "official models need no version lookup"
+
+
+def test_a_whole_outfit_model_renders_shoes_too(client, runtime, user, monkeypatch):
+    calls = []
+
+    class WholeOutfit:
+        name, renders, whole_outfit = "nano-banana", True, True
+
+        def dress_outfit(self, person, media_type, garments):
+            calls.append([g.region for g in garments])
+            return b"dressed", "image/jpeg"
+
+    monkeypatch.setattr(runtime, "tryon", WholeOutfit())
+    monkeypatch.setattr("lookmate.worker.garment_for",
+                        lambda p, data_dir: Garment(b"img", "image/jpeg", {"shoes": "accessory"}.get(p.category, "upper_body"), p.name))
+    ids = pick(runtime, "top", "bottom", "shoes")
+    tryon_id = request_tryon(client, user["id"], ids).json()["id"]
+    assert run_next_job(runtime) == "done"
+    assert len(calls) == 1 and "accessory" in calls[0], "one call, shoes included"
+    assert client.get(f"/api/tryons/{tryon_id}").json()["result"]["rendered_ids"] == ids
 
 
 def test_a_try_on_photo_is_checked_before_it_is_used(client, runtime, user, monkeypatch):
