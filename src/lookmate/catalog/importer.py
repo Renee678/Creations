@@ -31,8 +31,10 @@ HM_URL = (
 HM_COLUMNS = [
     "article_id", "prod_name", "product_type_name", "colour_group_name",
     "graphical_appearance_name", "index_group_name", "section_name",
-    "detail_desc", "image_url", "bge_embedding",
+    "detail_desc", "image_url",
 ]
+# The dataset's BGE-small vectors. Older copies called the column bge_embedding.
+HM_VECTOR_COLUMNS = ("dense_embedding", "bge_embedding")
 HM_GROUPS = {"Ladieswear", "Divided", "Menswear"}
 SEED_ID_PREFIX = "seed-"  # bundled catalog ids; H&M ids are numeric article ids
 
@@ -81,8 +83,9 @@ def load_hm_rows(parquet: Path, size: int) -> list[dict]:
     """
     import pyarrow.parquet as pq
 
-    meta_cols = [c for c in HM_COLUMNS if c != "bge_embedding"]
-    meta = pq.read_table(parquet, columns=meta_cols).to_pylist()
+    available = set(pq.read_schema(parquet).names)
+    vector_col = next((c for c in HM_VECTOR_COLUMNS if c in available), None)
+    meta = pq.read_table(parquet, columns=HM_COLUMNS).to_pylist()
     keep = []
     for i, r in enumerate(meta):
         if r["index_group_name"] not in HM_GROUPS:
@@ -94,7 +97,11 @@ def load_hm_rows(parquet: Path, size: int) -> list[dict]:
     keep.sort()  # deterministic sample
     keep = keep[:size]
 
-    vectors = pq.read_table(parquet, columns=["bge_embedding"]).column(0).take([i for _, i, _ in keep]).to_pylist()
+    indices = [i for _, i, _ in keep]
+    vectors = (
+        pq.read_table(parquet, columns=[vector_col]).column(0).take(indices).to_pylist()
+        if vector_col else [None] * len(indices)  # no precomputed vectors: the embedder computes them
+    )
     rows = []
     for (_, i, category), vector in zip(keep, vectors):
         r = meta[i]

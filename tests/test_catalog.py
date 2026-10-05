@@ -59,7 +59,7 @@ def test_category_mapping_skips_unsupported_types():
     assert category_for("Underwear bottom") is None
 
 
-def _hm_parquet(path, n=6):
+def _hm_parquet(path, n=6, vector_col="dense_embedding"):
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -73,7 +73,7 @@ def _hm_parquet(path, n=6):
         "section_name": ["Womens"] * n,
         "detail_desc": ["Soft and easy."] * (n - 1) + [None],
         "image_url": [f"https://img/{i}.jpg" for i in range(n)],
-        "bge_embedding": [[float(i)] * 4 for i in range(n)],
+        vector_col: [[float(i)] * 4 for i in range(n)],
     }
     pq.write_table(pa.table(rows), path)
 
@@ -112,3 +112,10 @@ def test_catalog_is_reimported_when_the_source_changes(tmp_path, monkeypatch):
         assert importer.ensure_catalog(s, HashEmbedder(), "hm", data_dir, 50) == 3
         assert not any(i.startswith("seed-") for i in s.scalars(select(Product.id)))
         assert importer.ensure_catalog(s, HashEmbedder(), "hm", data_dir, 50) == 3, "same source: kept as is"
+
+
+def test_hm_import_accepts_the_older_vector_column_name(tmp_path):
+    from lookmate.catalog.importer import load_hm_rows
+
+    _hm_parquet(tmp_path / "hm.parquet", vector_col="bge_embedding")
+    assert all(r["vector"] is not None for r in load_hm_rows(tmp_path / "hm.parquet", size=10))
