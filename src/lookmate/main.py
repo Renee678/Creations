@@ -32,6 +32,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lookmate", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def revalidate_app_shell(request: Request, call_next):
+    # Without this, browsers cache app.js and style.css heuristically and keep showing the old app
+    # after a deploy. "no-cache" still uses the cached copy, but checks it first (a cheap 304).
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 app.include_router(profiles.router)
 app.include_router(looks.router)
 app.include_router(style.router)

@@ -101,3 +101,11 @@ def test_my_style_is_a_report_and_trends_filter_by_season_and_style(client):
     assert "Your colour season" in app_js and "Your style DNA" in app_js
     assert "See your full report" in app_js, "the Lookbook links to the report instead of repeating it"
     assert "/api/trends${userId ? `?user_id=${userId}`" in app_js, "trends are fetched with the user, for fit verdicts"
+
+
+def test_app_files_are_revalidated_so_a_deploy_shows_up(client):
+    for path in ("/", "/static/app.js", "/static/style.css"):
+        res = client.get(path)
+        assert res.headers["cache-control"] == "no-cache", path
+    again = client.get("/static/app.js", headers={"If-None-Match": client.get("/static/app.js").headers["etag"]})
+    assert again.status_code == 304, "unchanged files are still cheap to check"
