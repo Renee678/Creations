@@ -24,9 +24,11 @@ def request_tryon(client, user_id, ids, photo=PHOTO, ctype="image/jpeg"):
 
 
 def run_next_job(runtime):
-    job = runtime.queue.reserve(timeout_s=0.1)
-    assert job is not None, "expected a queued job"
-    return process_job(runtime, job)
+    from dataclasses import replace
+
+    job = runtime.tryon_queue.reserve(timeout_s=0.1)
+    assert job is not None, "expected a queued try-on"
+    return process_job(replace(runtime, queue=runtime.tryon_queue), job)
 
 
 class FakeRenderer:
@@ -90,7 +92,7 @@ def test_same_photo_and_outfit_is_not_paid_for_twice(client, runtime, user, rend
     first = request_tryon(client, user["id"], ids)
     second = request_tryon(client, user["id"], ids)
     assert second.status_code == 200 and second.json()["id"] == first.json()["id"]
-    assert runtime.queue.depth()["ready"] == 1
+    assert runtime.tryon_queue.depth()["ready"] == 1
 
 
 def test_busy_model_is_retried(client, runtime, user, renderer, monkeypatch):
@@ -106,7 +108,7 @@ def test_busy_model_is_retried(client, runtime, user, renderer, monkeypatch):
     monkeypatch.setattr(renderer, "dress", flaky)
     tryon_id = request_tryon(client, user["id"], pick(runtime, "dress")).json()["id"]
     assert run_next_job(runtime) == "queued"
-    runtime.queue.promote_due(now=1e12)
+    runtime.tryon_queue.promote_due(now=1e12)
     assert run_next_job(runtime) == "done"
     assert client.get(f"/api/tryons/{tryon_id}").json()["attempts"] == 2
 
@@ -244,3 +246,39 @@ def test_a_failed_tryon_can_be_tried_again(client, runtime, user, renderer, monk
     assert again.status_code == 202 and again.json()["id"] != first, "a failure isn't handed back as the answer"
     assert run_next_job(runtime) == "done"
     assert client.get(f"/api/tryons/{first}").status_code == 404
+
+
+def test_tryons_have_their_own_queue_so_looks_never_wait_behind_them(client, runtime, user):
+    request_tryon(client, user["id"], pick(runtime, "dress"))
+    assert runtime.tryon_queue.depth()["ready"] == 1
+    assert runtime.queue.depth()["ready"] == 0, "a slow render must not block looks and analyses"
+
+
+def test_the_worker_serves_tryons_on_a_separate_thread(runtime, monkeypatch):
+    import threading
+
+    from lookmate import worker
+
+    served = []
+    monkeypatch.setattr(worker, "_serve", lambda rt, stop, trends: served.append((rt.queue, trends)))
+    worker.run_forever(runtime, threading.Event())
+    for t in threading.enumerate():
+        if t.name == "tryon-worker":
+            t.join(timeout=2)
+    assert (runtime.queue, True) in served and (runtime.tryon_queue, False) in served
+
+
+def test_an_old_tryon_on_the_shared_queue_is_handed_over(client, runtime, user, monkeypatch):
+    import threading
+
+    from lookmate import worker
+
+    tryon_id = request_tryon(client, user["id"], pick(runtime, "dress")).json()["id"]
+    runtime.tryon_queue.reserve(timeout_s=0.1)
+    runtime.tryon_queue.ack(worker.tryon_job(tryon_id))
+    runtime.queue.enqueue(worker.tryon_job(tryon_id))  # as an older deploy would have queued it
+    stop = threading.Event()
+    real_ack = runtime.queue.ack
+    monkeypatch.setattr(runtime.queue, "ack", lambda job: (real_ack(job), stop.set()))
+    worker._serve(runtime, stop, True)
+    assert runtime.tryon_queue.depth()["ready"] == 1 and runtime.queue.depth()["ready"] == 0

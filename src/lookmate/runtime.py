@@ -19,6 +19,7 @@ from .services.trends import ClaudeTrendResearcher
 from .tryon.client import make_tryon
 
 LOOK_QUEUE = "looks"
+TRYON_QUEUE = "tryons"  # its own queue: a slow render never holds up a look or an analysis
 _memory_server = None
 
 
@@ -49,6 +50,7 @@ class Runtime:
     trend_researcher: object | None  # ClaudeTrendResearcher, or None offline
     data_dir: Path
     tryon: object  # ReplicateTryOn, or PreviewTryOn without a token
+    tryon_queue: JobQueue | None = None
 
 
 def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, import_catalog: bool = True) -> Runtime:
@@ -71,4 +73,5 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
         trend_researcher=researcher,
         data_dir=Path(settings.data_dir),
         tryon=make_tryon(settings.replicate_api_token, settings.tryon_model),
+        tryon_queue=JobQueue(client, TRYON_QUEUE),
     )

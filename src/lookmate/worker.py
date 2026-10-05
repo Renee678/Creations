@@ -9,6 +9,7 @@ import logging
 import signal
 import threading
 import time
+from dataclasses import replace
 
 from .config import get_settings
 from .db import SessionLocal
@@ -214,15 +215,27 @@ def _fail_after_crash(job: str) -> None:
 
 
 def run_forever(rt: Runtime, stop_event: threading.Event | None = None) -> None:
+    """Serve looks and analyses here, and try-ons on a thread of their own.
+
+    A render can take minutes when the model is cold; on one shared loop that held up every
+    look and analysis queued behind it.
+    """
     stop_event = stop_event or threading.Event()
     if threading.current_thread() is threading.main_thread():
         signal.signal(signal.SIGTERM, lambda *_: stop_event.set())
         signal.signal(signal.SIGINT, lambda *_: stop_event.set())
+    log.info("worker started (llm=%s, catalog=%d products)", rt.llm.name, len(rt.catalog.index))
+    if rt.tryon_queue is not None:
+        tryons = replace(rt, queue=rt.tryon_queue)  # handlers ack and retry on rt.queue
+        threading.Thread(target=_serve, args=(tryons, stop_event, False), daemon=True, name="tryon-worker").start()
+    _serve(rt, stop_event, True)
+
+
+def _serve(rt: Runtime, stop_event: threading.Event, check_trends: bool) -> None:
     recovered = rt.queue.recover()
     if recovered:
         log.warning("re-queued %d jobs left over from a previous run", recovered)
-    log.info("worker started (llm=%s, catalog=%d products)", rt.llm.name, len(rt.catalog.index))
-    next_trend_check = 0.0
+    next_trend_check = 0.0 if check_trends else float("inf")
     while not stop_event.is_set():
         if time.monotonic() >= next_trend_check:
             next_trend_check = time.monotonic() + TREND_CHECK_EVERY_S
@@ -235,6 +248,11 @@ def run_forever(rt: Runtime, stop_event: threading.Event | None = None) -> None:
         rt.queue.promote_due()
         job = rt.queue.reserve(timeout_s=1.0)
         if job is None:
+            continue
+        if check_trends and job.startswith(TRYON_PREFIX) and rt.tryon_queue is not None:
+            # queued before try-ons had their own queue: hand it over instead of blocking here
+            rt.tryon_queue.enqueue(job)
+            rt.queue.ack(job)
             continue
         try:
             process_job(rt, job)

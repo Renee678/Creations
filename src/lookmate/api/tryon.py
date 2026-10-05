@@ -95,7 +95,7 @@ async def create_tryon(
                 media_type=photo.content_type, photo=data)
     db.add(rec)
     db.commit()
-    rt.queue.enqueue(tryon_job(rec.id))
+    rt.tryon_queue.enqueue(tryon_job(rec.id))
     return JSONResponse(tryon_out(rec) | {"deduplicated": False}, status_code=202)
 
 
