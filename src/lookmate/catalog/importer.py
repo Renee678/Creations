@@ -7,17 +7,22 @@ CATALOG_SOURCE is one source or a comma-separated mix, e.g. "asos,polyvore":
               embedded in the dataset, so they are saved under data/cache/images and served by the app.
 - "hm":       the H&M dataset (Qdrant/hm_ecommerce_products, CC BY 4.0) with precomputed BGE-small
               vectors. Its image bucket is gone, so products show no photo.
+- "amazon":   women's clothing, shoes and bags from Amazon Reviews 2023 (McAuley Lab, UCSD; item metadata
+              for Clothing_Shoes_and_Jewelry), streamed and filtered, up to AMAZON_MAX_ITEMS pieces with real
+              prices and Amazon CDN photos. It takes its own share, on top of CATALOG_SIZE for the rest.
 - "seed":     a small bundled JSON catalog so the app runs fully offline (tests, CI).
 Each download is cached in data/cache; the mix is sampled down to CATALOG_SIZE items in total.
 """
 
 import ast
 import csv
+import gzip
 import hashlib
 import json
 import logging
 import re
 import sys
+import zlib
 from pathlib import Path
 
 import httpx
@@ -48,12 +53,16 @@ HM_GROUPS = {"Ladieswear", "Divided", "Menswear"}
 ASOS_URL = "https://huggingface.co/datasets/UniqueData/asos-e-commerce-dataset/resolve/main/products_asos.csv"
 # One of six shards (~420 MB, ~15k items) is plenty for a 5k catalog.
 POLYVORE_URL = "https://huggingface.co/datasets/Marqo/polyvore/resolve/main/data/data-00000-of-00006.parquet"
+AMAZON_URL = ("https://mcauleylab.ucsd.edu/public_datasets/data/amazon_2023/raw/meta_categories/"
+              "meta_Clothing_Shoes_and_Jewelry.jsonl.gz")
+AMAZON_SCAN_LIMIT = 3_000_000  # lines read at most; the file has ~7.2M items, most of them not women's apparel
+EMBED_CHUNK = 1000  # rows embedded (and cached on disk) at a time, so a failed import resumes
 IMAGE_ROUTE = "/catalog-images"  # served from data/cache/images (see main.py)
 
 # Product id prefixes tell the sources apart; H&M ids are bare numeric article ids.
 SEED_ID_PREFIX = "seed-"
-ID_PREFIXES = {"seed": SEED_ID_PREFIX, "asos": "asos-", "polyvore": "pv-"}
-SOURCES = ("seed", "hm", "asos", "polyvore")
+ID_PREFIXES = {"seed": SEED_ID_PREFIX, "asos": "asos-", "polyvore": "pv-", "amazon": "amz-"}
+SOURCES = ("seed", "hm", "asos", "polyvore", "amazon")
 
 
 def product_text(p: dict) -> str:
@@ -215,6 +224,108 @@ def load_asos_rows(csv_path: Path, size: int) -> list[dict]:
     return rows[:size]
 
 
+# Amazon's category path and department say who a piece is for; titles repeat it ("Women's ...").
+_AMAZON_NOT_WOMEN = re.compile(r"\b(men|boys|girls|baby|kids|novelty|costumes?|uniforms?|jewelry|watches|luggage|"
+                               r"shoe care|accessories > (?:wallets|keyrings))\b", re.I)
+_AMAZON_NOISE = re.compile(r"\b(women'?s|womens|for women|ladies|2024|2025|fall|summer|winter|spring|fashion|trendy|"
+                           r"casual|cute|sexy|plus size)\b", re.I)
+
+
+def _amazon_price(value) -> float | None:
+    try:
+        price = float(str(value).replace("$", "").replace(",", "").split()[0])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return round(price, 2) if 3 <= price <= 2000 else None
+
+
+def amazon_row(item: dict) -> dict | None:
+    """One Amazon item as a catalog row, or None if it isn't women's apparel, shoes or a bag with a price and photo."""
+    title = (item.get("title") or "").strip()
+    price = _amazon_price(item.get("price"))
+    images = item.get("images") or []
+    main = next((i for i in images if (i or {}).get("variant") == "MAIN"), images[0] if images else None) or {}
+    image = main.get("large") or main.get("hi_res") or ""  # ~500 px: enough for a card and for try-on
+    if not title or price is None or not image.startswith("https://"):
+        return None
+    details = item.get("details") or {}
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except ValueError:
+            details = {}
+    path = [c for c in (item.get("categories") or []) if isinstance(c, str)]
+    department = str(details.get("Department", ""))
+    women = "Women" in path[:3] or "women" in department.lower() or bool(re.search(r"\bwomen'?s\b", title, re.I))
+    if not women or _AMAZON_NOT_WOMEN.search(" > ".join(path[1:])) or _AMAZON_NOT_WOMEN.search(department):
+        return None
+    leaf = path[-1] if len(path) > 2 else ""
+    match = category_from_text(leaf, title)
+    if not match or match[0] == "accessory":
+        return None
+    features = [f for f in (item.get("features") or []) if isinstance(f, str)]
+    described = [d for d in (item.get("description") or []) if isinstance(d, str) and d != "Description"]
+    colour = str(details.get("Color") or details.get("Colour") or "").strip()
+    store = str(item.get("store") or "").strip()
+    if store and title.lower().startswith(store.lower()):
+        title = title[len(store):]  # the brand stays in `section`; the name says what the piece is
+    name = re.sub(r"\s+", " ", _AMAZON_NOISE.sub(" ", title)).strip(" ,-|")[:140]
+    return {
+        "id": f"amz-{item['parent_asin']}",
+        "name": name[:1].upper() + name[1:],
+        "product_type": leaf or match[1].capitalize(),
+        "category": match[0],
+        "colour": colour if colour.lower() not in ("as shown", "multicolor", "multi", "") else colour_word(title),
+        "pattern": "",
+        "section": f"Amazon · {item.get('store') or 'unbranded'}"[:60],
+        "description": " ".join(features + described)[:600],
+        "image_url": image,
+        "price": price,
+    }
+
+
+def _stream_lines(url: str):
+    """Lines of a remote .jsonl.gz, decompressed as they arrive: the file is never stored whole."""
+    with httpx.stream("GET", url, follow_redirects=True, timeout=httpx.Timeout(30, read=300)) as r:
+        r.raise_for_status()
+        inflate, buffer = zlib.decompressobj(16 + zlib.MAX_WBITS), b""
+        for chunk in r.iter_bytes(1 << 20):
+            buffer += inflate.decompress(chunk)
+            *lines, buffer = buffer.split(b"\n")
+            yield from lines
+        buffer += inflate.flush()
+        if buffer:
+            yield buffer
+
+
+def load_amazon_rows(cache_dir: Path, size: int, lines=None) -> list[dict]:
+    """Stream the metadata once, keep up to `size` pieces, and cache them, so a re-import skips the download."""
+    cached = cache_dir / f"amazon_rows_{size}.jsonl.gz"
+    if cached.exists():
+        with gzip.open(cached, "rt", encoding="utf-8") as f:
+            return [json.loads(line) for line in f]
+    rows, seen = [], set()
+    for n, line in enumerate(lines if lines is not None else _stream_lines(AMAZON_URL)):
+        if n >= AMAZON_SCAN_LIMIT or len(rows) >= size:
+            break
+        try:
+            row = amazon_row(json.loads(line))
+        except (ValueError, KeyError, TypeError):
+            continue
+        if row and row["id"] not in seen and row["name"].lower() not in seen:
+            seen.update((row["id"], row["name"].lower()))
+            rows.append(row)
+        if n and n % 200_000 == 0:
+            log.info("amazon: read %d items, kept %d", n, len(rows))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    tmp = cached.with_suffix(".part")
+    with gzip.open(tmp, "wt", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    tmp.rename(cached)  # atomic: an interrupted scan starts over instead of reading half a list
+    return rows
+
+
 def _image_ext(data: bytes) -> str:
     if data.startswith(b"\x89PNG"):
         return "png"
@@ -272,13 +383,37 @@ def load_polyvore_rows(parquet: Path, size: int, image_dir: Path) -> list[dict]:
     return rows
 
 
-def _store(session: Session, rows: list[dict], embedder: Embedder) -> int:
+def _embed(rows: list[dict], embedder: Embedder, cache_dir: Path | None) -> np.ndarray:
+    """Embed in chunks, each saved on disk: a restart after a crash (or a redeploy) reuses what's done."""
+    texts = [product_text(r) for r in rows]
+    if cache_dir is None:
+        return embedder.embed_documents(texts)
+    out = []
+    folder = cache_dir / "embeddings"
+    folder.mkdir(parents=True, exist_ok=True)
+    for start in range(0, len(texts), EMBED_CHUNK):
+        chunk = texts[start:start + EMBED_CHUNK]
+        key = hashlib.sha256("\0".join([embedder.name, str(embedder.dim), *chunk]).encode()).hexdigest()[:32]
+        path = folder / f"{key}.npy"
+        if path.exists():
+            out.append(np.load(path))
+            continue
+        vectors = embedder.embed_documents(chunk)
+        tmp = folder / f"{key}.part.npy"
+        np.save(tmp, vectors)
+        tmp.rename(path)
+        out.append(vectors)
+        log.info("embedded %d/%d products", min(start + EMBED_CHUNK, len(texts)), len(texts))
+    return np.concatenate(out) if out else np.zeros((0, embedder.dim), dtype=np.float32)
+
+
+def _store(session: Session, rows: list[dict], embedder: Embedder, cache_dir: Path | None = None) -> int:
     precomputed = embedder.name == "bge" and all(r.get("vector") is not None for r in rows)
     if precomputed:
         vectors = np.array([r["vector"] for r in rows], dtype=np.float32)
         vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
     else:
-        vectors = embedder.embed_documents([product_text(r) for r in rows])
+        vectors = _embed(rows, embedder, cache_dir)
     for r, v in zip(rows, vectors):
         session.add(Product(
             id=r["id"], name=r["name"], product_type=r["product_type"], category=r["category"],
@@ -291,7 +426,8 @@ def _store(session: Session, rows: list[dict], embedder: Embedder) -> int:
     return len(rows)
 
 
-def ensure_catalog(session: Session, embedder: Embedder, source: str, data_dir: Path, size: int) -> int:
+def ensure_catalog(session: Session, embedder: Embedder, source: str, data_dir: Path, size: int,
+                   amazon_size: int = 40_000) -> int:
     """Import the catalog if the table is empty, came from other sources or used a different model."""
     wanted = parse_sources(source)
     count = session.scalar(select(func.count()).select_from(Product)) or 0
@@ -307,10 +443,13 @@ def ensure_catalog(session: Session, embedder: Embedder, source: str, data_dir: 
 
     rows = []
     cache = data_dir / "cache"
-    per_source = max(size // len(wanted), 1)
+    others = wanted - {"amazon"}
+    per_source = max(size // max(len(others), 1), 1)
     for name in sorted(wanted - {"seed"}):
         try:
-            if name == "hm":
+            if name == "amazon":
+                rows += load_amazon_rows(cache, amazon_size)
+            elif name == "hm":
                 rows += load_hm_rows(download_hm(cache), per_source)
             elif name == "asos":
                 rows += load_asos_rows(download_asos(cache), per_source)
@@ -322,9 +461,14 @@ def ensure_catalog(session: Session, embedder: Embedder, source: str, data_dir: 
         if not rows:
             log.warning("no downloadable catalog loaded; using the bundled seed catalog")
         rows += load_seed_rows(data_dir / "seed_products.json")
-    n = _store(session, rows, embedder)
+    n = _store(session, _unique(rows), embedder, cache)
     log.info("imported %d products (source=%s, embedder=%s)", n, source, embedder.name)
     return n
+
+
+def _unique(rows: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    return [r for r in rows if not (r["id"] in seen or seen.add(r["id"]))]
 
 
 def parse_sources(source: str) -> set[str]:

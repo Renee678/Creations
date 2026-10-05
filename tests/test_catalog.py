@@ -287,3 +287,53 @@ def test_unknown_catalog_source_is_rejected():
     assert parse_sources("ASOS, polyvore") == {"asos", "polyvore"}
     with pytest.raises(ValueError):
         parse_sources("asos,zara")
+
+
+AMAZON_SAMPLE = Path(__file__).parent / "fixtures" / "amazon_meta_sample.jsonl"
+
+
+def test_amazon_keeps_womens_apparel_shoes_and_bags_with_a_price_and_photo(tmp_path):
+    from lookmate.catalog.importer import load_amazon_rows
+
+    lines = AMAZON_SAMPLE.read_bytes().splitlines()
+    rows = load_amazon_rows(tmp_path, 100, lines=lines)
+    by_id = {r["id"]: r for r in rows}
+    assert set(by_id) == {"amz-B0DRESS1", "amz-B0SKIRT1", "amz-B0BOOTS1", "amz-B0TOTE01"}, \
+        "no menswear, kids, jewellery, lingerie, costumes, or pieces without a price or photo; no duplicates"
+    dress = by_id["amz-B0DRESS1"]
+    assert dress["category"] == "dress" and dress["price"] == 39.99 and dress["colour"] == "Black"
+    assert dress["name"] == "Long Sleeve Wrap Midi Dress", "no brand, 'Womens' or 'Fall' in the name"
+    assert dress["image_url"].startswith("https://m.media-amazon.com/") and "Dokotoo" in dress["section"]
+    assert by_id["amz-B0SKIRT1"]["name"].startswith("Satin Maxi Skirt")
+    assert by_id["amz-B0BOOTS1"]["category"] == "shoes" and by_id["amz-B0TOTE01"]["category"] == "bag"
+    assert by_id["amz-B0TOTE01"]["colour"] == "", "'As Shown' is not a colour"
+
+    # The filtered list is cached: a second import (a redeploy) doesn't stream the file again.
+    assert load_amazon_rows(tmp_path, 100, lines=iter(())) == rows
+
+
+def test_amazon_products_link_to_their_listing():
+    from lookmate.catalog.service import ProductView
+
+    links = ProductView("amz-B0DRESS1", "Wrap midi dress", "Dresses", "dress", "Black", "", "", 39.99).shop_links()
+    assert links["amazon"] == "https://www.amazon.com/dp/B0DRESS1" and "shein" in links
+
+
+def test_embeddings_are_cached_in_chunks_so_an_import_resumes(tmp_path, monkeypatch):
+    from lookmate.catalog import importer
+    from lookmate.catalog.embedder import HashEmbedder
+
+    class Counting(HashEmbedder):
+        calls = 0
+
+        def embed_documents(self, texts):
+            Counting.calls += len(texts)
+            return super().embed_documents(texts)
+
+    monkeypatch.setattr(importer, "EMBED_CHUNK", 2)
+    rows = [{"name": f"Knit top {i}", "product_type": "Tops", "colour": "Grey"} for i in range(5)]
+    first = importer._embed(rows, Counting(), tmp_path)
+    assert Counting.calls == 5 and len(list((tmp_path / "embeddings").glob("*.npy"))) == 3
+    again = importer._embed(rows, Counting(), tmp_path)
+    assert Counting.calls == 5, "nothing re-embedded"
+    assert (first == again).all()

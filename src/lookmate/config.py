@@ -14,8 +14,9 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 60.0
 
     embedder: str = "hash"  # "hash" (offline) or "bge" (fastembed)
-    catalog_source: str = "seed"  # "seed", "asos", "polyvore", "hm", or a mix like "asos,polyvore"
+    catalog_source: str = "seed"  # "seed", "asos", "polyvore", "amazon", "hm", or a mix like "asos,polyvore,amazon"
     catalog_size: int = 5000
+    amazon_max_items: int = 40000  # the "amazon" source's own share, on top of catalog_size
     data_dir: str = "data"
 
     # No-Docker local mode: run the worker as a thread inside the API process.

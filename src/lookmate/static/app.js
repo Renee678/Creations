@@ -167,7 +167,7 @@ function productCard(p, styleTags, opts = {}) {
   const img = p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.parentElement.textContent='${esc(p.product_type)}'">` : esc(p.product_type);
   const saving = p.saving_usd > 0 ? `<span class="saving">Save about $${Math.round(p.saving_usd)}</span>` : "";
   const shop = p.shop_links
-    ? `<div class="shop"><a class="gel" href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">SHEIN ↗</a><a class="gel" href="${esc(p.shop_links.asos)}" target="_blank" rel="noopener">ASOS ↗</a></div>`
+    ? `<div class="shop"><a class="gel" href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">SHEIN ↗</a><a class="gel" href="${esc(p.shop_links.asos)}" target="_blank" rel="noopener">ASOS ↗</a>${p.shop_links.amazon ? `<a class="gel" href="${esc(p.shop_links.amazon)}" target="_blank" rel="noopener">Amazon ↗</a>` : ""}</div>`
     : "";
   return `<div class="card"><span class="tape"></span><span class="price">$${p.price.toFixed(2)}</span>
     <div class="img">${img}</div>

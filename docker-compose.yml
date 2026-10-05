@@ -17,8 +17,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
-      # ASOS + Polyvore catalog (real photos) + semantic embeddings by default; set to seed/hash for a fully offline run.
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
+      # ASOS + Polyvore + Amazon catalog (real photos) + semantic embeddings by default; set to seed/hash for a fully offline run.
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
     volumes:
@@ -32,7 +32,7 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 5s
       timeout: 3s
-      retries: 120  # first boot downloads the catalog and embedding model
+      retries: 480  # first boot streams the catalogs and embeds ~50k products (cached after that)
       start_period: 20s
 
   worker:
@@ -44,7 +44,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
     volumes:

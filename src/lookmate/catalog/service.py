@@ -75,10 +75,13 @@ class ProductView:
 
     def shop_links(self) -> dict[str, str]:
         # Search links, not product pages: the datasets are snapshots, so most product pages are gone.
-        return {
+        links = {
             "shein": f"https://us.shein.com/pdsearch/{quote(self.search_text)}/",
             "asos": f"https://www.asos.com/us/search/?q={quote_plus(self.search_text)}",
         }
+        if self.id.startswith("amz-"):  # Amazon listings are long-lived: link the piece itself
+            links["amazon"] = f"https://www.amazon.com/dp/{quote(self.id.removeprefix('amz-'))}"
+        return links
 
     def to_dict(self) -> dict:
         return asdict(self) | {"shop_links": self.shop_links()}

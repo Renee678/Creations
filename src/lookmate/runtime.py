@@ -59,7 +59,8 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
     embedder = make_embedder(settings.embedder)
     with SessionLocal() as session:
         if import_catalog:
-            ensure_catalog(session, embedder, settings.catalog_source, Path(settings.data_dir), settings.catalog_size)
+            ensure_catalog(session, embedder, settings.catalog_source, Path(settings.data_dir), settings.catalog_size,
+                           settings.amazon_max_items)
         catalog = Catalog.load(session, embedder)
     client = redis_client or make_redis(settings.redis_url)
     researcher = (

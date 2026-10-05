@@ -120,7 +120,8 @@ reviewed. Colour families
 
 ## Data
 
-The catalog mixes two public datasets, half of `CATALOG_SIZE` each, women's fashion only:
+The catalog mixes public datasets, women's fashion only. ASOS and Polyvore share `CATALOG_SIZE`; Amazon
+adds its own `AMAZON_MAX_ITEMS` on top:
 
 - [ASOS e-commerce products](https://huggingface.co/datasets/UniqueData/asos-e-commerce-dataset)
   (CC BY-NC-ND 4.0, used unmodified for a non-commercial assessment): affordable pieces with **real prices**
@@ -130,6 +131,16 @@ The catalog mixes two public datasets, half of `CATALOG_SIZE` each, women's fash
   pieces from Polyvore outfits. The photos ship inside the dataset, so the import saves the chosen ones
   to `data/cache/images` and the app serves them at `/catalog-images/`. The dataset has no prices, so
   designer pieces get a deterministic **synthetic** price in a designer band; see `catalog/pricing.py`.
+- [Amazon Reviews 2023](https://amazon-reviews-2023.github.io/) (McAuley Lab, UCSD), item metadata for
+  `Clothing_Shoes_and_Jewelry`: the import streams the gzipped file, decompressing as it reads, and keeps
+  women's apparel, shoes and bags with a title, a **real price** and a photo, up to `AMAZON_MAX_ITEMS`
+  (default 40,000). It drops menswear, kids, jewellery, costumes and lingerie using Amazon's category path
+  and the same exclusion words as the other sources. The dataset is published for research and states no
+  licence. Lookmate uses it unmodified for a non-commercial assessment, and hot-links photos from the
+  Amazon image CDN rather than copying them. Cards for these pieces also link to the Amazon listing
+  (`/dp/<asin>`). The filtered list is cached in `data/cache/amazon_rows_*.jsonl.gz`, and embeddings are
+  cached in chunks in `data/cache/embeddings/`, so a failed or repeated import resumes instead of
+  starting over.
 - Product cards link to a SHEIN and an ASOS **search** for the piece, not to product pages: both datasets
   are snapshots and most product pages are gone. Nothing is scraped.
 - `CATALOG_SOURCE=hm` still loads the older [H&M dataset](https://huggingface.co/datasets/Qdrant/hm_ecommerce_products)
@@ -142,9 +153,10 @@ The catalog mixes two public datasets, half of `CATALOG_SIZE` each, women's fash
 |---|---|---|
 | `ANTHROPIC_API_KEY` | empty | Enables Claude; empty uses the offline fake |
 | `LLM_MODEL` | `claude-opus-5-5` | Model for vision and trend research |
-| `CATALOG_SOURCE` | `asos,polyvore` (compose, local mode) | Comma-separated mix of `asos`, `polyvore`, `hm`, `seed` |
+| `CATALOG_SOURCE` | `asos,polyvore,amazon` (compose), `asos,polyvore` (local mode) | Comma-separated mix of `asos`, `polyvore`, `amazon`, `hm`, `seed` |
 | `EMBEDDER` | `bge` (compose) | `bge` or `hash` (offline lexical) |
-| `CATALOG_SIZE` | `5000` | Products in the catalog, split evenly across the sources |
+| `CATALOG_SIZE` | `5000` | Products from ASOS, Polyvore and H&M, split evenly across them |
+| `AMAZON_MAX_ITEMS` | `40000` | Products from the Amazon source, on top of `CATALOG_SIZE` |
 | `REPLICATE_API_TOKEN` | empty | Rendered try-on on Replicate; empty (and no FASHN key) shows a collage preview |
 | `TRYON_MODEL` | `google/nano-banana` | Replicate try-on model: Nano Banana (warm, one call per outfit) or `cuuupid/idm-vton` (cheaper, slow cold starts) |
 | `FASHN_API_KEY` | empty | Use FASHN's specialist try-on API instead (seconds per garment, about $0.075 an image) |
