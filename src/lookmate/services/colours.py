@@ -22,6 +22,8 @@ _FAMILY_WORDS: list[tuple[str, tuple[str, ...]]] = [
     ("green", ("green", "olive", "sage", "emerald", "mint", "forest", "teal", "jade", "turquoise")),
     ("blue", ("blue", "aqua", "cobalt", "denim", "sky", "cerulean")),
     ("purple", ("purple", "lavender", "lilac", "violet", "plum", "aubergine", "orchid")),
+    # Knit shades with no colour word of their own read as grey; "heather blue" is caught by blue above.
+    ("grey", ("heather", "marl", "melange", "mélange")),
 ]
 
 NEUTRALS = {"navy", "cream", "beige", "brown", "grey", "black", "white"}

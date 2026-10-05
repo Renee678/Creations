@@ -39,8 +39,10 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext, pric
                 {
                     **catalog.products[p.product_id].to_dict(),
                     "score": p.score,
-                    "reasons": p.reasons + _length_reason(target, catalog.products[p.product_id])
-                    + [n for n in [price.note(catalog.products[p.product_id].price)] if n],
+                    # The price label first: a card shows the first reasons, and this one must not be cut off.
+                    "reasons": [n for n in [price.note(catalog.products[p.product_id].price)] if n]
+                    + [r for r in p.reasons if not (r == "Within your budget" and price.note(catalog.products[p.product_id].price))]
+                    + _length_reason(target, catalog.products[p.product_id]),
                     "saving_usd": (
                         round(item.estimated_original_price_usd - catalog.products[p.product_id].price, 2)
                         if item.estimated_original_price_usd else None

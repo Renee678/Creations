@@ -87,3 +87,38 @@ def test_a_candidate_must_say_its_colour_and_length_to_count():
     assert not target.check(p("d", "Satin skirt", "White")), "no length given: skipped, not guessed"
     assert not target.check(p("e", "Satin midi skirt", "White"))
     assert Target("bottom", "satin skirt", "").check(p("f", "Satin midi skirt", "Red")), "only stated rules apply"
+
+
+def test_heather_grey_lounge_set_finds_grey_knits_and_trousers():
+    """Renee's heather grey knit lounge set: trousers came back empty and the top got graphic sweatshirts."""
+    from lookmate.services.colours import family
+
+    assert {family(c) for c in ("heather grey", "grey marl", "charcoal", "light grey melange", "heather")} == {"grey"}
+    assert family("heather blue") == "blue"
+
+    trousers = Target("bottom", "wide-leg knit trousers", "heather grey", ["full length", "elasticated waist"])
+    assert trousers.length is None, "maxi/midi/mini is a skirt and dress rule"
+    assert trousers.check(p("t1", "Grey wide leg knit trouser", "Grey marl", "Trousers"))
+    assert not trousers.check(p("t2", "Grey cropped knit trousers", "Grey", "Trousers")), "full length wants full length"
+    assert Target("bottom", "cropped trousers", "grey").check(p("t3", "Capri trousers", "Grey", "Trousers"))
+
+    top = Target("top", "knit long-sleeve top", "heather grey", ["plain", "ribbed"])
+
+    def t(pid, name, colour="Grey", desc=""):
+        return ProductView(pid, name, "Tops", "top", colour, desc, "", 30.0)
+
+    assert top.check(t("k1", "Fine knit jumper", desc="Jumpers & Cardigans by Monki. Soft-touch knit"))
+    assert not top.check(t("k2", "Disney Mickey Mouse knit jumper")), "a character print isn't a plain knit"
+    assert not top.check(t("k3", "Knitted jumper with CREEPIN' IT REAL slogan")), "nor is a slogan"
+    assert not top.check(t("k4", "Oversized jumper", desc="Hoodies & Sweatshirts by ASOS DESIGN. Printed front")), \
+        "the shop files it under sweatshirts"
+    assert not top.check(t("k5", "Sweatshirt in grey marl")), "a sweatshirt is not a knit"
+    assert top.check(t("k6", "Knit jumper", desc="Jumpers & Cardigans by X. Spot clean only")), "'spot clean' is no print"
+    floral = Target("top", "floral print knit jumper", "pink")
+    assert floral.check(t("f1", "Floral knit jumper", "Pink")) and not floral.check(t("f2", "Plain knit jumper", "Pink"))
+
+
+def test_a_pick_above_the_range_says_so_first():
+    pricey = [(p("ivory-maxi-dear", "Satin maxi skirt", "Ivory", price=90), 0.8)]
+    reasons = dupes(pricey)["picks"][0]["reasons"]
+    assert "price range" in reasons[0] and "Within your budget" not in reasons

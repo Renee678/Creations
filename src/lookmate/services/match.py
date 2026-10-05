@@ -29,6 +29,17 @@ SUBTYPES: dict[str, list[tuple[str, tuple[str, ...]]]] = {
             ("crossbody", ("cross-body", "crossbody", "cross body")), ("shoulder", ("shoulder", "hobo", "baguette"))],
 }
 
+# Length only means something for skirts and dresses. Trousers are full length unless they say otherwise.
+LENGTH_SUBTYPES = {"skirt", "dress"}
+CROPPED = re.compile(r"\b(cropped|crop|capri|7/8|ankle[- ]grazer|culottes?)\b")
+PATTERNED = re.compile(r"\b(print|printed|prints|graphic|slogan|logo|character|disney|mickey|minnie|marvel|cartoon|"
+                       r"floral|flower|flowers|stripe|stripes|striped|stripy|check|checked|checks|plaid|tartan|gingham|"
+                       r"leopard|animal|zebra|snake|polka|dot|dots|spot|spots|tie[- ]dye|camo|camouflage|paisley|"
+                       r"houndstooth|argyle|fair isle|patterned|pattern)\b")
+# Descriptions say "spot clean" and "adds character": only unambiguous print words count there.
+LOUD_IN_DESCRIPTION = re.compile(r"\b(printed|all-over print|graphic|slogan|floral|striped|leopard|animal print|disney|"
+                                 r"mickey|minnie|tie[- ]dye|camo|paisley|plaid|tartan|gingham|polka dot)\b")
+
 LENGTHS = [("mini", ("mini", "micro")), ("midi", ("midi", "knee length", "knee-length", "calf")),
            ("maxi", ("maxi", "floor length", "floor-length", "full length", "ankle length", "long skirt", "long dress"))]
 LENGTH_ORDER = ["mini", "midi", "maxi"]
@@ -69,6 +80,14 @@ def colour_match(a: str | None, b: str | None) -> float:
     return 0.0
 
 
+def _shop_label_kinds(product) -> set[str]:
+    """Garment types in the shop's own section label: ASOS descriptions start "Hoodies & Sweatshirts by ..."."""
+    desc = product.description or ""
+    label = desc.split(" by ", 1)[0] if " by " in desc[:60] else ""
+    table = SUBTYPES.get(product.category, [])
+    return {name for name, words in table if any(re.search(rf"\b{re.escape(w)}", label.lower()) for w in words)}
+
+
 def same_colour(a: str, b: str | None) -> bool:
     return b is not None and (a == b or any(a in pair and b in pair for pair in SAME_COLOUR))
 
@@ -87,18 +106,28 @@ class Target:
         text = " ".join([name, fit, *(details or [])])
         self.category = category
         self.subtype = subtype(category, name) or subtype(category, text)
-        self.length = length(text) if category in ("bottom", "dress") else None
+        self.length = length(text) if self.subtype in LENGTH_SUBTYPES else None
+        self.cropped = bool(CROPPED.search(text.lower())) if self.subtype in ("trousers", "jeans") else None
         self.colour = colour_family(colour, name)
+        self.patterned = bool(PATTERNED.search(text.lower()))
 
     def check(self, product) -> bool:
         text = f"{product.name} {product.product_type}"
         kind = subtype(product.category, text)
         if self.subtype and kind != self.subtype:
             return False  # a skirt is never a dupe for trousers, however close the fabric
+        label = _shop_label_kinds(product)
+        if self.subtype and label and self.subtype not in label:
+            return False  # named a "jumper" but filed under Hoodies & Sweatshirts
         if self.length and length(text) != self.length:
             return False  # a maxi skirt wants a maxi skirt, not a midi or one of unknown length
+        if self.cropped is not None and bool(CROPPED.search(text.lower())) != self.cropped:
+            return False  # cropped trousers for cropped, full length (stated or not) for full length
         if self.colour and not same_colour(self.colour, colour_family(product.colour, product.name)):
             return False  # a white skirt wants a white skirt
+        patterned = PATTERNED.search(text.lower()) or LOUD_IN_DESCRIPTION.search(product.description[:300].lower())
+        if bool(patterned) != self.patterned:
+            return False  # a plain top never gets a Mickey Mouse sweatshirt, and a floral one wants a print
         return True
 
     def colour_score(self, product) -> float:
