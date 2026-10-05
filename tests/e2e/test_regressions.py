@@ -70,7 +70,10 @@ def test_every_tab_opens_without_errors(page):
 def find_dupes(page, outfit_photo):
     looks = responses(page, r"/api/looks/\d+")
     page.locator("#file").set_input_files(outfit_photo)
-    page.locator("#results .item").first.wait_for()
+    # Stop at the page's own error message (AI failed, access code, too slow) instead of waiting out the timeout.
+    page.locator("#results .item, #status.error").first.wait_for()
+    error = page.locator("#status.error")
+    assert not error.is_visible(), f"Find dupes showed an error instead of results: {error.text_content()}"
     done = [r.json() for r in looks]
     return next(d for d in reversed(done) if d.get("status") == "done")["result"]
 
