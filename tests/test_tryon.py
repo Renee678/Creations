@@ -1,3 +1,4 @@
+import time
 """Virtual try-on: request -> queue -> worker -> image, with the collage preview when no model is set."""
 
 import json
@@ -220,21 +221,62 @@ def test_garment_photos_come_from_the_saved_dataset_images(tmp_path):
         garment_for(ProductView("seed-1", "x", "Top", "top", "", "", "", 9), tmp_path)
 
 
-def test_a_slow_shop_photo_is_fetched_on_the_second_try():
+def test_a_shop_photo_is_fetched_once_then_read_from_disk(tmp_path):
     from lookmate.catalog.service import ProductView
-    from lookmate.tryon.garments import garment_for
+    from lookmate.tryon.garments import garment_for, prefetch
 
     tries = []
 
-    def once_slow(req):
+    def cdn(req):
         tries.append(req.extensions["timeout"]["read"])
-        if len(tries) == 1:
-            raise httpx.ReadTimeout("timed out", request=req)
         return httpx.Response(200, content=b"jpg", headers={"content-type": "image/jpeg"})
 
     p = ProductView("asos-2", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/y/1-2", 20)
-    g = garment_for(p, None, http=httpx.Client(transport=httpx.MockTransport(once_slow)))
-    assert g.image == b"jpg" and tries == [15, 30], "the retry waits longer"
+    http = httpx.Client(transport=httpx.MockTransport(cdn))
+    g = garment_for(p, tmp_path, http=http)
+    assert g.image == b"jpg" and tries[0] <= 6, "one short try, not a long wait"
+    assert garment_for(p, tmp_path, http=http).image == b"jpg" and len(tries) == 1, "the second time comes from disk"
+
+    q = ProductView("asos-3", "Midi skirt", "Skirts", "bottom", "white", "", "https://images.asos-media.com/products/z/1", 20)
+    prefetch([q], tmp_path, http=http)
+    assert garment_for(q, tmp_path, http=httpx.Client(transport=httpx.MockTransport(
+        lambda r: (_ for _ in ()).throw(AssertionError("should be cached"))))).image == b"jpg"
+
+
+def test_garment_photos_load_together_and_a_straggler_is_described(client, runtime, user, monkeypatch):
+    import threading
+
+    from lookmate import worker
+    from lookmate.tryon.client import TRYON_STAGE
+
+    class Outfit:
+        name, renders, whole_outfit = "nano-banana", True, True
+
+        def dress_outfit(self, person, media_type, garments):
+            self.seen = garments
+            return b"out", "image/jpeg"
+
+    release = threading.Event()
+
+    def slow_or_fast(p, data_dir):
+        if p.category == "bottom":
+            release.wait(5)  # stalls past the budget
+        return Garment(b"img", "image/jpeg", "upper_body", p.name)
+
+    model = Outfit()
+    monkeypatch.setattr(runtime, "tryon", model)
+    monkeypatch.setattr(worker, "garment_for", slow_or_fast)
+    monkeypatch.setattr(worker, "GARMENT_BUDGET_S", 0.3)
+    ids = pick(runtime, "top", "bottom")
+    tid = request_tryon(client, user["id"], ids).json()["id"]
+    t0 = time.monotonic()
+    assert worker.process_tryon(runtime, tid) == "done"
+    release.set()
+    assert time.monotonic() - t0 < 2, "photos load in parallel within one budget"
+    result = client.get(f"/api/tryons/{tid}").json()["result"]
+    assert len(result["described_ids"]) == 1 and set(result["timings_ms"]) == {"fetch_ms", "model_ms"}
+    assert [g.image for g in model.seen].count(None) == 1, "the stalled piece is drawn from its description"
+    assert runtime.redis.get(TRYON_STAGE.format(tid)) is None
 
 
 def test_shop_photo_falls_back_to_its_url_when_the_cdn_stalls():
@@ -457,3 +499,22 @@ def test_a_shop_photo_the_model_cant_read_is_described_instead():
     p = ProductView("asos-3", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/z/1-2", 20)
     g = garment_for(p, None, http=avif)
     assert g.image is None and g.description, "drawn from its description rather than sent as AVIF"
+
+
+def test_fitting_room_pieces_are_prefetched_and_the_stage_is_shown(client, runtime, user, renderer, monkeypatch):
+    from lookmate.tryon.client import TRYON_STAGE
+
+    warmed = []
+    monkeypatch.setattr("lookmate.api.tryon.prefetch", lambda products, data_dir: warmed.extend(p.id for p in products))
+    ids = pick(runtime, "top")
+    assert client.post("/api/tryon/prefetch", json={"product_ids": ids + ["nope"]}).json() == {"queued": 1}
+    assert warmed == ids
+
+    tid = request_tryon(client, user["id"], ids).json()["id"]
+    from lookmate.db import SessionLocal
+    from lookmate.models import TryOn
+    with SessionLocal() as s:
+        s.get(TryOn, tid).status = "processing"
+        s.commit()
+    runtime.redis.set(TRYON_STAGE.format(tid), "fetching")
+    assert client.get(f"/api/tryons/{tid}").json()["stage"] == "fetching"

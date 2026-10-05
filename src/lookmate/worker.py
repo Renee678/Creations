@@ -9,6 +9,7 @@ import logging
 import signal
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import replace
 
 from .config import get_settings
@@ -20,13 +21,14 @@ from .services.dupes import find_dupes
 from .services.style_memory import record_look, user_context
 from .services.trends import refresh_if_due
 from .services.vocab import STYLES
-from .tryon.client import TryOnError, plan_steps
-from .tryon.garments import garment_for
+from .tryon.client import TRYON_STAGE, TryOnError, plan_steps
+from .tryon.garments import garment_for, garment_from_words
 
 log = logging.getLogger("lookmate.worker")
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_S = 2.0
+GARMENT_BUDGET_S = 7.0  # all garment photos, fetched together; a cache hit is instant
 TREND_CHECK_EVERY_S = 600
 
 
@@ -130,33 +132,59 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
 
         described: list[str] = []
 
+        timings: dict[str, int] = {}
+
+        def stage(name: str) -> None:
+            rt.redis.set(TRYON_STAGE.format(tryon_id), name, ex=900)
+
+        def fetch(products) -> dict:
+            """Every piece's photo at once, within one short budget; a piece still loading is described instead."""
+            t0 = time.monotonic()
+            stage("fetching")
+            out = {}
+            pool = ThreadPoolExecutor(max_workers=max(1, len(products)))
+            futures = {pool.submit(garment_for, p, rt.data_dir): p for p in products}
+            done_f, _ = wait(futures, timeout=GARMENT_BUDGET_S)
+            pool.shutdown(wait=False)  # a straggler still lands in the disk cache for next time
+            for f, p in futures.items():
+                if f not in done_f:
+                    log.warning("try-on %s: %s photo still loading; describing it instead", tryon_id, p.id)
+                    out[p.id] = garment_from_words(p)
+                    continue
+                try:
+                    out[p.id] = f.result()
+                except TryOnError as e:
+                    if e.retryable:
+                        raise
+                    log.warning("try-on %s: skipping %s (%s)", tryon_id, p.id, e)
+            timings["fetch_ms"] = round((time.monotonic() - t0) * 1000)
+            return out
+
+        def model(call, *args):
+            t0 = time.monotonic()
+            stage("dressing")
+            result = call(*args)
+            timings["model_ms"] = timings.get("model_ms", 0) + round((time.monotonic() - t0) * 1000)
+            return result
+
         def render():
             image, media_type, done = rec.photo, rec.media_type, []
             if rt.tryon.renders and getattr(rt.tryon, "whole_outfit", False):
                 # One call for the whole outfit, shoes and bags included.
-                garments = []
-                for p in pieces:
-                    try:
-                        garments.append((p.id, garment_for(p, rt.data_dir)))
-                    except TryOnError as e:
-                        if e.retryable:
-                            raise
-                        log.warning("try-on %s: skipping %s (%s)", tryon_id, p.id, e)
+                fetched = fetch(pieces)
+                garments = [(p.id, fetched[p.id]) for p in pieces if p.id in fetched]
                 if not garments:
                     raise TryOnError("None of these pieces has a photo the try-on model can use.")
-                image, media_type = rt.tryon.dress_outfit(image, media_type, [g for _, g in garments])
+                image, media_type = model(rt.tryon.dress_outfit, image, media_type, [g for _, g in garments])
                 described.extend(pid for pid, g in garments if g.image is None)  # drawn from words, no photo
                 return image, media_type, [pid for pid, _ in garments]
             if rt.tryon.renders:
+                fetched = fetch([step["product"] for step in steps])
                 for step in steps:
-                    try:
-                        garment = garment_for(step["product"], rt.data_dir)
-                    except TryOnError as e:
-                        if e.retryable:
-                            raise
-                        log.warning("try-on %s: skipping %s (%s)", tryon_id, step["product"].id, e)
+                    garment = fetched.get(step["product"].id)
+                    if garment is None:
                         continue  # pinned beside the picture instead
-                    image, media_type = rt.tryon.dress(image, media_type, garment)
+                    image, media_type = model(rt.tryon.dress, image, media_type, garment)
                     done.append(step["product"].id)
                 if not done:
                     raise TryOnError("None of these pieces has a photo the try-on model can use.")
@@ -173,9 +201,12 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
             "described_ids": described,
             "model": rt.tryon.name,
             "latency_ms": round((time.monotonic() - started) * 1000),
+            "timings_ms": timings,
         })
+        rt.redis.delete(TRYON_STAGE.format(tryon_id))
         rt.queue.ack(job)
-        log.info("try-on %s done (%s, %d steps)", tryon_id, rt.tryon.name, len(done))
+        log.info("try-on %s done (%s, %d pieces) in %s ms: %s", tryon_id, rt.tryon.name, len(done),
+                 rec.result["latency_ms"], timings)
         return "done"
 
 

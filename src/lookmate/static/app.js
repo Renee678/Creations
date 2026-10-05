@@ -543,7 +543,7 @@ async function shrinkPhoto(file, max = 1024) {
     const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
     const canvas = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * scale), height: Math.round(bmp.height * scale) });
     canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
-    return await new Promise((ok) => canvas.toBlob((b) => ok(b || file), "image/jpeg", 0.9));
+    return await new Promise((ok) => canvas.toBlob((b) => ok(b || file), "image/jpeg", 0.85));
   } catch { return file; }
 }
 
@@ -604,7 +604,6 @@ function startTryOn(key) {
     if (!el) return;
     const s = Math.round((Date.now() - started) / 1000);
     el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-    if (s === 45) $(`#tryon-${key} .tryon-hint`).textContent = "The model is warming up, which can take a few minutes the first time.";
   }, 1000);
   const done = (html) => { clearInterval(tick); tryonRunning = false; tryonBox(key, html); renderRoom(); };
   if (key === "room") $("#room-result").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -645,7 +644,10 @@ async function pollTryOn(key, id, started, misses, done) {
   }
   if (t.status === "done") return done(renderedHtml(key, t));
   if (t.status === "failed") return done(errorHtml(key, t.error || "Try-on failed. Try another photo?"));
-  if (t.attempts > 1) { const h = $(`#tryon-${key} .tryon-hint`); if (h) h.textContent = `The try-on model is busy, retrying (attempt ${t.attempts})…`; }
+  const h = $(`#tryon-${key} .tryon-hint`);
+  const stage = { fetching: "Getting the clothes…", dressing: "Dressing you…" }[t.stage];
+  if (h && t.attempts > 1) h.textContent = `The try-on model is busy, retrying (attempt ${t.attempts})…`;
+  else if (h && stage) h.textContent = stage;
   setTimeout(() => pollTryOn(key, id, started, 0, done), 2000);
 }
 
@@ -705,12 +707,18 @@ function toggleRoom(id, keep = false) {
   if (room[slot] && room[slot].id === id) { if (!keep) delete room[slot]; }
   else {
     room[slot] = { id: p.id, name: p.name, category: p.category, product_type: p.product_type, image_url: p.image_url, price: p.price };
+    prefetchPhoto(p.id);
     // A dress replaces a top and a bottom, and the other way round.
     if (slot === "dress") { delete room.top; delete room.bottom; }
     if (slot === "top" || slot === "bottom") delete room.dress;
   }
   store.set("room", JSON.stringify(room));
   renderRoom();
+}
+
+// Load a piece's shop photo on the server as it enters the fitting room, so the try-on doesn't wait for it.
+function prefetchPhoto(id) {
+  fetch("/api/tryon/prefetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product_ids: [id] }) }).catch(() => {});
 }
 
 function renderRoom() {

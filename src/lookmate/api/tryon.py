@@ -4,9 +4,10 @@ import hashlib
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,7 +15,8 @@ from ..config import get_settings
 from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES, LLMError
 from ..models import TryOn
-from ..tryon.client import REGIONS
+from ..tryon.client import REGIONS, TRYON_STAGE
+from ..tryon.garments import prefetch
 from ..worker import tryon_job
 from .looks import require_access_code
 from .profiles import get_user_or_404
@@ -133,8 +135,24 @@ def _get(db: Session, tryon_id: str) -> TryOn:
 
 
 @router.get("/api/tryons/{tryon_id}")
-def get_tryon(tryon_id: str, db: Session = Depends(get_db)) -> dict:
-    return tryon_out(_get(db, tryon_id))
+def get_tryon(tryon_id: str, request: Request, db: Session = Depends(get_db)) -> dict:
+    rec = _get(db, tryon_id)
+    stage = request.app.state.runtime.redis.get(TRYON_STAGE.format(tryon_id)) if rec.status == "processing" else None
+    return tryon_out(rec) | {"stage": stage.decode() if isinstance(stage, bytes) else stage}
+
+
+class PrefetchIn(BaseModel):
+    product_ids: list[str] = Field(max_length=MAX_PIECES * 2)
+
+
+@router.post("/api/tryon/prefetch", status_code=202)
+def prefetch_photos(body: PrefetchIn, request: Request, background: BackgroundTasks) -> dict:
+    """A piece went into the fitting room: load its shop photo now, so the try-on doesn't wait for the CDN."""
+    rt = request.app.state.runtime
+    products = [rt.catalog.products[i] for i in body.product_ids if i in rt.catalog.products]
+    if rt.tryon.renders and products:
+        background.add_task(prefetch, products, rt.data_dir)
+    return {"queued": len(products) if rt.tryon.renders else 0}
 
 
 @router.get("/api/tryons/{tryon_id}/image")

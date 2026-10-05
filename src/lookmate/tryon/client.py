@@ -62,6 +62,7 @@ def plan_steps(pieces: list[dict]) -> list[dict]:
     return [p for p in (by_cat.get("bottom"), upper) if p]
 
 
+TRYON_STAGE = "tryon:stage:{}"  # what a running try-on is doing now, for the UI
 DATA_URI_MAX_BYTES = 256 * 1024  # Replicate's limit for inline data URIs; bigger files are uploaded first
 
 
