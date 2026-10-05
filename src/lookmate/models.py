@@ -67,6 +67,10 @@ class SavedOutfit(Base):
     style_id: Mapped[str] = mapped_column(String(30))
     source: Mapped[str] = mapped_column(String(20))  # lookbook | mine | fitting_room
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # For the My Look Book page: the stylist's line, the occasion, and the inspiration look (Make it mine).
+    why: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    occasion: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    inspo_look_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Look(Base):

@@ -103,8 +103,9 @@ def test_lookbook_waits_for_create_my_looks(client, user):
 
 def test_my_style_is_a_report_and_trends_filter_by_season_and_style(client):
     page = client.get("/").text
-    assert 'id="style-report"' in page and 'id="trend-seasons"' in page and 'id="trend-styles"' in page
+    assert 'id="trend-seasons"' in page and 'id="trend-styles"' in page
     app_js = client.get("/static/app.js").text
+    assert '<div id="style-report">' in app_js, "the report is page 2 of the Look Book"
     assert "Your colour season" in app_js and "Your style DNA" in app_js
     assert "See your full report" in app_js, "the Lookbook links to the report instead of repeating it"
     assert "/api/trends${userId ? `?user_id=${userId}`" in app_js, "trends are fetched with the user, for fit verdicts"
@@ -158,7 +159,7 @@ def test_outfits_show_as_boards_and_can_be_saved_to_my_style(client):
     card = app_js.split("function outfitCard")[1].split("\n}\n")[0]
     assert "boardHtml(o.pieces)" in card and "saveButton(" in card, "a lookbook outfit is a board you can save"
     assert 'source: "fitting_room"' in app_js, "a mix from the fitting room can be saved too"
-    assert "loadMyOutfits()" in app_js
+    assert "loadBook()" in app_js and "♡ Save to My Style" in app_js
 
 
 def test_find_dupes_says_when_it_shows_fewer_or_relaxed_matches(client):

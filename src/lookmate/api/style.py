@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import SavedOutfit
+from ..models import Look, SavedOutfit, TryOn
+from ..services.colours import family
 from ..services.body import guide_for
 from ..services.lookbook import latest_analysis
 from ..services.ranking import STYLE_KEYWORDS
@@ -84,13 +85,58 @@ class OutfitIn(BaseModel):
     season: Season | None = None
     style_id: str | None = None
     source: Literal["lookbook", "mine", "fitting_room"] = "lookbook"
+    why: str | None = Field(default=None, max_length=300)        # the stylist's line, for the book page
+    occasion: Literal["work", "weekend", "date", "party", "travel"] | None = None
+    inspo_look_id: int | None = None                             # Make it mine: the look it started from
 
 
-def outfit_out(o: SavedOutfit, catalog) -> dict:
-    pieces = [catalog.products[i].to_dict() for i in o.product_ids if i in catalog.products]
+class OutfitRename(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+
+
+def palette_dots(product, catalog, palette: dict[str, str]) -> list[dict]:
+    """Other colours of this piece that are in the user's palette: display only, empty when none match."""
+    own = family(product.colour) or family(product.name)
+    dots, seen = [], {own}
+    for v in catalog.colour_variants(product):
+        fam = family(v.colour) or family(v.name)
+        if fam in palette and fam not in seen:
+            seen.add(fam)
+            dots.append({"id": v.id, "colour": v.colour or fam, "hex": palette[fam]})
+    return dots[:5]
+
+
+def latest_tryon(db: Session, user_id: int, product_ids: list[str]) -> str | None:
+    """The newest finished try-on of exactly this set of pieces: the outfit page's "On me" photo."""
+    wanted = sorted(product_ids)
+    rows = db.scalars(select(TryOn).where(TryOn.user_id == user_id, TryOn.status == "done")
+                      .order_by(TryOn.created_at.desc()))
+    rec = next((t for t in rows if sorted(t.product_ids) == wanted and t.result_image), None)
+    return f"/api/tryons/{rec.id}/image" if rec else None
+
+
+def outfit_out(o: SavedOutfit, catalog, db: Session | None = None, palette: dict[str, str] | None = None) -> dict:
+    products = [catalog.products[i] for i in o.product_ids if i in catalog.products]
+    pieces = [p.to_dict() | ({"palette_dots": palette_dots(p, catalog, palette)} if palette else {}) for p in products]
+    inspo = db.get(Look, o.inspo_look_id) if db is not None and o.inspo_look_id else None
+    inspo = inspo if inspo is not None and inspo.user_id == o.user_id else None  # only the user's own looks
     return {"id": o.id, "title": o.title, "season": o.season, "style_id": o.style_id,
             "style": STYLES.get(o.style_id, o.style_id), "source": o.source, "pieces": pieces,
-            "total_price": round(sum(p["price"] for p in pieces), 2), "created_at": o.created_at.isoformat()}
+            "total_price": round(sum(p["price"] for p in pieces), 2), "created_at": o.created_at.isoformat(),
+            "why": o.why, "occasion": o.occasion,
+            "inspo": {"id": inspo.id, "vibe": (inspo.result or {}).get("vibe", "")} if inspo else None,
+            "tryon_image": latest_tryon(db, o.user_id, o.product_ids) if db is not None else None}
+
+
+def _palette(db: Session, user_id: int) -> dict[str, str]:
+    """Colour family -> the hex the user's analysis gave it, for the colours that suit them."""
+    rec = latest_analysis(db, user_id)
+    out: dict[str, str] = {}
+    for c in ((rec.result or {}).get("best_colours", []) if rec else []):
+        fam = family(c.get("name", ""))
+        if fam and fam not in out:
+            out[fam] = c.get("hex", "#cccccc")
+    return out
 
 
 def guess_style(products, fallback: str) -> str:
@@ -118,7 +164,8 @@ def save_outfit(user_id: int, body: OutfitIn, request: Request, db: Session = De
     season = body.season or season_of(datetime.now(timezone.utc).month)
     title = body.title.strip() or f"{STYLES[style]} {season}"
     outfit = SavedOutfit(user_id=user_id, title=title, product_ids=ids, pieces_key=key, season=season,
-                         style_id=style, source=body.source)
+                         style_id=style, source=body.source, why=(body.why or "").strip() or None,
+                         occasion=body.occasion, inspo_look_id=body.inspo_look_id)
     db.add(outfit)
     for p in products:  # each piece also teaches the style memory, like a single save
         record_saved(db, user_id, p, [style])
@@ -134,12 +181,25 @@ def list_outfits(user_id: int, request: Request, season: Season | None = None,
     rows = list(db.scalars(select(SavedOutfit).where(SavedOutfit.user_id == user_id)
                            .order_by(SavedOutfit.created_at.desc(), SavedOutfit.id.desc())))
     shown = [o for o in rows if (season is None or o.season == season) and (style is None or o.style_id == style)]
+    palette = _palette(db, user_id)
     return {
-        "outfits": [outfit_out(o, catalog) for o in shown],
+        "outfits": [outfit_out(o, catalog, db, palette) for o in shown],
         "seasons": [s for s in SEASONS if any(o.season == s for o in rows)],
         "styles": [{"id": s, "label": STYLES.get(s, s)} for s in dict.fromkeys(o.style_id for o in rows)],
         "total": len(rows),
+        "this_season": sum(o.season == season_of(datetime.now(timezone.utc).month) for o in rows),
     }
+
+
+@router.patch("/outfits/{outfit_id}")
+def rename_outfit(user_id: int, outfit_id: int, body: OutfitRename, request: Request,
+                  db: Session = Depends(get_db)) -> dict:
+    outfit = db.get(SavedOutfit, outfit_id)
+    if outfit is None or outfit.user_id != user_id:
+        raise HTTPException(404, "outfit not found")
+    outfit.title = body.title.strip()
+    db.commit()
+    return outfit_out(outfit, request.app.state.runtime.catalog, db)
 
 
 @router.delete("/outfits/{outfit_id}", status_code=204)

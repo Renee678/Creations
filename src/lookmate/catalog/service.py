@@ -93,8 +93,30 @@ class SearchResult:
     score: float
 
 
+def _base_name(p: ProductView) -> str:
+    """The piece without its colour: 'ASOS DESIGN midi skirt in black' and '... in red' share it."""
+    from ..services.colours import colour_word
+
+    name = re.sub(r"\s+in\s+[a-z][a-z \-]{1,30}$", "", p.name.lower())
+    word = colour_word(name)
+    if word:
+        name = re.sub(rf"\b{re.escape(word)}\b", "", name)
+    return f"{p.category}|{re.sub(r'[^a-z0-9]+', ' ', name).strip()}"
+
+
 class Catalog:
     """Read-only catalog held in memory: product metadata plus the vector index."""
+
+    _variants: dict[str, list[ProductView]] | None = None
+
+    def colour_variants(self, product: ProductView) -> list[ProductView]:
+        """The same piece in other colours, when the catalog lists them as separate products."""
+        if self._variants is None:
+            groups: dict[str, list[ProductView]] = {}
+            for p in self.products.values():
+                groups.setdefault(_base_name(p), []).append(p)
+            self._variants = groups
+        return [p for p in self._variants.get(_base_name(product), []) if p.id != product.id]
 
     def __init__(self, products: list[ProductView], index: VectorIndex, embedder: Embedder):
         self.products = {p.id: p for p in products}

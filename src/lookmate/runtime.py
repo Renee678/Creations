@@ -41,6 +41,21 @@ def _drop_outdated_trends(eng) -> None:
         Trend.__table__.drop(eng)
 
 
+def _add_new_columns(eng) -> None:
+    """create_all makes new tables but never alters old ones: add nullable columns that later versions added."""
+    from sqlalchemy import text
+
+    insp = inspect(eng)
+    for table in Base.metadata.sorted_tables:
+        if table.name not in insp.get_table_names():
+            continue
+        have = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name not in have and col.nullable:
+                with eng.begin() as conn:
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {col.type.compile(eng.dialect)}'))
+
+
 @dataclass
 class Runtime:
     catalog: Catalog
@@ -56,6 +71,7 @@ class Runtime:
 def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, import_catalog: bool = True) -> Runtime:
     _drop_outdated_trends(engine)
     Base.metadata.create_all(engine)
+    _add_new_columns(engine)
     embedder = make_embedder(settings.embedder)
     with SessionLocal() as session:
         if import_catalog:

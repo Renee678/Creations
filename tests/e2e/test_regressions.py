@@ -208,3 +208,39 @@ def test_tryon_uses_the_uploaded_full_body_photo(page):
             return Array.from(ctx.getImageData(img.width >> 1, img.height >> 1, 1, 1).data.slice(0, 3));
         }""", stored)
         assert b > r, f"try-on photo is the selfie (rgb {r},{g},{b}), not the full-body photo"
+
+
+def test_a_saved_outfit_becomes_a_look_book_page(page):
+    """2026-10-05: My Style is a Look Book. Save a Lookbook outfit, find its page, flip through, delete it."""
+    tab(page, "lookbook")
+    upload_me(page)
+    lb = create_looks(page)
+    first = next(o for s in lb["sections"] for o in s["outfits"])
+    save = page.locator("#lb-sections .save-outfit").first
+    assert save.inner_text().strip() == "♡ Save to My Style"
+    with page.expect_response(lambda r: r.url.endswith("/outfits") and r.request.method == "POST"):
+        save.click()
+    page.wait_for_function("document.querySelector('#lb-sections .save-outfit').textContent.includes('Saved')")
+
+    tab(page, "style")
+    look = page.locator("#book-contents [data-book-open='2']")
+    look.wait_for()
+    assert page.locator("#book-contents .book-thumb-cover").count() == 1, "page 1 is the cover"
+    assert page.locator("#book-contents .book-thumb-about").count() == 1, "page 2 is About me"
+    look.click()
+    page.locator("#book-page .bk-look").wait_for()
+    assert first["title"] in page.locator("#book-page").inner_text(), "the saved outfit's own page"
+    assert page.locator("#book-page .bk-it img, #book-page .bk-it .bp-none").count() == len(first["pieces"])
+
+    page.locator("[data-book-step='-1']").click()
+    page.locator("#book-page .bk-about #style-report").wait_for()
+    page.locator("[data-book-step='-1']").click()
+    page.locator("#book-page .bk-cover").wait_for()
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowRight")
+    page.locator("#book-page .bk-look").wait_for()
+
+    with page.expect_response(lambda r: "/outfits/" in r.url and r.request.method == "DELETE"):
+        page.locator("[data-book-delete]").click()
+    page.wait_for_function("!document.querySelector('#book-contents [data-book-open=\"2\"]')")
+    assert not page.errors, page.errors

@@ -23,7 +23,7 @@ async function api(path, opts = {}) {
 function show(tab) {
   for (const id of ["find", "lookbook", "style", "trends", "profile"]) $("#" + id).hidden = id !== tab;
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  if (tab === "style") { loadStyle(); loadMyOutfits(); }
+  if (tab === "style") loadBook();
   if (tab === "trends") loadTrends();
   if (tab === "lookbook") loadLookbook(); else renderRoom();
 }
@@ -223,8 +223,8 @@ $("#results").addEventListener("click", (e) => {
 // ---------- my style report ----------
 const pct = (x, total) => Math.round((x / total) * 100);
 
-async function loadStyle() {
-  const [s, p] = await Promise.all([api(`/api/users/${userId}/style`), api(`/api/users/${userId}`)]);
+/** The colour and style report: page 2 of the Look Book, "About me". */
+function styleReport(s) {
   const a = s.analysis;
   const list = (xs) => `<ul>${(xs || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
   const hero = a ? `<div class="sr-hero" style="--g:${esc(a.best_colours.map((c) => c.hex).join(", "))}">
@@ -262,8 +262,8 @@ async function loadStyle() {
       <h3>Colours you wear most</h3>
       <div class="chips static">${s.colours.map(([c, n]) => `<span class="chip">${esc(c)} × ${n}</span>`).join("") || '<span class="muted">Nothing yet</span>'}</div>
       <p class="muted small">Learned from ${s.signals} signals: outfits you upload and pieces you save.</p></div>`;
-  $("#style-report").innerHTML = hero + `<div class="sr-grid">${palette}${beauty}${body}${dna}</div>`
-    + (a ? `<p class="muted small">${esc(a.caveats)}</p>` : "");
+  return `<div id="style-report">${hero}<div class="sr-grid">${palette}${beauty}${body}${dna}</div>`
+    + (a ? `<p class="muted small">${esc(a.caveats)}</p>` : "") + "</div>";
 }
 document.addEventListener("click", (e) => {
   const go = e.target.closest("[data-goto]");
@@ -451,11 +451,11 @@ function boardLabel(p) {
   return !p.colour || name.toLowerCase().includes(p.colour.toLowerCase()) ? name : cap(`${p.colour.toLowerCase()} ${name.replace(/^./, (c) => c.toLowerCase())}`);
 }
 
-const outfitsToSave = new Map();  // key -> what "♡ Save outfit" sends
+const outfitsToSave = new Map();  // key -> what "♡ Save to My Style" sends
 
 function saveButton(key, data) {
   outfitsToSave.set(key, data);
-  return `<button type="button" class="gel save-outfit" data-save-outfit="${esc(key)}">♡ Save outfit</button>`;
+  return `<button type="button" class="gel save-outfit" data-save-outfit="${esc(key)}">♡ Save to My Style</button>`;
 }
 
 async function saveOutfit(btn) {
@@ -464,7 +464,7 @@ async function saveOutfit(btn) {
   btn.disabled = true;
   try {
     await api(`/api/users/${userId}/outfits`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-    btn.classList.add("saved"); btn.textContent = "♥ Saved to My style";
+    btn.classList.add("saved"); btn.textContent = "♥ Saved to My Style";
   } catch (err) { btn.textContent = err.message; }
   finally { btn.disabled = false; }
 }
@@ -479,7 +479,9 @@ function outfitCard(o, section) {
   // Try-on happens in one place, the fitting room; an outfit card just fills it.
   const ids = o.pieces.map((p) => p.id).join(",");
   const season = SEASON_NAMES[section && section.id] ? section.id : null;
-  const save = saveButton(`lb:${ids}`, { title: o.title, product_ids: o.pieces.map((p) => p.id), style_id: o.style_id, season, source: "lookbook" });
+  const occasion = section && OCCASION_NAMES[section.id] ? section.id : null;
+  const save = saveButton(`lb:${ids}`, { title: o.title, product_ids: o.pieces.map((p) => p.id), style_id: o.style_id, season,
+    source: "lookbook", why: o.why || null, occasion });
   return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>
       <span class="outfit-actions">${save}<button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
     ${o.why ? `<p class="outfit-why">✦ ${esc(o.why)}</p>` : ""}
@@ -488,42 +490,182 @@ function outfitCard(o, section) {
       <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></details></div>`;
 }
 
-// ---------- My outfits (in My style): everything saved, by season and by style ----------
+// ---------- My Look Book (My style): a cover, About me, then one page per saved outfit ----------
 let moSeason = "", moStyle = "";
+let book = { pages: [], at: -1, views: {} };  // views: outfit id -> "flat" | "me"
 
-async function loadMyOutfits() {
+const seasonNow = () => ["winter", "winter", "spring", "spring", "spring", "summer", "summer", "summer", "autumn", "autumn", "autumn", "winter"][new Date().getMonth()];
+const OCCASION_NAMES = { work: "for the office", weekend: "for the weekend", date: "for date night", party: "for the party", travel: "for the trip" };
+const LEFT = new Set(["outerwear", "top", "bottom", "dress"]);  // clothes on the left of the poster; the rest on the right
+
+async function loadBook() {
   const q = new URLSearchParams();
   if (moSeason) q.set("season", moSeason);
   if (moStyle) q.set("style", moStyle);
-  const r = await api(`/api/users/${userId}/outfits?${q}`);
+  const [s, me, r] = await Promise.all([api(`/api/users/${userId}/style`), api(`/api/users/${userId}`), api(`/api/users/${userId}/outfits?${q}`)]);
   const chip = (attr, id, label, on) => `<button type="button" class="chip ${on ? "on" : ""}" data-${attr}="${esc(id)}">${esc(label)}</button>`;
   $("#mo-seasons").innerHTML = r.total ? chip("mo-season", "", "All seasons", !moSeason) + r.seasons.map((x) => chip("mo-season", x, SEASON_NAMES[x], moSeason === x)).join("") : "";
   $("#mo-styles").innerHTML = r.total ? chip("mo-style", "", "All styles", !moStyle) + r.styles.map((x) => chip("mo-style", x.id, x.label, moStyle === x.id)).join("") : "";
-  if (!r.total) {
-    $("#mo-list").innerHTML = `<p class="muted">No outfits saved yet. Tap <strong>♡ Save outfit</strong> on any Lookbook outfit, or mix your own in the fitting room and save it.</p>`;
-    return;
+  r.outfits.forEach((o) => o.pieces.forEach((p) => lbProducts.set(p.id, p)));
+  book.pages = [{ kind: "cover", s, me, r }, { kind: "about", s }, ...r.outfits.map((o) => ({ kind: "look", o }))];
+  renderContents();
+  if (book.at >= 0) openPage(Math.min(book.at, book.pages.length - 1));
+}
+
+function pageLabel(pg) {
+  if (pg.kind === "cover") return ["My Look Book", "Cover"];
+  if (pg.kind === "about") return ["About me", pg.s.analysis ? cap(pg.s.analysis.season_detail) : "Your report"];
+  return [pg.o.title, `${SEASON_NAMES[pg.o.season] || pg.o.season} · ${pg.o.style}`];
+}
+
+function renderContents() {
+  const thumbs = book.pages.map((pg, i) => {
+    const [title, sub] = pageLabel(pg);
+    const img = pg.kind === "look" ? (pg.o.tryon_image || (pg.o.pieces[0] || {}).image_url) : "";
+    return `<button type="button" class="book-thumb book-thumb-${pg.kind}" data-book-open="${i}">
+        ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}<b>${esc(title)}</b><small>${esc(sub)}</small></button>`;
+  }).join("");
+  const empty = book.pages.length === 2 ? `<p class="muted small book-empty">No outfits here yet. Tap <strong>♡ Save to My Style</strong> on a Lookbook outfit, or mix your own in the fitting room.</p>` : "";
+  $("#book-contents").innerHTML = `<div class="book-grid">${thumbs}<button type="button" class="book-thumb book-add" data-goto="lookbook">+ Make a look<br>in Lookbook</button></div>${empty}`;
+}
+
+function openPage(i) {
+  book.at = i;
+  const pg = book.pages[i];
+  if (!pg) return closeBook();
+  $("#book-contents").hidden = true;
+  $("#book-viewer").hidden = false;
+  $("#book-page").innerHTML = pg.kind === "cover" ? coverPage(pg) : pg.kind === "about" ? aboutPage(pg) : lookPage(pg.o);
+  $("#book-pager").innerHTML = book.pages.map((_, j) => `<i class="${j === i ? "on" : ""}"></i>`).join("");
+  $("#book-actions").innerHTML = pg.kind === "look" ? `
+      <button type="button" class="gel" data-book-rename="${pg.o.id}">✎ Rename</button>
+      <button type="button" class="gel primary" data-room-all="${esc(pg.o.pieces.map((p) => p.id).join(","))}" data-goto="lookbook">Try it on me</button>
+      <button type="button" class="linklike" data-book-delete="${pg.o.id}">Delete</button>` : "";
+  document.querySelectorAll("[data-book-step]").forEach((b) => {
+    const to = i + Number(b.dataset.bookStep);
+    b.disabled = to < 0 || to >= book.pages.length;
+  });
+}
+
+function closeBook() {
+  book.at = -1;
+  $("#book-viewer").hidden = true;
+  $("#book-contents").hidden = false;
+}
+
+function coverPage({ s, me, r }) {
+  const a = s.analysis;
+  const strip = a ? a.best_colours.map((c) => `<span style="background:${esc(c.hex)}"></span>`).join("")
+    : `<span class="cover-gradient"></span>`;
+  const main = s.styles[0] ? s.styles[0].label : "Still learning";
+  const season = seasonNow();
+  const count = r.this_season;
+  const line = a ? `${cap(a.undertone)}, ${a.contrast} contrast, all you ♡` : "Add a selfie for your palette ♡";
+  return `<article class="bk bk-cover">
+      <div><div class="bk-kicker">${esc(me.nickname || "My")}'s · ${esc(SEASON_NAMES[season])} ${new Date().getFullYear()}</div>
+        <h2 class="bk-cover-title">My Look<br><i>Book</i></h2>
+        <div class="bk-strip">${strip}</div></div>
+      <p class="bk-hand bk-cover-line">${esc(line)}</p>
+      <div class="bk-meta">
+        <div><b>${esc(a ? cap(a.season_detail) : "Not analysed")}</b><small>Colour season</small></div>
+        <div><b>${esc(main)}</b><small>Main style</small></div>
+        <div><b>${count} ${count === 1 ? "look" : "looks"}</b><small>Saved this season</small></div>
+      </div></article>`;
+}
+
+function aboutPage({ s }) {
+  return `<article class="bk bk-about"><div class="bk-head"><b>About me</b><span>${esc(s.analysis ? cap(s.analysis.season_detail) : "")}</span></div>${styleReport(s)}</article>`;
+}
+
+function dotsHtml(p) {
+  return (p.palette_dots || []).length
+    ? `<span class="bk-dots" title="Also in your colours">${p.palette_dots.map((d) => `<i style="background:${esc(d.hex)}" title="${esc(d.colour)}"></i>`).join("")}</span>` : "";
+}
+
+const ARROW = `<svg class="bk-arrow" viewBox="0 0 60 40" aria-hidden="true"><path d="M4 6 Q34 2 52 30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M44 28 L52 31 L53 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+function pieceImg(p) {
+  return p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy">` : `<span class="bp-none">${esc(p.product_type)}</span>`;
+}
+
+function lookPage(o) {
+  const view = o.tryon_image && book.views[o.id] !== "flat" ? (book.views[o.id] || "me") : "flat";
+  const toggle = o.tryon_image ? `<div class="chips bk-views">
+      <button type="button" class="chip ${view === "flat" ? "on" : ""}" data-book-view="flat" data-outfit="${o.id}">Flat lay</button>
+      <button type="button" class="chip ${view === "me" ? "on" : ""}" data-book-view="me" data-outfit="${o.id}">On me</button></div>` : "";
+  const ids = o.pieces.map((p) => p.id).join(",");
+  const foot = `<footer class="bk-foot"><span>${o.pieces.length} pieces · $${o.total_price.toFixed(2)}</span>
+      <details class="bk-shop"><summary>Shop the look</summary><div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id])).join("")}</div></details>
+      <button type="button" class="linklike" data-room-all="${esc(ids)}" data-goto="lookbook">Try it on me</button></footer>`;
+  const sub = `${SEASON_NAMES[o.season] || o.season} · ${o.style}`;
+  if (view === "me") {
+    const col = (ps) => ps.map((p) => `<div class="bk-pc">${pieceImg(p)}<b>${esc(boardLabel(p))}</b><small>$${p.price.toFixed(2)}</small>${dotsHtml(p)}</div>`).join("");
+    const polaroid = o.inspo ? `<figure class="bk-polaroid"><p>${esc(o.inspo.vibe)}</p><figcaption>my inspiration</figcaption></figure>`
+      : o.occasion ? `<figure class="bk-polaroid"><p>${esc(cap(o.occasion))}</p><figcaption>${esc(OCCASION_NAMES[o.occasion])}</figcaption></figure>` : "";
+    return `<article class="bk bk-look bk-me">${toggle}
+        <header><h2 class="bk-title">Daily Look</h2><p class="bk-sub">${esc(sub)}</p><p class="bk-motto">${esc(o.title)}</p></header>
+        <div class="bk-poster">
+          <div class="bk-col">${col(o.pieces.filter((p) => LEFT.has(p.category)))}</div>
+          <figure class="bk-hero"><img src="${esc(o.tryon_image)}" alt="You in this look"></figure>
+          <div class="bk-col">${col(o.pieces.filter((p) => !LEFT.has(p.category)))}</div>
+        </div>
+        <div class="bk-bottom">${o.why ? `<p class="bk-hand">${esc(o.why)}</p>` : "<span></span>"}${polaroid}</div>
+        ${foot}</article>`;
   }
-  $("#mo-list").innerHTML = r.outfits.map((o) => {
-    o.pieces.forEach((p) => lbProducts.set(p.id, p));
-    const ids = o.pieces.map((p) => p.id).join(",");
-    return `<div class="outfit mo-card"><div class="item-head"><h3>${esc(o.title)}</h3><span class="tag">${esc(o.style)}</span>
-        <span class="tag">${esc(SEASON_NAMES[o.season] || o.season)}</span><span class="muted">$${o.total_price.toFixed(2)} total</span>
-        <span class="outfit-actions"><button type="button" class="gel" data-room-all="${esc(ids)}" data-goto="lookbook">Try it on →</button>
-        <button type="button" class="linklike" data-mo-delete="${o.id}">delete</button></span></div>
-      ${boardHtml(o.pieces)}</div>`;
-  }).join("") || '<p class="muted">Nothing saved for this filter.</p>';
+  // Flat lay: every piece where it sits on the body, each with an italic label, an arrow and its price.
+  const cats = new Set(o.pieces.map((p) => p.category));
+  const area = (c) => (c === "shoes" && !cats.has("outerwear") ? "2 / 1 / 4 / 2" : BOARD_AREA[c] || BOARD_AREA.accessory);
+  const twoCols = !cats.has("bag") && !cats.has("accessory");
+  const items = o.pieces.map((p) => `<figure class="bk-it" style="grid-area:${area(p.category)}">${pieceImg(p)}
+      <figcaption>${ARROW}<span class="bk-lab">${esc(boardLabel(p))}<small>$${p.price.toFixed(2)}</small></span>${dotsHtml(p)}</figcaption></figure>`).join("");
+  return `<article class="bk bk-look bk-flat">${toggle}
+      <header><p class="bk-kicker">${esc(sub)}</p><h2 class="bk-flat-title">${esc(o.title)}</h2></header>
+      ${o.why ? `<p class="bk-hand bk-flat-why">${esc(o.why)}</p>` : ""}
+      <div class="board bk-board${twoCols ? " board-2" : ""}">${items}</div>
+      ${foot}</article>`;
 }
 
 $("#my-outfits").addEventListener("click", async (e) => {
   const s = e.target.closest("[data-mo-season]");
-  if (s) { moSeason = s.dataset.moSeason; return loadMyOutfits(); }
+  if (s) { moSeason = s.dataset.moSeason; book.at = -1; closeBook(); return loadBook(); }
   const st = e.target.closest("[data-mo-style]");
-  if (st) { moStyle = st.dataset.moStyle; return loadMyOutfits(); }
-  const del = e.target.closest("[data-mo-delete]");
-  if (del && confirm("Delete this outfit?")) {
-    await api(`/api/users/${userId}/outfits/${del.dataset.moDelete}`, { method: "DELETE" }).catch(() => {});
-    loadMyOutfits();
+  if (st) { moStyle = st.dataset.moStyle; book.at = -1; closeBook(); return loadBook(); }
+  const open = e.target.closest("[data-book-open]");
+  if (open) return openPage(Number(open.dataset.bookOpen));
+  if (e.target.closest("[data-book-contents]")) return closeBook();
+  const step = e.target.closest("[data-book-step]");
+  if (step) return openPage(Math.max(0, Math.min(book.pages.length - 1, book.at + Number(step.dataset.bookStep))));
+  const v = e.target.closest("[data-book-view]");
+  if (v) { book.views[v.dataset.outfit] = v.dataset.bookView; return openPage(book.at); }
+  const ren = e.target.closest("[data-book-rename]");
+  if (ren) {
+    const pg = book.pages[book.at];
+    const title = (prompt("Rename this look", pg.o.title) || "").trim();
+    if (!title || title === pg.o.title) return;
+    const o = await api(`/api/users/${userId}/outfits/${ren.dataset.bookRename}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) }).catch(() => null);
+    if (o) { pg.o.title = o.title; renderContents(); openPage(book.at); }
+    return;
   }
+  const del = e.target.closest("[data-book-delete]");
+  if (del && confirm("Delete this look from your book?")) {
+    await api(`/api/users/${userId}/outfits/${del.dataset.bookDelete}`, { method: "DELETE" }).catch(() => {});
+    book.at = Math.min(book.at, book.pages.length - 2);
+    loadBook();
+  }
+});
+
+// Swipe between pages on a phone; arrow keys on a computer.
+let swipeX = null;
+$("#book-page").addEventListener("touchstart", (e) => { swipeX = e.touches[0].clientX; }, { passive: true });
+$("#book-page").addEventListener("touchend", (e) => {
+  if (swipeX === null) return;
+  const dx = e.changedTouches[0].clientX - swipeX;
+  swipeX = null;
+  if (Math.abs(dx) > 50) openPage(Math.max(0, Math.min(book.pages.length - 1, book.at + (dx < 0 ? 1 : -1))));
+});
+document.addEventListener("keydown", (e) => {
+  if ($("#book-viewer").hidden || $("#style").hidden || /input|textarea/i.test(e.target.tagName)) return;
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") openPage(Math.max(0, Math.min(book.pages.length - 1, book.at + (e.key === "ArrowRight" ? 1 : -1))));
 });
 
 // ---------- virtual try-on ----------
@@ -876,7 +1018,7 @@ function mineCard(m) {
       ${productCard(x.pick, [m.style_id], { room: true })}</div>`).join("");
   return `<div class="lb-section"><h2>Your version</h2><p class="muted">${esc(m.vibe)}</p>
     <div class="outfit"><div class="item-head"><h3>${esc(m.title)}</h3><span class="muted">$${m.total_price.toFixed(2)} total</span>
-      <span class="outfit-actions">${saveButton(`mine:${ids}`, { title: m.title, product_ids: m.pieces.map((x) => x.pick.id), style_id: m.style_id, source: "mine" })}
+      <span class="outfit-actions">${saveButton(`mine:${ids}`, { title: m.title, product_ids: m.pieces.map((x) => x.pick.id), style_id: m.style_id, source: "mine", why: m.why || null, inspo_look_id: Number(lbInspo) || null })}
       <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
     ${boardHtml(m.pieces.map((x) => x.pick))}
     ${m.why ? `<p class="outfit-why">✦ ${esc(m.why)}</p>` : `<p class="muted small">Not reviewed by the AI stylist.</p>`}
