@@ -52,25 +52,19 @@ def test_an_ivory_satin_maxi_skirt_gets_ivory_maxi_skirts():
     assert not {"black-satin", "pink-mini", "black-trousers", "dark-trousers", "ivory-mini"} & set(ids), \
         "no trousers, no mini, no black"
     assert "Same colour" in section["picks"][0]["reasons"] and "Same maxi length" in section["picks"][0]["reasons"]
-    assert section["relaxed"] is None
     assert section["note"].startswith("Only 2 close matches"), "fewer picks, said plainly, rather than wrong ones"
 
 
-def test_length_then_colour_relax_only_when_too_few_and_type_never_does():
-    one_exact = [s for s in STOCK if s[0].id not in ("cream-maxi",)]
-    section = dupes(one_exact)
-    ids = [x["id"] for x in section["picks"]]
-    assert section["relaxed"] == "length" and set(ids) == {"ivory-maxi", "white-midi"}
-    assert any("Midi rather than maxi" in r for r in section["picks"][1]["reasons"])
+def test_colour_and_length_never_relax_only_price_does():
+    """Renee: accuracy before a full page. A white skirt search with no white skirt shows nothing, not a black one."""
+    no_exact = [x for x in STOCK if x[0].id not in ("ivory-maxi", "cream-maxi")]
+    section = dupes(no_exact)
+    assert section["picks"] == [] and section["note"].startswith("No match in this colour and length")
 
-    only_black = [s for s in STOCK if s[0].id in ("black-satin", "black-trousers", "dark-trousers")]
-    section = dupes(only_black)
-    assert [x["id"] for x in section["picks"]] == ["black-satin"] and section["relaxed"] == "colour"
-    assert "Different colour" in section["picks"][0]["reasons"], "a relaxed pick says what differs"
-
-    trousers_only = [s for s in STOCK if "trousers" in s[0].id]
-    section = dupes(trousers_only)
-    assert section["picks"] == [] and section["note"].startswith("No close match"), "never trousers for a skirt"
+    pricey = [(p("ivory-maxi-dear", "Satin maxi skirt", "Ivory", price=90), 0.8)] + no_exact
+    section = dupes(pricey)
+    assert [x["id"] for x in section["picks"]] == ["ivory-maxi-dear"], "the price range widens; the match doesn't"
+    assert any("price range" in r for r in section["picks"][0]["reasons"]), "and the pick says it's above the range"
 
 
 def test_garment_types_lengths_and_colours_are_read_from_words():
@@ -83,3 +77,13 @@ def test_garment_types_lengths_and_colours_are_read_from_words():
     assert colour_match("navy", "black") == 0.5 and colour_match("pink", "pink") == 1.0
     t = Target("bottom", "maxi skirt", "ivory")
     assert t.subtype == "skirt" and t.length == "maxi" and t.colour == "cream"
+
+
+def test_a_candidate_must_say_its_colour_and_length_to_count():
+    target = Target("bottom", "satin maxi skirt", "white")
+    assert target.check(p("a", "Satin maxi skirt", "Ivory")), "ivory and off-white read as white"
+    assert not target.check(p("b", "Satin maxi skirt", "Beige")), "beige is not white"
+    assert not target.check(p("c", "Satin maxi skirt", "")), "no colour given: skipped, not guessed"
+    assert not target.check(p("d", "Satin skirt", "White")), "no length given: skipped, not guessed"
+    assert not target.check(p("e", "Satin midi skirt", "White"))
+    assert Target("bottom", "satin skirt", "").check(p("f", "Satin midi skirt", "Red")), "only stated rules apply"

@@ -189,8 +189,7 @@ function renderLook(r) {
     const it = s.item;
     const orig = it.estimated_original_price_usd ? `<span class="muted">Original about $${Math.round(it.estimated_original_price_usd)}</span>` : "";
     const count = s.picks.length ? `<span class="tag">${s.picks.length} dupes</span>` : "";
-    const relaxed = { length: "No exact-length match, so the closest lengths are shown.", colour: "No match in this colour, so other colours are shown." }[s.relaxed];
-    const notes = [relaxed, s.picks.length ? s.note : null].filter(Boolean).map((n) => `<p class="muted small dupe-note">${esc(n)}</p>`).join("");
+    const notes = s.picks.length && s.note ? `<p class="muted small dupe-note">${esc(s.note)}</p>` : "";
     html += `<div class="item"><div class="item-head"><h3>${esc(it.colour)} ${esc(it.name)}</h3>${count}${orig}</div>${notes}
       <div class="grid">${s.picks.map((p) => productCard(p, it.style_tags)).join("") || `<p class="muted">${esc(s.note || "No good dupes found.")}</p>`}</div></div>`;
   }

@@ -10,7 +10,6 @@ from .ranking import RankedPick, UserContext, rank
 
 CANDIDATES_PER_ITEM = 150  # a wide pool, because the type, colour and length rules then remove most of it
 PICKS_PER_ITEM = 4
-MIN_CLOSE = 2  # fewer exact matches than this: relax length a step, then colour, and say so
 
 
 def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext, price: PriceRange | None = None) -> dict:
@@ -22,26 +21,20 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext, pric
     for item in analysis.items:
         query = f"{item.colour} {item.name}. {item.search_query}. {' '.join(item.details)}"
         target = Target(item.category, item.name, item.colour, item.details, item.fit)
-        # Same garment type always; same colour and length first. Relax length by one step, then colour,
-        # only when too few exact matches exist, and never the garment type: a skirt is never trousers.
-        candidates, relaxed = [], None
-        for strict_colour, gap, label in ((True, 0, None), (True, 1, "length"), (False, 1, "colour")):
-            found = search_in_range(catalog, query, CANDIDATES_PER_ITEM, item.category, price, want=PICKS_PER_ITEM,
-                                    exclude=used, accept=lambda r: target.check(r.product, strict_colour, gap))
-            candidates, relaxed = found, label
-            if len(found) >= MIN_CLOSE:
-                break
+        # Accuracy over a full page (Renee): same garment type, colour and length, always. Only the price
+        # range widens; if nothing in the catalog matches, the section says so instead of showing near-misses.
+        candidates = search_in_range(catalog, query, CANDIDATES_PER_ITEM, item.category, price, want=PICKS_PER_ITEM,
+                                     exclude=used, accept=lambda r: target.check(r.product))
         picks: list[RankedPick] = rank(item, candidates, user, k=PICKS_PER_ITEM)
         used.update(p.product_id for p in picks)
         note = None
         if len(picks) < PICKS_PER_ITEM:
             note = (f"Only {len(picks)} close {'match' if len(picks) == 1 else 'matches'} for this piece. "
                     "Widen the price range to see more." if picks
-                    else "No close match for this piece in the catalog yet.")
+                    else "No match in this colour and length in our catalog yet.")
         sections.append({
             "item": item.model_dump(),
             "note": note,
-            "relaxed": relaxed,
             "picks": [
                 {
                     **catalog.products[p.product_id].to_dict(),

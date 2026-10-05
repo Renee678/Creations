@@ -28,8 +28,9 @@ def test_upload_is_processed_into_per_item_lookalikes(client, runtime, user):
 
     sections = look["result"]["sections"]
     assert sections, "every detected item gets a section"
+    assert any(s["picks"] for s in sections)
     for s in sections:
-        assert s["picks"], f"no picks for {s['item']['name']}"
+        assert s["picks"] or s["note"], f"{s['item']['name']}: no picks and no explanation"
         assert all(p["category"] == s["item"]["category"] for p in s["picks"])
         assert all(p["reasons"] is not None for p in s["picks"])
     all_ids = [p["id"] for s in sections for p in s["picks"]]

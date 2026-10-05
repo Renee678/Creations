@@ -156,4 +156,4 @@ def test_outfits_show_as_boards_and_can_be_saved_to_my_style(client):
 
 def test_find_dupes_says_when_it_shows_fewer_or_relaxed_matches(client):
     render = client.get("/static/app.js").text.split("function renderLook")[1].split("\n}\n")[0]
-    assert "s.note" in render and "s.relaxed" in render
+    assert "s.note" in render and "s.relaxed" not in render
