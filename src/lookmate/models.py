@@ -52,6 +52,23 @@ class StyleEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SavedOutfit(Base):
+    """A complete outfit the user kept: from the lookbook, Make it mine, or mixed in the fitting room."""
+
+    __tablename__ = "saved_outfits"
+    __table_args__ = (UniqueConstraint("user_id", "pieces_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(80))
+    product_ids: Mapped[list] = mapped_column(JSON)
+    pieces_key: Mapped[str] = mapped_column(String(64))  # sorted ids, hashed: saving the same set twice is a no-op
+    season: Mapped[str] = mapped_column(String(10))
+    style_id: Mapped[str] = mapped_column(String(30))
+    source: Mapped[str] = mapped_column(String(20))  # lookbook | mine | fitting_room
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Look(Base):
     """One uploaded inspiration photo and, once processed, its look-alike results."""
 
