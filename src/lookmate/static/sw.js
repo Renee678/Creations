@@ -1,7 +1,7 @@
 // Lookmate service worker: makes the app installable and opens the app shell offline.
 // It only ever caches the static shell. API calls, uploads, try-on pictures and product photos
 // always go to the network, so nothing personal is stored here and results are never stale.
-const CACHE = "lookmate-shell-v1";
+const CACHE = "lookmate-shell-v2";
 const SHELL = ["/", "/static/style.css", "/static/app.js", "/static/logo.svg", "/static/manifest.webmanifest",
   "/static/icons/icon-192.png"];
 
