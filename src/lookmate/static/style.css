@@ -345,3 +345,14 @@ body.room-open { padding-bottom: 110px; }
 /* Lookbook: season picker and the stylist's line per outfit */
 #lb-seasons { margin-left: 4px; }
 .outfit-why { margin: -4px 0 10px; font: 700 19px/1.3 var(--f-hand); color: var(--violet); }
+
+/* Make it mine: start from a vibe or an inspiration look */
+.lb-mine { margin: 10px 0 4px; padding: 14px 16px; background: rgba(255, 255, 255, .7); border-radius: 18px; }
+.lb-mine p { margin: 0 0 10px; }
+.vibe-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.vibe-form input { flex: 1 1 260px; min-width: 0; padding: 10px 14px; border-radius: 999px; border: 1px solid rgba(61, 141, 232, .35);
+  font: 15px var(--f-body); color: var(--ink); background: #fff; }
+.mine-or { margin-top: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.mine-piece { display: flex; flex-direction: column; gap: 4px; }
+.mine-swap { margin: 0; font-size: 13px; }
+.mine-swap .was { color: var(--muted); text-decoration: line-through; }

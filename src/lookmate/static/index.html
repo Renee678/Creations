@@ -126,9 +126,19 @@
         <div id="lb-mode" class="chips">
           <button type="button" class="chip on" data-mode="seasons">By season</button>
           <button type="button" class="chip" data-mode="occasions">By occasion</button>
+          <button type="button" class="chip" data-mode="mine">Make it mine ✦</button>
         </div>
         <div id="lb-seasons" class="chips" hidden></div>
         <p id="lb-note" class="muted"></p>
+      </div>
+      <div id="lb-mine" class="lb-mine" hidden>
+        <p class="muted">Start from something you love. Lookmate rebuilds it in your colours, for your body and budget, and tells you what changed.</p>
+        <form id="lb-vibe-form" class="vibe-form">
+          <input id="lb-vibe" type="text" maxlength="120" placeholder="A vibe, e.g. quiet luxury autumn or date night coquette">
+          <button type="submit" class="gel primary">Build it</button>
+        </form>
+        <div class="mine-or">or <label class="gel">Upload an inspiration look<input id="lb-inspo" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden></label>
+          <span class="muted small">a screenshot from Xiaohongshu, TikTok or Instagram</span></div>
       </div>
       <div class="price-range" id="price-lookbook">
         <span class="pr-label">Price per item</span>

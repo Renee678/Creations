@@ -13,9 +13,10 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES
-from ..models import PersonalAnalysis
+from ..models import Look, PersonalAnalysis
 from ..services import stylist
 from ..services.lookbook import build_lookbook, latest_analysis
+from ..services.make_it_mine import make_it_mine
 from ..services.price_range import PriceRange
 from ..services.style_memory import user_context
 from ..services.trends import SEASONS, latest_batch, season_of
@@ -93,6 +94,7 @@ def lookbook(
     season: Literal["spring", "summer", "autumn", "winter"] | None = Query(default=None),
     price_min: float | None = Query(default=None, ge=0, le=10000),
     price_max: float | None = Query(default=None, ge=0, le=10000),
+    vibe: str | None = Query(default=None, max_length=120),
     db: Session = Depends(get_db),
 ) -> dict:
     rt = request.app.state.runtime
@@ -109,9 +111,34 @@ def lookbook(
     price = PriceRange.from_params(price_min, price_max, user.budget_per_item)
     # The stylist runs once a photo has been analysed: that's when outfits are personal, and the upload
     # was already gated by the access code, so strangers can't run up model calls.
-    curate = None
-    if analysis:
-        limit = get_settings().daily_stylist_limit
-        curate = lambda req: stylist.curate(rt.llm, rt.redis, req, limit)  # noqa: E731
-    lb = build_lookbook(rt.catalog, user, analysis, trends, mode, price, season=season or now, stylist=curate)
+    curate = stylist_for(rt) if analysis else None
+    lb = build_lookbook(rt.catalog, user, analysis, trends, mode, price, season=season or now, stylist=curate,
+                        vibe=(vibe or "").strip() or None)
     return {**lb, "current_season": now, "next_season": upcoming, "stylist": rt.llm.name if curate else None}
+
+
+def stylist_for(rt):
+    limit = get_settings().daily_stylist_limit
+    return lambda req: stylist.curate(rt.llm, rt.redis, req, limit)
+
+
+@router.get("/api/looks/{look_id}/mine")
+def look_made_mine(
+    look_id: int,
+    request: Request,
+    price_min: float | None = Query(default=None, ge=0, le=10000),
+    price_max: float | None = Query(default=None, ge=0, le=10000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """An analysed inspiration look, rebuilt for its owner's colours, body and budget (no new vision call)."""
+    rt = request.app.state.runtime
+    look = db.get(Look, look_id)
+    if look is None:
+        raise HTTPException(404, "look not found")
+    if look.status != "done":
+        raise HTTPException(409, "this look hasn't been analysed yet")
+    user = user_context(db, get_user_or_404(db, look.user_id))
+    rec = latest_analysis(db, look.user_id)
+    price = PriceRange.from_params(price_min, price_max, user.budget_per_item)
+    return make_it_mine(look.result, rt.catalog, user, rec.result if rec else None, price,
+                        stylist_for(rt) if rec else None)

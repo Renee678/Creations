@@ -381,3 +381,77 @@ def test_only_outfits_the_stylist_approves_are_shown(runtime):
     plain = build_lookbook(runtime.catalog, UserContext(), Rec, [], "seasons", season="autumn", stylist=lambda r: {})
     assert len(plain["sections"][0]["outfits"]) == 3 and not plain["styled"]
     assert not any(o["reviewed"] for o in plain["sections"][0]["outfits"])
+
+
+def test_vibes_name_a_style_and_a_season_or_occasion():
+    from lookmate.services.lookbook import parse_vibe
+
+    assert parse_vibe("Quiet luxury autumn") == ("quiet_luxury", "autumn", None)
+    assert parse_vibe("date night coquette") == ("coquette", None, "date")
+    assert parse_vibe("something in cashmere for fall") == ("quiet_luxury", "autumn", None)
+    assert parse_vibe("hello") == (None, None, None)
+
+
+def test_a_vibe_search_builds_that_style(client, runtime, user):
+    lb = client.get(f"/api/users/{user['id']}/lookbook", params={"vibe": "quiet luxury winter"}).json()
+    assert lb["vibe"] == "quiet luxury winter" and [s["id"] for s in lb["sections"]] == ["winter"]
+    assert {o["style_id"] for o in lb["sections"][0]["outfits"]} == {"quiet_luxury"}
+    party = client.get(f"/api/users/{user['id']}/lookbook", params={"vibe": "party y2k"}).json()
+    assert [s["id"] for s in party["sections"]] == ["party"]
+
+
+INSPIRATION = {"vibe": "Camel coat over a cream knit", "style_tags": ["old_money"], "sections": [
+    {"item": {"category": "outerwear", "name": "wool coat", "colour": "camel", "fit": "long", "details": [],
+              "style_tags": ["old_money"], "search_query": "camel long wool coat"}, "picks": []},
+    {"item": {"category": "top", "name": "knit sweater", "colour": "white", "fit": "relaxed", "details": [],
+              "style_tags": ["old_money"], "search_query": "white knit sweater"}, "picks": []},
+]}
+
+
+def test_make_it_mine_swaps_colours_that_dont_suit_and_says_why(runtime):
+    from lookmate.services.make_it_mine import adapt_colour, make_it_mine
+    from lookmate.services.ranking import UserContext
+
+    pal = Palette.from_analysis(WINTER)
+    new, why = adapt_colour("camel", pal, "cool winter")
+    assert family(new) in {"grey", "navy", "black", "white"} and "avoid" in why and "cool winter" in why
+    assert adapt_colour("white", pal)[0] == "white" and "already suits" in adapt_colour("white", pal)[1]
+    assert family(adapt_colour("orange", pal)[0]) != "orange", "an accent stays an accent from the palette"
+
+    mine = make_it_mine(INSPIRATION, runtime.catalog, UserContext(), WINTER)
+    coat, knit = mine["pieces"]
+    assert coat["original"]["colour"] == "camel" and coat["change"] and coat["colour"] != "camel"
+    assert family(coat["pick"]["colour"]) != "beige", "the shop pick is in the new colour, not camel"
+    assert knit["colour"] == "white"
+    assert mine["total_price"] == pytest.approx(coat["pick"]["price"] + knit["pick"]["price"])
+    assert not mine["reviewed"], "no stylist passed in"
+
+    plain = make_it_mine(INSPIRATION, runtime.catalog, UserContext(), None)
+    assert [p["colour"] for p in plain["pieces"]] == ["camel", "white"], "no colour analysis yet: nothing swapped"
+
+
+def test_make_it_mine_goes_past_the_stylist_gate(runtime):
+    from lookmate.services.make_it_mine import make_it_mine
+    from lookmate.services.ranking import UserContext
+
+    seen = []
+
+    def reject(req):
+        seen.append(req)
+        return {0: ([s.candidates[0].id for s in req.outfits[0].slots], "The coat fights the knit.", False)}
+
+    mine = make_it_mine(INSPIRATION, runtime.catalog, UserContext(), WINTER, stylist=reject)
+    assert seen and mine["reviewed"] and mine["approved"] is False and mine["why"] == "The coat fights the knit."
+
+
+def test_an_uploaded_look_can_be_made_mine(client, runtime, user):
+    upload(client, user["id"], SELFIE)
+    run_next_job(runtime)
+    png = b"\x89PNG\r\n\x1a\n" + b"inspiration"
+    look_id = client.post("/api/looks", data={"user_id": user["id"]},
+                          files={"image": ("l.png", png, "image/png")}).json()["id"]
+    assert client.get(f"/api/looks/{look_id}/mine").status_code == 409, "not analysed yet"
+    run_next_job(runtime)
+    mine = client.get(f"/api/looks/{look_id}/mine").json()
+    assert mine["personal"] and mine["pieces"] and mine["reviewed"] and mine["approved"]
+    assert all({"original", "colour", "change", "pick"} <= set(p) for p in mine["pieces"])

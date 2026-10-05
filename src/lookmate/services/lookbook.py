@@ -134,6 +134,26 @@ class Palette:
         return [accents[outfit_no % len(accents)]] + [neutrals[(outfit_no + i) % len(neutrals)] for i in range(n_slots - 1)]
 
 
+VIBE_WORDS = {
+    "seasons": {"spring": "spring", "summer": "summer", "autumn": "autumn", "fall": "autumn", "winter": "winter"},
+    "occasions": {"work": "work", "office": "work", "weekend": "weekend", "casual": "weekend", "date": "date",
+                  "party": "party", "night out": "party", "vacation": "travel", "holiday": "travel",
+                  "travel": "travel", "beach": "travel"},
+}
+
+
+def parse_vibe(text: str) -> tuple[str | None, str | None, str | None]:
+    """(style, season, occasion) named in a free-text vibe; each None when not named. Deterministic."""
+    t = f" {text.lower().replace('-', ' ')} "
+    style = next((s for s, label in STYLES.items() if f" {label.lower()} " in t or f" {s.replace('_', ' ')} " in t),
+                 None)
+    if style is None:  # a keyword, e.g. "cashmere" or "ballet flats"
+        style = next((s for s, words in STYLE_KEYWORDS.items() if any(f" {w} " in t for w in words)), None)
+    season = next((v for k, v in VIBE_WORDS["seasons"].items() if f" {k} " in t), None)
+    occasion = next((v for k, v in VIBE_WORDS["occasions"].items() if f" {k} " in t), None)
+    return style, season, occasion
+
+
 def latest_analysis(session: Session, user_id: int) -> PersonalAnalysis | None:
     return session.scalar(
         select(PersonalAnalysis)
@@ -155,7 +175,7 @@ def outfit_styles(user: UserContext, analysis: dict | None, trends: list[tuple[s
 def build_lookbook(
     catalog: Catalog, user: UserContext, analysis_rec: PersonalAnalysis | None,
     trends: list[tuple[str, str]], mode: str = "seasons", price: PriceRange | None = None,
-    season: str | None = None, stylist: Stylist | None = None,
+    season: str | None = None, stylist: Stylist | None = None, vibe: str | None = None,
 ) -> dict:
     # A soft price range (see price_range.py): without it a $260 designer pump can win a slot,
     # since price is only 10% of the score.
@@ -165,6 +185,14 @@ def build_lookbook(
     styles = outfit_styles(user, analysis, trends)
     trend_labels = dict(trends)
     templates = SEASONS if mode == "seasons" else OCCASIONS
+    if vibe:
+        # "quiet luxury autumn", "date night coquette": that style, for that season or occasion.
+        v_style, v_season, v_occasion = parse_vibe(vibe)
+        styles = [v_style] if v_style else styles
+        if v_occasion:
+            mode, templates = "occasions", {v_occasion: OCCASIONS[v_occasion]}
+        else:
+            mode, templates, season = "seasons", SEASONS, v_season or season
     if mode == "seasons" and season in SEASONS:
         templates = {season: SEASONS[season]}  # one season at a time: the current one unless asked
     used: set[str] = set()
@@ -203,6 +231,7 @@ def build_lookbook(
 
     return {
         "mode": mode,
+        "vibe": vibe or None,
         "season": next(iter(templates)) if mode == "seasons" else None,
         "personal": palette.personal,
         "analysis": analysis,

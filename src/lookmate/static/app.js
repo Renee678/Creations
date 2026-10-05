@@ -324,6 +324,8 @@ $("#trend-list").addEventListener("click", onSaveClick);
 // ---------- personal analysis + lookbook ----------
 let lbMode = "seasons";
 let lbSeason = "";  // empty: the server picks the current season
+let lbVibe = "";    // Make it mine: a typed vibe…
+let lbInspo = null; // …or an uploaded inspiration look's id
 const meDrop = $("#me-drop");
 ["dragover", "dragenter"].forEach((ev) => meDrop.addEventListener(ev, (e) => { e.preventDefault(); meDrop.classList.add("over"); }));
 ["dragleave", "drop"].forEach((ev) => meDrop.addEventListener(ev, () => meDrop.classList.remove("over")));
@@ -672,8 +674,16 @@ let analysing = false;  // new photos are being read: no lookbook until they are
 
 /** Build the lookbook. Opening the tab again doesn't rebuild it, so a try-on in progress stays put. */
 async function loadLookbook(force = false) {
+  $("#lb-mine").hidden = lbMode !== "mine";
+  if (lbMode === "mine" && lbInspo) return loadMine(force);
+  if (lbMode === "mine" && !lbVibe) {
+    lbShown = null; $("#lb-seasons").hidden = true; $("#lb-note").textContent = "";
+    $("#lb-sections").innerHTML = "";
+    return renderRoom();
+  }
   const season = lbMode === "seasons" && lbSeason ? `&season=${lbSeason}` : "";
-  const query = `mode=${lbMode}${season}&${priceQuery("lookbook")}`;
+  const mode = lbMode === "mine" ? `mode=seasons&vibe=${encodeURIComponent(lbVibe)}` : `mode=${lbMode}${season}`;
+  const query = `${mode}&${priceQuery("lookbook")}`;
   if (analysing) return;
   if (!force && query === lbShown) return renderRoom();
   const seq = ++lbSeq;
@@ -708,10 +718,76 @@ async function loadLookbook(force = false) {
   finally { clearTimeout(slow); }
 }
 
+/** Make it mine from an uploaded look: each piece as "original → your version", with the reason. */
+async function loadMine(force) {
+  const query = `inspo=${lbInspo}&${priceQuery("lookbook")}`;
+  if (!force && query === lbShown) return renderRoom();
+  const seq = ++lbSeq;
+  $("#lb-seasons").hidden = true;
+  $("#lb-sections").innerHTML = `<p class="muted lb-wait"><span class="spinner small"></span> Making this look yours…</p>`;
+  try {
+    const m = await api(`/api/looks/${lbInspo}/mine?${priceQuery("lookbook")}`);
+    if (seq !== lbSeq) return;
+    lbShown = query;
+    showPriceRange("lookbook", m.price_range);
+    $("#lb-note").textContent = m.personal ? "" : "Add your photos above first: without your colours, nothing gets swapped.";
+    $("#lb-sections").innerHTML = mineCard(m);
+    renderRoom();
+  } catch (err) { $("#lb-sections").innerHTML = `<p class="status error">${esc(err.message)}</p>`; }
+}
+
+function mineCard(m) {
+  if (!m.approved) {
+    return `<div class="lb-section"><h2>Your version</h2><p class="muted">Our stylist couldn't make this look work in your colours and budget${m.why ? `: ${esc(m.why)}` : "."} Try a wider price range or another look.</p></div>`;
+  }
+  m.pieces.forEach((x) => lbProducts.set(x.pick.id, x.pick));
+  const ids = m.pieces.map((x) => x.pick.id).join(",");
+  const rows = m.pieces.map((x) => `<div class="mine-piece">
+      <p class="mine-swap">${x.colour.toLowerCase() === x.original.colour.toLowerCase()
+        ? `<strong>${esc(x.original.colour)} ${esc(x.original.name)}</strong>`
+        : `<span class="was">${esc(x.original.colour)} ${esc(x.original.name)}</span> → <strong>${esc(x.colour)} ${esc(x.original.name)}</strong>`}</p>
+      ${x.change ? `<p class="muted small">${esc(x.change)}</p>` : ""}
+      ${productCard(x.pick, [m.style_id], { room: true })}</div>`).join("");
+  return `<div class="lb-section"><h2>Your version</h2><p class="muted">${esc(m.vibe)}</p>
+    <div class="outfit"><div class="item-head"><h3>${esc(m.title)}</h3><span class="muted">$${m.total_price.toFixed(2)} total</span>
+      <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></div>
+    ${m.why ? `<p class="outfit-why">✦ ${esc(m.why)}</p>` : `<p class="muted small">Not reviewed by the AI stylist.</p>`}
+    <div class="grid mine-grid">${rows}</div></div></div>`;
+}
+
+$("#lb-vibe-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  lbVibe = $("#lb-vibe").value.trim(); lbInspo = null;
+  if (lbVibe) loadLookbook(true);
+});
+
+$("#lb-inspo").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const form = new FormData(); form.append("user_id", userId); form.append("image", await shrinkPhoto(file, 1600), "look.jpg");
+  $("#lb-sections").innerHTML = `<p class="muted lb-wait"><span class="spinner small"></span> Reading the look…</p>`;
+  try {
+    const look = await api("/api/looks", { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } })
+      .catch((err) => { if (err.message === "access code required") store.set("accessCode", ""); throw err; });
+    waitForInspo(look.id, 0);
+  } catch (err) { $("#lb-sections").innerHTML = `<p class="status error">${esc(err.message)}</p>`; }
+});
+
+async function waitForInspo(id, tries) {
+  try {
+    const look = await api(`/api/looks/${id}`);
+    if (look.status === "done") { lbInspo = id; lbVibe = ""; return loadLookbook(true); }
+    if (look.status === "failed") throw new Error(look.error || "Couldn't read that look. Try another photo.");
+    if (tries < 90) setTimeout(() => waitForInspo(id, tries + 1), 1500);
+    else throw new Error("This is taking too long. Try again in a little while.");
+  } catch (err) { $("#lb-sections").innerHTML = `<p class="status error">${esc(err.message)}</p>`; }
+}
+
 /** This season first; the next one is a tap away. */
 function renderSeasonChips(lb) {
   const box = $("#lb-seasons");
-  box.hidden = lb.mode !== "seasons";
+  box.hidden = lb.mode !== "seasons" || !!lb.vibe;
   if (box.hidden) return;
   const chip = (id, tag) => `<button type="button" class="chip${lb.season === id ? " on" : ""}" data-season="${id}">${cap(id)} · ${tag}</button>`;
   box.innerHTML = chip(lb.current_season, "now") + chip(lb.next_season, "next");

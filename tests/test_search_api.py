@@ -134,3 +134,11 @@ def test_lookbook_offers_this_season_and_shows_the_stylists_line(client):
     assert 'id="lb-seasons"' in client.get("/").text
     assert "chip(lb.current_season, \"now\") + chip(lb.next_season, \"next\")" in app_js
     assert "outfit-why" in app_js.split("function outfitCard")[1].split("\n}\n")[0]
+
+
+def test_lookbook_has_a_make_it_mine_mode(client):
+    html = client.get("/").text
+    assert 'data-mode="mine"' in html and 'id="lb-vibe"' in html and 'id="lb-inspo"' in html
+    app_js = client.get("/static/app.js").text
+    assert "/mine?" in app_js and "vibe=${encodeURIComponent(lbVibe)}" in app_js
+    assert 'class="was"' in app_js, "each piece shows the original next to your version"
