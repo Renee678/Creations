@@ -88,7 +88,8 @@ function setStatus(text, isError = false) {
 }
 
 async function handleFile(file) {
-  $("#preview").src = URL.createObjectURL(file); $("#preview").hidden = false; $("#drop-text").textContent = "Try another photo";
+  $("#preview").src = URL.createObjectURL(file); $("#preview").hidden = false;
+  document.querySelectorAll("#drop .hint").forEach((el) => el.setAttribute("hidden", "")); $("#drop-text").textContent = "Try another photo";
   $("#results").innerHTML = "";
   setStatus("Uploading…");
   const form = new FormData(); form.append("user_id", userId); form.append("image", file);
@@ -115,25 +116,28 @@ async function pollLook(id, tries) {
 function productCard(p, styleTags) {
   const img = p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.parentElement.textContent='${esc(p.product_type)}'">` : esc(p.product_type);
   const saving = p.saving_usd > 0 ? `<span class="saving">Save about $${Math.round(p.saving_usd)}</span>` : "";
-  return `<div class="card">
+  const shop = p.shop_links
+    ? `<div class="shop"><a class="gel" href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">SHEIN ↗</a><a class="gel" href="${esc(p.shop_links.hm)}" target="_blank" rel="noopener">H&amp;M ↗</a></div>`
+    : "";
+  return `<div class="card"><span class="tape"></span><span class="price">$${p.price.toFixed(2)}</span>
     <div class="img">${img}</div>
     <div class="body">
       <span class="name">${esc(p.name)}</span>
-      <span class="muted">${esc(p.colour)}</span>
-      <span class="price">$${p.price.toFixed(2)}</span> ${saving}
+      <span class="meta">${esc(p.colour)}</span>${saving}
       <span class="reasons">${(p.reasons || []).map(esc).join(" · ")}</span>
-      <div class="shop">${p.shop_links ? `<a href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">Search on SHEIN</a><a href="${esc(p.shop_links.hm)}" target="_blank" rel="noopener">Search on H&amp;M</a>` : ""}</div>
-      <button data-save="${esc(p.id)}" data-tags="${esc((styleTags || []).join(","))}">♡ Save</button>
+      ${shop}
+      <button class="save" data-save="${esc(p.id)}" data-tags="${esc((styleTags || []).join(","))}">♡ save to lookbook</button>
     </div></div>`;
 }
 
 function renderLook(r) {
-  const tags = (r.style_tags || []).map((t) => `<span class="tag">${esc(vocab.styles[t] || t)}</span>`).join(" ");
-  let html = `<div class="vibe"><strong>${esc(r.vibe)}</strong><div>${tags}</div></div>`;
+  const tags = (r.style_tags || []).map((t) => `<span class="chip">${esc(vocab.styles[t] || t)}</span>`).join("");
+  let html = `<div class="vibe"><span class="tape"></span><h2>the vibe</h2><p>${esc(r.vibe)}</p><div class="chips static">${tags}</div></div>`;
   for (const s of r.sections) {
     const it = s.item;
     const orig = it.estimated_original_price_usd ? `<span class="muted">Original about $${Math.round(it.estimated_original_price_usd)}</span>` : "";
-    html += `<div class="item"><div class="item-head"><h3>${esc(it.colour)} ${esc(it.name)}</h3>${orig}</div>
+    const count = s.picks.length ? `<span class="tag">${s.picks.length} dupes</span>` : "";
+    html += `<div class="item"><div class="item-head"><h3>${esc(it.colour)} ${esc(it.name)}</h3>${count}${orig}</div>
       <div class="grid">${s.picks.map((p) => productCard(p, it.style_tags)).join("") || '<p class="muted">No good dupes found.</p>'}</div></div>`;
   }
   $("#results").innerHTML = html;
@@ -147,7 +151,7 @@ async function onSaveClick(e) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ product_id: b.dataset.save, style_tags: b.dataset.tags ? b.dataset.tags.split(",") : [] }),
     });
-    b.classList.add("saved"); b.textContent = "♥ Saved";
+    b.classList.add("saved"); b.textContent = "♥ saved";
   } catch (err) { setStatus(err.message, true); }
 }
 $("#results").addEventListener("click", onSaveClick);
@@ -169,7 +173,7 @@ async function loadTrends() {
   if (!t.trends.length) { $("#trends-meta").textContent = "Trends are still being gathered. Check back soon."; return; }
   const when = new Date(t.refreshed_at).toLocaleDateString("en-US");
   $("#trends-meta").textContent = t.origin === "seed" ? `Sample trends (offline data), updated ${when}` : `Researched by AI on the web, updated ${when}`;
-  $("#trend-list").innerHTML = t.trends.map((x) => `<div class="trend">
+  $("#trend-list").innerHTML = t.trends.map((x) => `<div class="trend"><span class="tape"></span>
       <h3>${esc(x.label)}</h3><p>${esc(x.description)}</p>
       <div class="chips static">${x.keywords.map((k) => `<span class="chip">#${esc(k)}</span>`).join("")}</div>
       <div class="grid">${x.examples.map((p) => productCard(p, [x.style_id])).join("")}</div>
@@ -228,7 +232,7 @@ const cap = (s) => String(s || "").replace(/^./, (c) => c.toUpperCase());
 function renderAnalysis(a) {
   if (!a) { $("#me-analysis").innerHTML = ""; return; }
   const list = (xs) => `<ul>${(xs || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
-  $("#me-analysis").innerHTML = `<div class="analysis">
+  $("#me-analysis").innerHTML = `<div class="analysis"><span class="tape"></span>
     <div class="season"><span class="muted">Your colour season</span><strong>${esc(cap(a.season_detail))}</strong>
       <span>${esc(cap(a.undertone))} undertone · ${esc(a.contrast)} contrast · ${esc(a.metals)} jewellery</span>
       <p class="muted">${esc(a.colouring_notes)}</p></div>
