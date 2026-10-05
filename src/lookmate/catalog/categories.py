@@ -1,4 +1,6 @@
-"""Map H&M product types onto the small set of categories the app reasons about."""
+"""Map catalog product types onto the small set of categories the app reasons about."""
+
+import re
 
 CATEGORIES = ("top", "bottom", "dress", "outerwear", "shoes", "bag", "accessory")
 
@@ -31,3 +33,51 @@ _TYPE_TO_CATEGORY = {
 def category_for(product_type: str) -> str | None:
     """Return the app category, or None for types we don't recommend (underwear, socks, ...)."""
     return _TYPE_TO_CATEGORY.get(product_type.strip().lower())
+
+
+# Free-text labels and names (ASOS, Polyvore). Checked in order, so "shirt dress" is a dress and
+# "dress shoes" are shoes. Each entry: category, words that mark it.
+_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
+    ("shoes", ("shoes", "shoe", "boots", "boot", "sneakers", "sneaker", "trainers", "trainer", "sandals", "sandal",
+               "heels", "pumps", "loafers", "loafer", "flats", "mules", "mule", "espadrilles", "ballet flats",
+               "slippers", "clogs", "brogues", "slingbacks")),
+    ("bag", ("bags", "bag", "handbags", "handbag", "tote", "clutch", "clutches", "backpacks", "backpack", "purse",
+             "satchel", "crossbody", "cross-body", "bum bag", "wallet on chain")),
+    ("dress", ("dresses", "dress", "gown", "gowns", "playsuit", "playsuits", "jumpsuit", "jumpsuits", "rompers",
+               "romper")),
+    ("outerwear", ("coats", "coat", "jackets", "jacket", "blazers", "blazer", "trench", "parka", "puffer", "gilet",
+                   "waistcoat", "bomber", "cape", "outerwear")),
+    ("bottom", ("jeans", "jean", "trousers", "pants", "skirts", "skirt", "shorts", "leggings", "joggers",
+                "culottes", "cargos")),
+    ("top", ("tops", "top", "t-shirt", "t-shirts", "tee", "shirts", "shirt", "blouses", "blouse", "sweaters",
+             "sweater", "jumper", "jumpers", "cardigans", "cardigan", "hoodie", "hoodies", "sweatshirt", "tank",
+             "cami", "camisole", "bodysuit", "polo", "knitwear", "tunic", "corset")),
+    ("accessory", ("hats", "hat", "cap", "beanie", "scarves", "scarf", "belts", "belt", "sunglasses",
+                   "necklaces", "necklace", "earrings", "earring", "bracelets", "bracelet", "bangles", "bangle",
+                   "rings", "ring", "gloves", "hair clip", "headband")),
+]
+# Things the app never recommends: menswear, kidswear, underwear, swimwear, sleepwear.
+_EXCLUDED = re.compile(
+    r"\b(men'?s|mens|kids?|baby|toddler|maternity|lingerie|bras?|briefs|knickers|thongs?|socks|"
+    r"tights|swim\w*|bikinis?|pyjamas?|pajamas?|nightwear|nightie|underwear|loungewear set|costume)\b"
+)
+_KEYWORD_RES = [
+    (cat, re.compile(r"\b(" + "|".join(re.escape(w) for w in words) + r")\b")) for cat, words in _KEYWORDS
+]
+
+
+def category_from_text(*texts: str) -> tuple[str, str] | None:
+    """Classify free text: (category, the word that decided it), trying each text in turn.
+
+    Pass the cleanest label first (e.g. a shop's category), then the product name.
+    Returns None when any text marks an excluded item or nothing matches.
+    """
+    lowered = [t.lower() for t in texts if t]
+    if any(_EXCLUDED.search(t) for t in lowered):
+        return None
+    for t in lowered:
+        for cat, pattern in _KEYWORD_RES:
+            m = pattern.search(t)
+            if m:
+                return cat, m.group(1)
+    return None

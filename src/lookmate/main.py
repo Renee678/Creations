@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api import analysis, looks, profiles, style, trends
+from .catalog.importer import IMAGE_ROUTE
 from .config import get_settings
 from .runtime import Runtime, build_runtime
 from .services.vocab import BODY_SHAPES, STYLES
@@ -39,6 +40,10 @@ app.include_router(analysis.router)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+# Product photos that ship inside a dataset (Polyvore) are saved here by the catalog import.
+CATALOG_IMAGES = Path(get_settings().data_dir) / "cache" / "images"
+CATALOG_IMAGES.mkdir(parents=True, exist_ok=True)
+app.mount(IMAGE_ROUTE, StaticFiles(directory=CATALOG_IMAGES), name="catalog-images")
 
 
 @app.get("/", include_in_schema=False)

@@ -29,10 +29,10 @@ class ProductView:
         return name if colour in name else f"{colour} {name}"
 
     def shop_links(self) -> dict[str, str]:
-        # Search links, not product pages: the H&M dataset is 2018-2020 stock, so article pages are mostly gone.
+        # Search links, not product pages: the datasets are snapshots, so most product pages are gone.
         return {
             "shein": f"https://us.shein.com/pdsearch/{quote(self.search_text)}/",
-            "hm": f"https://www2.hm.com/en_us/search-results.html?q={quote_plus(self.search_text)}",
+            "asos": f"https://www.asos.com/us/search/?q={quote_plus(self.search_text)}",
         }
 
     def to_dict(self) -> dict:

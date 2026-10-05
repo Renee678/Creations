@@ -47,3 +47,15 @@ def palette_score(product_colour: str, good: set[str], bad: set[str]) -> float:
     if f in bad:
         return -1.0
     return 0.0
+
+
+def colour_word(text: str) -> str:
+    """The first colour word in free text ("givenchy leather duffel black" -> "black"), or ""."""
+    t = text.lower()
+    best = None
+    for _, words in _FAMILY_WORDS:
+        for w in words:
+            m = re.search(rf"\b{re.escape(w)}\b", t)
+            if m and (best is None or m.start() < best[0]):
+                best = (m.start(), w)
+    return best[1] if best else ""

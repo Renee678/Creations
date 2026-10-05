@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 60.0
 
     embedder: str = "hash"  # "hash" (offline) or "bge" (fastembed)
-    catalog_source: str = "seed"  # "seed" or "hm"
+    catalog_source: str = "seed"  # "seed", "asos", "polyvore", "hm", or a mix like "asos,polyvore"
     catalog_size: int = 5000
     data_dir: str = "data"
 

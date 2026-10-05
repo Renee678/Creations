@@ -119,3 +119,171 @@ def test_hm_import_accepts_the_older_vector_column_name(tmp_path):
 
     _hm_parquet(tmp_path / "hm.parquet", vector_col="bge_embedding")
     assert all(r["vector"] is not None for r in load_hm_rows(tmp_path / "hm.parquet", size=10))
+
+
+def test_free_text_categories_follow_label_then_name():
+    from lookmate.catalog.categories import category_from_text
+
+    assert category_from_text("Coats & Jackets", "New Look trench coat in camel") == ("outerwear", "coats")
+    assert category_from_text("", "ASOS DESIGN shirt dress in white")[0] == "dress"
+    assert category_from_text("Day Dresses", "tibi knit long sleeve dress")[0] == "dress"
+    assert category_from_text("Boots", "leather over-the-knee boots")[0] == "shoes"
+    assert category_from_text("Handbags", "phillip lim red leather satchel")[0] == "bag"
+    assert category_from_text("Backpacks", "madden girl polka dot backpack")[0] == "bag"
+    assert category_from_text("Earrings", "ceramic heart stud earrings")[0] == "accessory"
+    # Not recommended: menswear, swimwear, homeware, unknown things.
+    assert category_from_text("Men's Shirts", "contrast trimmed cotton shirt") is None
+    assert category_from_text("", "Monki bikini top in black") is None
+    assert category_from_text("Dining Chairs", "gray mary jane dining chair") is None
+
+
+def test_designer_prices_sit_well_above_budget_prices():
+    budget = [synthetic_price(f"pv-{i}", "dress") for i in range(100)]
+    designer = [synthetic_price(f"pv-{i}", "dress", designer=True) for i in range(100)]
+    assert min(designer) > max(budget)
+    assert all(p % 10 == 0 for p in designer)
+
+
+ASOS_HEADER = ["url", "name", "size", "category", "price", "color", "sku", "description", "images"]
+
+
+def _asos_row(name, sku, price="49.99", color="Neutral", label="Coats & Jackets",
+              image="https://images.asos-media.com/products/x/1-4?$n_1920w$&wid=1926&fit=constrain"):
+    details = f"{label} by New LookLow-key layeringNotch collarProduct Code: {sku}"
+    return ["https://www.asos.com/x", name, "UK 6,UK 8", name, price, color, f"{sku}.0",
+            str([{"Product Details": details}, {"Brand": "Since the 60s"}]), str([image, image + "&x=2"])]
+
+
+def _asos_csv(path):
+    import csv
+
+    rows = [
+        _asos_row("New Look trench coat in camel", "126704571"),
+        _asos_row("New Look trench coat in camel", "126704571"),  # same product, another size row
+        _asos_row("ASOS DESIGN satin slip dress in sage green", "200001", "32.00", "Green", "Dresses"),
+        _asos_row("Monki bikini top in black", "200002", label="Swimwear"),
+        _asos_row("ASOS DESIGN mug", "200003", label="Home"),
+        _asos_row("Missing photo dress", "200004", label="Dresses", image=""),
+    ]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(ASOS_HEADER)
+        w.writerows(rows)
+
+
+def test_asos_import_dedupes_sizes_and_keeps_real_prices_and_photos(tmp_path):
+    from lookmate.catalog.importer import load_asos_rows
+    from lookmate.catalog.pricing import GBP_TO_USD
+
+    _asos_csv(tmp_path / "asos.csv")
+    rows = {r["id"]: r for r in load_asos_rows(tmp_path / "asos.csv", size=10)}
+    assert set(rows) == {"asos-126704571", "asos-200001"}
+
+    coat = rows["asos-126704571"]
+    assert coat["category"] == "outerwear" and coat["product_type"] == "Coats & Jackets"
+    assert coat["colour"] == "camel", "the colour in the name beats the broad 'Neutral'"
+    assert coat["price"] == round(49.99 * GBP_TO_USD, 2)
+    assert coat["image_url"].startswith("https://images.asos-media.com/") and "&x=2" not in coat["image_url"]
+    assert "Low-key layering" in coat["description"] and "Product Code" not in coat["description"]
+    assert rows["asos-200001"]["category"] == "dress" and rows["asos-200001"]["colour"] == "sage green"
+    assert len(load_asos_rows(tmp_path / "asos.csv", size=1)) == 1
+
+
+JPEG = b"\xff\xd8\xff\xe0fake-jpeg"
+PNG = b"\x89PNG\r\n\x1a\nfake-png"
+
+
+def _polyvore_parquet(path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    items = [
+        ("100_1", "Day Dresses", "tibi knit long sleeve dress black", JPEG),
+        ("100_2", "Boots", "michael kors leather over-the-knee boots", PNG),
+        ("100_3", "Floral Decor", "pier imports stem", JPEG),
+        ("100_4", "Men's Shirts", "contrast trimmed cotton shirt", JPEG),
+        ("200_1", "Day Dresses", "tibi knit long sleeve dress black", JPEG),  # same piece, another outfit
+        ("200_2", "Handbags", "phillip lim red leather satchel", None),     # no photo
+    ]
+    pq.write_table(pa.table({
+        "image": [{"bytes": img, "path": None} if img else None for *_, img in items],
+        "category": [c for _, c, _, _ in items],
+        "text": [t for _, _, t, _ in items],
+        "item_ID": [i for i, *_ in items],
+    }), path)
+
+
+def test_polyvore_import_saves_photos_and_prices_designer_pieces(tmp_path):
+    from lookmate.catalog.importer import load_polyvore_rows
+
+    _polyvore_parquet(tmp_path / "pv.parquet")
+    image_dir = tmp_path / "images"
+    rows = {r["id"]: r for r in load_polyvore_rows(tmp_path / "pv.parquet", 10, image_dir)}
+    assert set(rows) == {"pv-100_1", "pv-100_2"}, "decor, menswear, repeats and photo-less items are skipped"
+
+    dress, boots = rows["pv-100_1"], rows["pv-100_2"]
+    assert dress["name"] == "Tibi knit long sleeve dress black" and dress["colour"] == "black"
+    assert dress["image_url"] == "/catalog-images/polyvore/100_1.jpg"
+    assert (image_dir / "100_1.jpg").read_bytes() == JPEG and (image_dir / "100_2.png").read_bytes() == PNG
+    assert boots["category"] == "shoes" and boots["price"] >= 100
+
+    again = load_polyvore_rows(tmp_path / "pv.parquet", 10, image_dir)
+    assert {r["id"] for r in again} == set(rows), "re-running the import is harmless"
+
+
+def test_mixed_catalog_imports_both_sources_and_keeps_them(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+
+    from lookmate.catalog import importer
+    from lookmate.db import Base
+    from lookmate.models import Product
+
+    _asos_csv(tmp_path / "asos.csv")
+    _polyvore_parquet(tmp_path / "pv.parquet")
+    monkeypatch.setattr(importer, "download_asos", lambda cache: tmp_path / "asos.csv")
+    monkeypatch.setattr(importer, "download_polyvore", lambda cache: tmp_path / "pv.parquet")
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    Base.metadata.create_all(eng)
+    data_dir = tmp_path / "data"
+    seed = Path(__file__).resolve().parents[1] / "data" / "seed_products.json"
+    data_dir.mkdir()
+    (data_dir / "seed_products.json").write_text(seed.read_text())
+
+    with Session(eng) as s:
+        assert importer.ensure_catalog(s, HashEmbedder(), "asos, polyvore", data_dir, 50) == 4
+        assert importer.stored_sources(s) == {"asos", "polyvore"}
+        assert (data_dir / "cache" / "images" / "polyvore" / "100_1.jpg").exists()
+        assert importer.ensure_catalog(s, HashEmbedder(), "polyvore,asos", data_dir, 50) == 4, "same mix: kept"
+
+        importer.ensure_catalog(s, HashEmbedder(), "seed", data_dir, 50)
+        assert importer.stored_sources(s) == {"seed"}
+        assert all(i.startswith("seed-") for i in s.scalars(select(Product.id)))
+
+
+def test_failed_downloads_fall_back_to_the_seed_catalog(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from lookmate.catalog import importer
+    from lookmate.db import Base
+
+    def offline(cache):
+        raise OSError("no network")
+
+    monkeypatch.setattr(importer, "download_asos", offline)
+    monkeypatch.setattr(importer, "download_polyvore", offline)
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    Base.metadata.create_all(eng)
+    with Session(eng) as s:
+        assert importer.ensure_catalog(s, HashEmbedder(), "asos,polyvore",
+                                       Path(__file__).resolve().parents[1] / "data", 50) > 0
+        assert importer.stored_sources(s) == {"seed"}
+
+
+def test_unknown_catalog_source_is_rejected():
+    from lookmate.catalog.importer import parse_sources
+
+    assert parse_sources("ASOS, polyvore") == {"asos", "polyvore"}
+    with pytest.raises(ValueError):
+        parse_sources("asos,zara")
