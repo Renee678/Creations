@@ -12,6 +12,7 @@
     <div class="brand"><img src="/static/logo.svg" alt="" class="logo">Lookmate <span>Your style buddy</span></div>
     <nav id="tabs" hidden>
       <button data-tab="find" class="active">Find dupes</button>
+      <button data-tab="lookbook">Lookbook</button>
       <button data-tab="style">My style</button>
       <button data-tab="trends">Trends</button>
       <button data-tab="profile">Profile</button>
@@ -55,6 +56,29 @@
       </label>
       <div id="status" class="status" hidden></div>
       <div id="results"></div>
+    </section>
+
+    <!-- Personal analysis + lookbook -->
+    <section id="lookbook" class="panel" hidden>
+      <h1>Your personal lookbook</h1>
+      <p class="muted">Share up to 3 photos of yourself: a selfie in daylight without filters, plus a full-body photo if
+        you like. I'll work out your colour season, face shape, and hair and makeup ideas, then build outfits for every
+        season and occasion. Photos are deleted as soon as the analysis is done.</p>
+      <label id="me-drop" class="drop small">
+        <input id="me-files" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+        <div id="me-previews" class="previews" hidden></div>
+        <span id="me-drop-text">Click or drop 1 to 3 photos of you</span>
+      </label>
+      <div id="me-status" class="status" hidden></div>
+      <div id="me-analysis"></div>
+      <div class="modebar">
+        <div id="lb-mode" class="chips">
+          <button type="button" class="chip on" data-mode="seasons">By season</button>
+          <button type="button" class="chip" data-mode="occasions">By occasion</button>
+        </div>
+        <p id="lb-note" class="muted"></p>
+      </div>
+      <div id="lb-sections"></div>
     </section>
 
     <!-- Style memory -->

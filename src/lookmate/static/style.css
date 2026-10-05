@@ -67,3 +67,23 @@ button.primary { margin-top: 12px; background: var(--accent); color: #fff; borde
 .trend h3 { margin: 0 0 4px; }
 .sources a { font-size: 12px; color: var(--muted); margin-right: 8px; }
 @media (max-width: 520px) { .row { grid-template-columns: 1fr 1fr; } .grid { grid-template-columns: 1fr 1fr; } }
+.drop.small { min-height: 120px; }
+.previews { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.previews img { height: 140px; border-radius: 10px; object-fit: cover; }
+.analysis { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin: 14px 0; }
+.season { display: flex; flex-direction: column; gap: 2px; }
+.season strong { font-size: 24px; }
+.season p { margin: 6px 0 0; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.swatch { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; border: 1px solid var(--line);
+          border-radius: 999px; padding: 3px 10px 3px 4px; }
+.swatch i { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); display: inline-block; }
+.beauty { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.beauty ul { margin: 0; padding-left: 18px; }
+.small { font-size: 12px; }
+.modebar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 18px 0 4px; }
+.modebar p { margin: 0; }
+.lb-section h2 { font-size: 19px; margin: 26px 0 4px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.outfit { margin: 14px 0 22px; }
+@media (max-width: 520px) { .beauty { grid-template-columns: 1fr; } }
+.outfit .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }

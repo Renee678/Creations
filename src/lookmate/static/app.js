@@ -20,10 +20,11 @@ async function api(path, opts = {}) {
 
 // ---------- tabs ----------
 function show(tab) {
-  for (const id of ["find", "style", "trends", "profile"]) $("#" + id).hidden = id !== tab;
+  for (const id of ["find", "lookbook", "style", "trends", "profile"]) $("#" + id).hidden = id !== tab;
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   if (tab === "style") loadStyle();
   if (tab === "trends") loadTrends();
+  if (tab === "lookbook") loadLookbook();
 }
 document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.tab)));
 
@@ -91,13 +92,8 @@ async function handleFile(file) {
   $("#results").innerHTML = "";
   setStatus("Uploading…");
   const form = new FormData(); form.append("user_id", userId); form.append("image", file);
-  let code = store.get("accessCode") || "";
-  if (vocab.access_code_required && !code) {
-    code = prompt("Enter your access code") || "";
-    store.set("accessCode", code);
-  }
   try {
-    const look = await api("/api/looks", { method: "POST", body: form, headers: { "X-Access-Code": code } }).catch((err) => {
+    const look = await api("/api/looks", { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } }).catch((err) => {
       if (err.message === "access code required") store.set("accessCode", "");
       throw err;
     });
@@ -180,6 +176,97 @@ async function loadTrends() {
     </div>`).join("");
 }
 $("#trend-list").addEventListener("click", onSaveClick);
+
+// ---------- personal analysis + lookbook ----------
+let lbMode = "seasons";
+const meDrop = $("#me-drop");
+["dragover", "dragenter"].forEach((ev) => meDrop.addEventListener(ev, (e) => { e.preventDefault(); meDrop.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => meDrop.addEventListener(ev, () => meDrop.classList.remove("over")));
+meDrop.addEventListener("drop", (e) => { e.preventDefault(); handlePhotos([...e.dataTransfer.files]); });
+$("#me-files").addEventListener("change", (e) => handlePhotos([...e.target.files]));
+
+function setMeStatus(text, isError = false) {
+  const s = $("#me-status"); s.hidden = !text; s.textContent = text || ""; s.classList.toggle("error", isError);
+}
+
+function accessCode() {
+  let code = store.get("accessCode") || "";
+  if (vocab.access_code_required && !code) { code = prompt("Enter your access code") || ""; store.set("accessCode", code); }
+  return code;
+}
+
+async function handlePhotos(files) {
+  files = files.slice(0, 3);
+  if (!files.length) return;
+  $("#me-previews").innerHTML = files.map((f) => `<img src="${URL.createObjectURL(f)}" alt="">`).join("");
+  $("#me-previews").hidden = false; $("#me-drop-text").textContent = "Use different photos";
+  setMeStatus("Uploading…");
+  const form = new FormData();
+  files.forEach((f) => form.append("photos", f));
+  try {
+    const a = await api(`/api/users/${userId}/analyses`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } })
+      .catch((err) => { if (err.message === "access code required") store.set("accessCode", ""); throw err; });
+    pollAnalysis(a.id, 0);
+  } catch (err) { setMeStatus(err.message, true); }
+}
+
+async function pollAnalysis(id, tries) {
+  try {
+    const a = await api(`/api/analyses/${id}`);
+    if (a.status === "done") { setMeStatus(""); loadLookbook(); return; }
+    if (a.status === "failed") { setMeStatus(a.error || "Analysis failed. Please try other photos.", true); return; }
+    setMeStatus(a.attempts > 1 ? `The AI is busy, retrying (attempt ${a.attempts})…` : "Reading your colouring, face shape and style…");
+    if (tries < 90) setTimeout(() => pollAnalysis(id, tries + 1), 1500);
+    else setMeStatus("This is taking too long. Refresh the page in a little while.", true);
+  } catch (err) { setMeStatus(err.message, true); }
+}
+
+const swatch = (s) => `<span class="swatch"><i style="background:${esc(s.hex)}"></i>${esc(s.name)}</span>`;
+const cap = (s) => String(s || "").replace(/^./, (c) => c.toUpperCase());
+
+function renderAnalysis(a) {
+  if (!a) { $("#me-analysis").innerHTML = ""; return; }
+  const list = (xs) => `<ul>${(xs || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  $("#me-analysis").innerHTML = `<div class="analysis">
+    <div class="season"><span class="muted">Your colour season</span><strong>${esc(cap(a.season_detail))}</strong>
+      <span>${esc(cap(a.undertone))} undertone · ${esc(a.contrast)} contrast · ${esc(a.metals)} jewellery</span>
+      <p class="muted">${esc(a.colouring_notes)}</p></div>
+    <h3>Colours that light you up</h3><div class="swatches">${a.best_colours.map(swatch).join("")}</div>
+    <h3>Keep away from your face</h3><div class="swatches">${a.avoid_colours.map(swatch).join("")}</div>
+    <div class="beauty">
+      <div><h3>Hair · ${esc(cap(a.face_shape))} face</h3><p class="muted">${esc(a.hair_now)}</p>${list(a.hair_suggestions)}</div>
+      <div><h3>Makeup</h3>${list(a.makeup_suggestions)}</div>
+    </div>
+    ${a.silhouette_notes ? `<h3>Silhouette</h3><p>${esc(a.silhouette_notes)}</p>` : ""}
+    <p class="muted small">${esc(a.caveats)}</p></div>`;
+}
+
+function outfitCard(o) {
+  const trend = o.trend ? `<span class="tag">On trend: ${esc(o.trend)}</span>` : "";
+  return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span></div>
+    <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id])).join("")}</div></div>`;
+}
+
+async function loadLookbook() {
+  try {
+    const lb = await api(`/api/users/${userId}/lookbook?mode=${lbMode}`);
+    renderAnalysis(lb.analysis);
+    $("#lb-note").textContent = lb.personal
+      ? `Built from your palette and your styles: ${lb.styles.map((s) => s.label).join(", ")}.`
+      : "Upload a photo for outfits in your own colours. For now these use neutral colours and your styles.";
+    $("#lb-sections").innerHTML = lb.sections.map((s) =>
+      `<div class="lb-section"><h2>${esc(s.title)}</h2>${s.outfits.map(outfitCard).join("") || '<p class="muted">Nothing found for this one yet.</p>'}</div>`).join("");
+  } catch (err) { setMeStatus(err.message, true); }
+}
+
+$("#lb-mode").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-mode]");
+  if (!b) return;
+  lbMode = b.dataset.mode;
+  $("#lb-mode").querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c === b));
+  loadLookbook();
+});
+$("#lb-sections").addEventListener("click", onSaveClick);
 
 // ---------- boot ----------
 (async function boot() {
