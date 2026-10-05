@@ -13,7 +13,8 @@ async function api(path, opts = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = Array.isArray(body.detail) ? body.detail.map((d) => d.msg).join("; ") : body.detail;
-    throw new Error(detail || (res.status === 429 ? "Too many requests. Please try again in a moment." : `Request failed (${res.status})`));
+    const fallback = { 413: "Those photos are too large. Try fewer or smaller photos.", 429: "Too many requests. Please try again in a moment." };
+    throw new Error(detail || fallback[res.status] || `Request failed (${res.status})`);
   }
   return body;
 }
@@ -200,14 +201,20 @@ function accessCode() {
   return code;
 }
 
+let mePhotos = [];  // the shrunk photos from this upload, to reuse the full-body one for try-on
+
 async function handlePhotos(files) {
   files = files.slice(0, 3);
   if (!files.length) return;
-  $("#me-previews").innerHTML = files.map((f) => `<img src="${URL.createObjectURL(f)}" alt="">`).join("");
+  setMeStatus("Preparing your photos…");
+  // Phone photos are 5-12 MB each; 1600px is plenty for colour analysis and keeps uploads small.
+  mePhotos = await Promise.all(files.map((f) => shrinkPhoto(f, 1600)));
+  $("#me-previews").innerHTML = mePhotos.map((f, i) =>
+    `<figure class="me-photo"><img src="${URL.createObjectURL(f)}" alt=""><figcaption id="me-check-${i}"></figcaption></figure>`).join("");
   $("#me-previews").hidden = false; $("#me-drop-text").textContent = "Use different photos";
   setMeStatus("Uploading…");
   const form = new FormData();
-  files.forEach((f) => form.append("photos", f));
+  mePhotos.forEach((f, i) => form.append("photos", f, `photo-${i}.jpg`));
   try {
     const a = await api(`/api/users/${userId}/analyses`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } })
       .catch((err) => { if (err.message === "access code required") store.set("accessCode", ""); throw err; });
@@ -229,8 +236,26 @@ async function pollAnalysis(id, tries) {
 const swatch = (s) => `<span class="swatch"><i style="background:${esc(s.hex)}"></i>${esc(s.name)}</span>`;
 const cap = (s) => String(s || "").replace(/^./, (c) => c.toUpperCase());
 
+const FRAMING = { face: "Selfie", upper_body: "Waist up", full_body: "Full body", no_person: "No person found" };
+
+/** Label each uploaded photo and keep the best full-body one for try-on. */
+function applyPhotoChecks(checks) {
+  if (!checks || !checks.length || checks.length !== mePhotos.length) return;
+  checks.forEach((c, i) => {
+    const el = $(`#me-check-${i}`);
+    if (!el) return;
+    const uses = [c.good_for_colour && "colours", c.good_for_tryon && "try-on"].filter(Boolean);
+    el.className = uses.length ? "ok" : "warn";
+    el.innerHTML = `<strong>${esc(FRAMING[c.framing] || c.framing)}</strong><span>${uses.length ? `✓ ${uses.join(" + ")}` : "✗ not usable"}</span><span>${esc(c.tip)}</span>`;
+  });
+  const best = checks.findIndex((c) => c.good_for_tryon);
+  if (best >= 0) setTryonPhoto(mePhotos[best]);
+  else setMeStatus("None of these photos works for try-on yet: add a full-body photo, standing and facing the camera.");
+}
+
 function renderAnalysis(a) {
   if (!a) { $("#me-analysis").innerHTML = ""; return; }
+  applyPhotoChecks(a.photo_checks);
   const list = (xs) => `<ul>${(xs || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
   $("#me-analysis").innerHTML = `<div class="analysis"><span class="tape"></span>
     <div class="season"><span class="muted">Your colour season</span><strong>${esc(cap(a.season_detail))}</strong>
@@ -260,14 +285,30 @@ function outfitCard(o) {
 }
 
 // ---------- virtual try-on ----------
-let tryonPhoto = null;     // kept in this tab only; sent with each try-on, never stored by Lookmate
+// The try-on photo stays on this device (localStorage); it's sent with each try-on and never kept by Lookmate.
+let tryonPhoto = null;
 let pendingOutfit = null;
 
-/** Scale a phone photo down to at most 1024px on its longest side: faster upload, same result. */
-async function shrinkPhoto(file) {
+async function setTryonPhoto(blob) {
+  tryonPhoto = await shrinkPhoto(blob, 1024);
+  const reader = new FileReader();
+  reader.onload = () => store.set("tryonPhoto", reader.result);
+  reader.readAsDataURL(tryonPhoto);
+}
+
+function savedTryonPhoto() {
+  const url = store.get("tryonPhoto");
+  if (!url || !url.startsWith("data:image/")) return null;
+  const [head, b64] = url.split(",");
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type: head.slice(5, head.indexOf(";")) });
+}
+
+/** Scale a photo down to at most `max` px on its longest side: faster upload, same result. */
+async function shrinkPhoto(file, max = 1024) {
   try {
     const bmp = await createImageBitmap(file);
-    const scale = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
     const canvas = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * scale), height: Math.round(bmp.height * scale) });
     canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
     return await new Promise((ok) => canvas.toBlob((b) => ok(b || file), "image/jpeg", 0.9));
@@ -278,7 +319,7 @@ $("#tryon-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
-  tryonPhoto = await shrinkPhoto(file);
+  await setTryonPhoto(file);
   if (pendingOutfit !== null) startTryOn(pendingOutfit);
 });
 
@@ -286,8 +327,9 @@ function tryonBox(n, html) { const box = $(`#tryon-${n}`); box.hidden = false; b
 
 function startTryOn(n) {
   pendingOutfit = n;
+  tryonPhoto = tryonPhoto || savedTryonPhoto();
   if (!tryonPhoto) {
-    tryonBox(n, `<p class="muted">Pick a full-body photo: standing, facing the camera, plain background works best.</p>`);
+    tryonBox(n, `<p class="muted">None of your photos is full-body yet. Pick one: standing, facing the camera, head to knees.</p>`);
     $("#tryon-file").click();
     return;
   }
@@ -334,7 +376,7 @@ $("#lb-sections").addEventListener("click", async (e) => {
   const tryBtn = e.target.closest(".tryon-btn");
   if (tryBtn) return startTryOn(Number(tryBtn.dataset.outfit));
   const again = e.target.closest("[data-tryon-new]");
-  if (again) { tryonPhoto = null; return startTryOn(Number(again.dataset.tryonNew)); }
+  if (again) { tryonPhoto = null; store.set("tryonPhoto", ""); return startTryOn(Number(again.dataset.tryonNew)); }
   const del = e.target.closest("[data-tryon-delete]");
   if (del) {
     await api(`/api/tryons/${del.dataset.tryonDelete}`, { method: "DELETE" }).catch(() => {});
