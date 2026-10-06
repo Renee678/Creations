@@ -22,7 +22,7 @@ def find_dupes(analysis: LookAnalysis, catalog: Catalog, user: UserContext, pric
     # still get a section, but it is hidden until the user asks for it.
     for item in sorted(analysis.items, key=lambda i: i.partial):
         query = f"{item.colour} {item.name}. {item.search_query}. {' '.join(item.details)}"
-        target = Target(item.category, item.name, item.colour, item.details, item.fit)
+        target = Target.of(item)
         # Accuracy over a full page (Renee): same garment type, colour and length, always, and the price range
         # is a hard filter. When nothing matches, the section says why instead of showing near-misses.
         accept = lambda r: target.check(r.product)  # noqa: E731

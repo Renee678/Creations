@@ -63,6 +63,21 @@ SHADES = [("dark", ("dark", "deep", "indigo", "midnight", "raw denim", "rinse", 
 FRONT_OPENING = re.compile(r"\b(with (\w+ )?buttons|button[- ]?(front|up|down|through)|buttons? down the front|buttoned|front buttons?|"
                            r"open[- ]front|zip[- ]?(front|up)|opens at the front)\b")
 
+# Warmth: a summer piece never gets a winter one and the other way round (Renee: red cap-sleeve top, red jumpers).
+# A candidate saying both, or neither, is all-season and passes.
+WINTER = re.compile(r"\b(jumpers?|sweaters?|knitted jumper|roll[- ]?necks?|turtle[- ]?necks?|polo necks?|cable|"
+                    r"chunky|wool|woollen|woolen|fleece|borg|teddy|puffer|padded|thermal|sherpa)\b")
+SUMMER = re.compile(r"\b(tanks?|tank tops?|cami|camis|camisole|vest tops?|short[- ]sleeved?s?|cap[- ]sleeved?s?|"
+                    r"sleeveless|linen|crop(ped)? tee|bandeau|strappy|spaghetti straps?)\b")
+
+
+def warmth(text: str) -> str | None:
+    """'summer', 'winter' or None (all-season, unknown, or both) from a piece's words."""
+    t = text.lower()
+    winter, summer = bool(WINTER.search(t)), bool(SUMMER.search(t))
+    return "winter" if winter and not summer else "summer" if summer and not winter else None
+
+
 LIGHT = {"white", "cream", "beige"}
 SAME_COLOUR = [{"white", "cream"}]  # off-white and ivory read as white; beige or grey do not
 DARK = {"black", "navy", "grey", "brown"}
@@ -158,7 +173,15 @@ def length_gap(a: str | None, b: str | None) -> int:
 class Target:
     """What a candidate must match, read once from the detected item."""
 
-    def __init__(self, category: str, name: str, colour: str, details: list[str] | None = None, fit: str = ""):
+    @classmethod
+    def of(cls, item) -> "Target":
+        """From a detected item, with the sleeve and warmth the model saw in the photo."""
+        return cls(item.category, item.name, item.colour, item.details, item.fit,
+                   getattr(item, "sleeve", None), getattr(item, "warmth", None))
+
+    def __init__(self, category: str, name: str, colour: str, details: list[str] | None = None, fit: str = "",
+                 sleeve_seen: str | None = None, warmth_seen: str | None = None):
+        """`sleeve_seen` and `warmth_seen` are what the vision model judged from the photo; words fill the gaps."""
         text = " ".join([name, fit, *(details or [])])
         self.category = category
         self.subtype = subtype(category, name) or subtype(category, text)
@@ -167,7 +190,8 @@ class Target:
         self.length = length(text) if self.subtype in LENGTH_SUBTYPES else None
         self.cropped = bool(CROPPED.search(text.lower())) if self.subtype in ("trousers", "jeans") else None
         self.leg = leg(text) if self.subtype in LEG_SUBTYPES else None
-        self.sleeve = sleeve(text) if category in ("top", "dress", "outerwear") else None
+        self.sleeve = (sleeve_seen or sleeve(text)) if category in ("top", "dress", "outerwear") else None
+        self.warmth = warmth_seen if warmth_seen in ("summer", "winter") else None if warmth_seen else warmth(text)
         self.colour = colour_family(colour, name)
         self.shade = shade(f"{colour} {name}") if self.colour else None
         self.patterned = bool(PATTERNED.search(text.lower()))
@@ -184,8 +208,14 @@ class Target:
             return False  # a maxi skirt wants a maxi skirt, not a midi or one of unknown length
         if self.cropped is not None and bool(CROPPED.search(text.lower())) != self.cropped:
             return False  # cropped trousers for cropped, full length (stated or not) for full length
-        if self.sleeve and sleeve(f"{text} {product.description[:600]}") not in (None, self.sleeve):
+        described = f"{text} {product.description[:600]}"
+        theirs = sleeve(described)
+        if self.sleeve and theirs not in (None, self.sleeve):
             return False  # short sleeves want short sleeves; a candidate that doesn't say isn't ruled out
+        if self.sleeve in ("short", "sleeveless") and kind in ("knit", "cardigan") and theirs != self.sleeve:
+            return False  # a knit that doesn't say it has short sleeves has long ones
+        if self.warmth and warmth(described) not in (None, self.warmth):
+            return False  # a summer top never gets a winter jumper, nor a winter coat a summer one
         if self.leg and leg(text) != self.leg:
             return False  # wide-leg trousers want wide or straight legs, stated, never skinny or pencil
         if self.colour and not same_colour(self.colour, colour_family(product.colour, product.name)):

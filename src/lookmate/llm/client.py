@@ -53,6 +53,9 @@ is only a sliver at the edge of the photo is not what the user is asking about: 
 still clearly identifiable, last, with partial set to true. Describe each one in plain English the way a product catalogue would:
 category, colour, fit, distinguishing details, and a one-sentence search_query that a shopper
 would type to find a similar product (include colour, garment type, fit and key details).
+For each garment also judge from the photo its sleeve length (sleeveless, short or long; cap sleeves are short)
+and its warmth: summer (thin jersey, linen, cap sleeves, straps), winter (chunky, cable or roll-neck knit,
+wool, fleece, padding) or all-season. A thin fitted top is not a jumper: name it for what it is.
 
 Use only these style labels for style_tags: {", ".join(STYLES)}.
 Estimate the original retail price only when the item looks premium or designer; otherwise null.
@@ -180,14 +183,15 @@ _FAKE_LOOKS = [
             DetectedItem(category="top", name="fine-knit V-neck cardigan", colour="beige", fit="relaxed",
                          details=["V-neck", "buttons", "ribbed cuffs"], style_tags=["old_money"],
                          search_query="beige fine-knit V-neck cardigan with buttons, relaxed fit",
+                         sleeve="long", warmth="all-season",
                          estimated_original_price_usd=890),
             DetectedItem(category="bottom", name="wide-leg tailored trousers", colour="white", fit="wide-leg",
                          details=["high-waisted", "pressed pleats"], style_tags=["old_money", "office"],
-                         search_query="white high-waisted wide-leg tailored trousers with pleats",
+                         search_query="white high-waisted wide-leg tailored trousers with pleats", warmth="all-season",
                          estimated_original_price_usd=650),
             DetectedItem(category="shoes", name="slingback kitten heels", colour="black", fit="pointed toe",
                          details=["slingback", "kitten heel"], style_tags=["quiet_luxury"],
-                         search_query="black slingback kitten heel pumps with pointed toe",
+                         search_query="black slingback kitten heel pumps with pointed toe", warmth="all-season",
                          estimated_original_price_usd=1100),
         ],
     ),
@@ -198,14 +202,15 @@ _FAKE_LOOKS = [
             DetectedItem(category="dress", name="linen maxi dress", colour="white", fit="flowing",
                          details=["sleeveless", "square neckline", "flared skirt"], style_tags=["resort"],
                          search_query="white sleeveless linen maxi dress with square neckline",
+                         sleeve="sleeveless", warmth="summer",
                          estimated_original_price_usd=420),
             DetectedItem(category="bag", name="woven straw cross-body bag", colour="beige", fit="small",
                          details=["woven straw", "adjustable strap"], style_tags=["boho", "resort"],
-                         search_query="woven straw cross-body bag beige",
+                         search_query="woven straw cross-body bag beige", warmth="summer",
                          estimated_original_price_usd=380),
             DetectedItem(category="accessory", name="straw sun hat", colour="beige", fit="wide brim",
                          details=["ribbon band"], style_tags=["resort"],
-                         search_query="wide-brimmed straw sun hat with ribbon",
+                         search_query="wide-brimmed straw sun hat with ribbon", warmth="summer",
                          estimated_original_price_usd=None),
         ],
     ),
@@ -216,14 +221,15 @@ _FAKE_LOOKS = [
             DetectedItem(category="top", name="satin bow blouse", colour="light pink", fit="flowing",
                          details=["tie bow neck", "puff sleeves", "satin"], style_tags=["coquette"],
                          search_query="light pink satin blouse with bow at the neck and puff sleeves",
+                         sleeve="short", warmth="all-season",
                          estimated_original_price_usd=560),
             DetectedItem(category="bottom", name="pleated mini skirt", colour="white", fit="a-line",
                          details=["pleated", "high waist"], style_tags=["preppy", "coquette"],
-                         search_query="white pleated mini skirt high waist",
+                         search_query="white pleated mini skirt high waist", warmth="all-season",
                          estimated_original_price_usd=None),
             DetectedItem(category="shoes", name="Mary Jane ballet flats", colour="black", fit="flat",
                          details=["strap with buckle", "round toe"], style_tags=["ballet_core"],
-                         search_query="black Mary Jane ballet flats with strap and buckle",
+                         search_query="black Mary Jane ballet flats with strap and buckle", warmth="all-season",
                          estimated_original_price_usd=750),
         ],
     ),

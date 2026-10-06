@@ -212,7 +212,41 @@ def test_a_plain_short_sleeve_knit_never_gets_a_long_sleeve_slogan_sweatshirt():
     plain_long = ProductView("b", "Long sleeve knit jumper", "Jumpers", "top", "Grey", "", "", 30.0)
     assert not target.check(plain_long), "long sleeves for short"
     assert target.check(ProductView("c", "Short sleeve knit jumper", "Jumpers", "top", "Grey", "", "", 30.0))
-    assert target.check(ProductView("d", "Boat neck knit jumper", "Jumpers", "top", "Grey", "", "", 30.0)), \
-        "a candidate that doesn't state its sleeves isn't ruled out"
+    assert not target.check(ProductView("d", "Boat neck knit jumper", "Jumpers", "top", "Grey", "", "", 30.0)), \
+        "a knit that doesn't say it has short sleeves has long ones (Renee, 2026-10-06)"
+    assert target.check(ProductView("e", "Boat neck tee", "T-shirts", "top", "Grey", "", "", 30.0)) is False, \
+        "still a knit original: a tee is another garment type"
     assert [sleeve(t) for t in ("Sleeveless top", "cap sleeve tee", "long-sleeved shirt", "crew neck")] == \
         ["sleeveless", "short", "long", None]
+
+
+def test_a_summer_top_never_gets_a_winter_jumper():
+    """Renee (2026-10-06): a red fitted mock-neck cap-sleeve top got a red high-neck jumper and a burgundy roll neck.
+    Colour may be loose within its family; the season may not."""
+    from lookmate.services.colours import family
+    from lookmate.services.match import warmth
+
+    top = DetectedItem(category="top", name="red mock-neck cap-sleeve fitted top", colour="red", fit="fitted",
+                       details=["mock neck", "cap sleeves"], style_tags=[], search_query="red mock neck cap sleeve top",
+                       sleeve="short", warmth="summer")
+    target = Target.of(top)
+    assert target.subtype is None and target.sleeve == "short" and target.warmth == "summer"
+    jumpers = [ProductView("j1", "ASOS DESIGN longline jumper with high neck in red", "Jumpers & Cardigans", "top",
+                           "Red", "", "", 30.0),
+               ProductView("j2", "New Look roll neck knitted jumper in burgundy", "Jumpers & Cardigans", "top",
+                           "Burgundy", "", "", 30.0)]
+    for j in jumpers:
+        assert not target.check(j), j.name
+    tee = ProductView("t", "Fitted short sleeve tee in red", "T-shirts", "top", "Red", "", "", 15.0)
+    assert target.check(tee)
+    assert family("burgundy") == family("red"), "the colour family stays loose: dark red is still red"
+
+    section = find_dupes(LookAnalysis(is_outfit=True, vibe="", style_tags=[], items=[top]),
+                         FakeCatalog([(j, 0.95) for j in jumpers] + [(tee, 0.7)]), UserContext(), PriceRange(0, 50))
+    assert [x["id"] for x in section["sections"][0]["picks"]] == ["t"]
+
+    # And the other way round, from words alone when the model gives no warmth.
+    coat = Target("outerwear", "padded puffer jacket", "black")
+    assert coat.warmth == "winter"
+    assert not coat.check(ProductView("l", "Linen jacket", "Jackets", "outerwear", "Black", "", "", 40.0))
+    assert warmth("cable knit tank") is None, "says both: all-season, passes"

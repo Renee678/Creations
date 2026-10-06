@@ -96,7 +96,7 @@ def price_score(price: float, budget: float) -> float:
 
 
 def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, k: int = 4) -> list[RankedPick]:
-    target = Target(item.category, item.name, item.colour, item.details, item.fit)
+    target = Target.of(item)
     picks = []
     for c in candidates:
         p = c.product
