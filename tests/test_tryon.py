@@ -2,6 +2,7 @@ import time
 """Virtual try-on: request -> queue -> worker -> image, with the collage preview when no model is set."""
 
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -226,21 +227,86 @@ def test_a_shop_photo_is_fetched_once_then_read_from_disk(tmp_path):
     from lookmate.tryon.garments import garment_for, prefetch
 
     tries = []
+    jpg = b"\xff\xd8\xff\xe0jpg"
 
     def cdn(req):
         tries.append(req.extensions["timeout"]["read"])
-        return httpx.Response(200, content=b"jpg", headers={"content-type": "image/jpeg"})
+        return httpx.Response(200, content=jpg, headers={"content-type": "image/jpeg"})
 
     p = ProductView("asos-2", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/y/1-2", 20)
     http = httpx.Client(transport=httpx.MockTransport(cdn))
     g = garment_for(p, tmp_path, http=http)
-    assert g.image == b"jpg" and tries[0] <= 6, "one short try, not a long wait"
-    assert garment_for(p, tmp_path, http=http).image == b"jpg" and len(tries) == 1, "the second time comes from disk"
+    assert g.image == jpg and tries[0] <= 10, "one try within the outfit's budget, not a long wait"
+    assert garment_for(p, tmp_path, http=http).image == jpg and len(tries) == 1, "the second time comes from disk"
 
     q = ProductView("asos-3", "Midi skirt", "Skirts", "bottom", "white", "", "https://images.asos-media.com/products/z/1", 20)
     prefetch([q], tmp_path, http=http)
     assert garment_for(q, tmp_path, http=httpx.Client(transport=httpx.MockTransport(
-        lambda r: (_ for _ in ()).throw(AssertionError("should be cached"))))).image == b"jpg"
+        lambda r: (_ for _ in ()).throw(AssertionError("should be cached"))))).image == jpg
+
+
+def test_a_shop_photo_is_read_by_its_bytes_not_its_header(tmp_path, caplog):
+    """A CDN can label a JPEG "image/jpg" or "binary/octet-stream", or send a format the models don't read."""
+    import io as _io
+
+    from PIL import Image
+
+    from lookmate.tryon.garments import fetch_shop_photo
+
+    png, gif = _io.BytesIO(), _io.BytesIO()
+    Image.new("RGB", (4, 4), (200, 0, 0)).save(png, "PNG")
+    Image.new("RGB", (4, 4), (200, 0, 0)).save(gif, "GIF")
+
+    def serve(body, ctype="binary/octet-stream"):
+        return httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=body, headers={"content-type": ctype})))
+
+    assert fetch_shop_photo("https://cdn/a.png", tmp_path, serve(png.getvalue()))[1] == "image/png"
+    data, media_type = fetch_shop_photo("https://cdn/b.gif", tmp_path, serve(gif.getvalue(), "image/gif"))
+    assert media_type == "image/jpeg" and data[:3] == b"\xff\xd8\xff", "re-encoded for the try-on model"
+    assert fetch_shop_photo("https://cdn/c", tmp_path, serve(b"<html>blocked</html>", "text/html"))[0] is None
+    refused = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(403)))
+    assert fetch_shop_photo("https://cdn/d.jpg", tmp_path, refused)[0] is None
+    assert "shop photo refused (403)" in caplog.text, "the server log says why a photo didn't load"
+
+
+def test_a_photo_prefetched_while_the_try_on_waited_is_used(client, runtime, user, monkeypatch, tmp_path):
+    """The fitting room's prefetch can land after the try-on stopped waiting for its own fetch."""
+    import threading
+
+    from lookmate import worker
+    from lookmate.tryon.garments import _cached
+
+    jpg = b"\xff\xd8\xff\xe0shop"
+    release = threading.Event()
+    seen = []
+
+    class WholeOutfit:
+        name, renders, whole_outfit = "nano-banana", True, True
+
+        def dress_outfit(self, person, media_type, garments):
+            seen.extend(garments)
+            return b"dressed", "image/jpeg"
+
+    dress_id = pick(runtime, "dress")[0]
+    dress = runtime.catalog.products[dress_id]
+    url = "https://images.asos-media.com/products/slow/1"
+    monkeypatch.setitem(runtime.catalog.products, dress_id, replace(dress, image_url=url))
+
+    def slow(p, data_dir):
+        path = _cached(data_dir, url)  # meanwhile, the API's prefetch writes the photo to the shared cache
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"image/jpeg\n" + jpg)
+        release.wait(2)
+        raise AssertionError("never reached in time")
+
+    monkeypatch.setattr(runtime, "data_dir", tmp_path)
+    monkeypatch.setattr(runtime, "tryon", WholeOutfit())
+    monkeypatch.setattr(worker, "garment_for", slow)
+    monkeypatch.setattr(worker, "GARMENT_BUDGET_S", 0.2)
+    request_tryon(client, user["id"], [dress_id])
+    run_next_job(runtime)
+    release.set()
+    assert seen and seen[0].image == jpg, "the cached photo, not a description"
 
 
 def test_garment_photos_load_together_and_a_straggler_is_described(client, runtime, user, monkeypatch):

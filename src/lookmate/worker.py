@@ -24,14 +24,14 @@ from .services.trends import refresh_if_due
 from .services.vocab import STYLES
 from .tryon.client import TRYON_STAGE, TryOnError, plan_steps
 from .tryon.face import face_crop, paste_head
-from .tryon.garments import garment_for, garment_from_words
+from .tryon.garments import cached_photo, garment_for, garment_from_words
 
 log = logging.getLogger("lookmate.worker")
 
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_S = 2.0
 CATALOG_CHECK_EVERY_S = 15.0
-GARMENT_BUDGET_S = 7.0  # all garment photos, fetched together; a cache hit is instant
+GARMENT_BUDGET_S = 12.0  # all garment photos, fetched together; a cache hit is instant
 TREND_CHECK_EVERY_S = 600
 
 
@@ -201,8 +201,14 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
             pool.shutdown(wait=False)  # a straggler still lands in the disk cache for next time
             for f, p in futures.items():
                 if f not in done_f:
+                    # The fitting room's prefetch may have landed in the cache while we waited.
+                    hit = cached_photo(p.image_url, rt.data_dir) if p.image_url.startswith("https://") else None
+                    words = garment_from_words(p)
+                    if hit is not None:
+                        out[p.id] = replace(words, image=hit[0], media_type=hit[1])
+                        continue
                     log.warning("try-on %s: %s photo still loading; describing it instead", tryon_id, p.id)
-                    out[p.id] = garment_from_words(p)
+                    out[p.id] = words
                     continue
                 try:
                     out[p.id] = f.result()

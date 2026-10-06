@@ -1,11 +1,14 @@
 """Fetch a catalog piece's photo for the try-on model.
 
 Shop photos are cached on disk, so a piece fetched once (or prefetched when it went into the fitting room)
-costs nothing at try-on time. A fetch gets one short try: a CDN that stalls for longer usually stalls for
-minutes, and the piece is better described in words than waited for.
+costs nothing at try-on time. A fetch gets one try within the outfit's budget: a CDN that stalls for longer
+usually stalls for minutes, and the piece is better described in words than waited for. Each failure is logged
+with its reason (refused, timed out, unreadable format), so `docker compose logs worker` shows why.
 """
 
 import hashlib
+import io
+import logging
 import secrets
 from pathlib import Path
 
@@ -23,8 +26,9 @@ BROWSER_HEADERS = {
     "Referer": "https://www.asos.com/",
 }
 _TYPES = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
-MODEL_TYPES = set(_TYPES.values())
-FETCH_READ_S = 6.0
+FETCH_READ_S = 10.0
+
+log = logging.getLogger(__name__)
 
 
 def _cached(data_dir: Path | None, url: str) -> Path | None:
@@ -33,28 +37,71 @@ def _cached(data_dir: Path | None, url: str) -> Path | None:
     return data_dir / "cache" / "tryon" / hashlib.sha256(url.encode()).hexdigest()[:32]
 
 
+def sniff(data: bytes) -> str | None:
+    """The image type from the first bytes: a CDN's content-type header isn't always right."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _as_jpeg(data: bytes) -> bytes | None:
+    """A photo in a format the try-on models don't read (AVIF, GIF, ...), re-encoded as JPEG."""
+    try:
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(data))
+        img.load()
+        out = io.BytesIO()
+        img.convert("RGB").save(out, "JPEG", quality=90)
+        return out.getvalue()
+    except Exception:  # Pillow raises many types for unreadable images
+        return None
+
+
+def cached_photo(url: str, data_dir: Path | None) -> tuple[bytes, str] | None:
+    """The shop photo from the disk cache (the fitting room prefetches it), without touching the network."""
+    path = _cached(data_dir, url)
+    if path is None or not path.is_file():
+        return None
+    media_type, _, data = path.read_bytes().partition(b"\n")
+    return data, media_type.decode()
+
+
 def fetch_shop_photo(url: str, data_dir: Path | None, http: httpx.Client | None = None,
                      read_s: float = FETCH_READ_S) -> tuple[bytes | None, str]:
     """(bytes, media type) from the disk cache or the shop CDN; (None, ...) if it can't be had quickly."""
+    hit = cached_photo(url, data_dir)
+    if hit is not None:
+        return hit
     path = _cached(data_dir, url)
-    if path is not None and path.is_file():
-        media_type, _, data = path.read_bytes().partition(b"\n")
-        return data, media_type.decode()
     try:
         r = (http or httpx).get(url, follow_redirects=True, timeout=httpx.Timeout(5, read=read_s),
                                 headers=BROWSER_HEADERS)
         r.raise_for_status()
-    except httpx.HTTPError:
+    except httpx.HTTPStatusError as e:
+        log.warning("shop photo refused (%s): %s", e.response.status_code, url)
         return None, "image/jpeg"
-    media_type = r.headers.get("content-type", "").split(";")[0]
-    if media_type not in MODEL_TYPES:
+    except httpx.HTTPError as e:
+        log.warning("shop photo not loaded (%s): %s", type(e).__name__, url)
         return None, "image/jpeg"
+    data = r.content
+    media_type = sniff(data)
+    if media_type is None:
+        data = _as_jpeg(data)
+        if data is None:
+            log.warning("shop photo in an unreadable format (%s): %s", r.headers.get("content-type", "?"), url)
+            return None, "image/jpeg"
+        media_type = "image/jpeg"
     if path is not None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")
-        tmp.write_bytes(media_type.encode() + b"\n" + r.content)
+        tmp.write_bytes(media_type.encode() + b"\n" + data)
         tmp.replace(path)  # atomic: two fetches of the same photo never leave half a file
-    return r.content, media_type
+    return data, media_type
 
 
 def garment_from_words(product: ProductView) -> Garment:
