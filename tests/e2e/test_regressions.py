@@ -1018,3 +1018,61 @@ def test_the_default_price_range_is_the_budget_exactly(page):
         page.locator("[data-lb-browse]").click()
     assert resp.value.json()["price_range"] == {"low": 0, "high": 50}
     assert not page.errors, page.errors
+
+
+def test_product_photos_open_full_size(page):
+    """Renee (2026-10-06): product photos are too small; every one opens in the lightbox, and the card's own
+    buttons and links keep working. Find dupes, the fitting-room tray (× still removes) and Trends.
+    The offline catalog has no photos, so pieces without one get the app's logo."""
+    def with_photos(route):
+        res = route.fetch()
+        data = res.json()
+
+        def walk(x):
+            if isinstance(x, dict):
+                if "id" in x and x.get("image_url") == "":
+                    x["image_url"] = "/static/logo.svg"
+                for v in x.values():
+                    walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(data)
+        route.fulfill(response=res, json=data)
+
+    for pattern in ("**/api/looks/*", "**/lookbook?*", "**/api/trends*"):
+        page.route(pattern, with_photos)
+    find_dupes(page, outfit_photos()[0])
+    card = page.locator("#results .card").first
+    photo_ = card.locator(".img img")
+    src = photo_.get_attribute("src")
+    photo_.click()
+    box = page.locator("#lightbox")
+    box.wait_for()
+    assert box.locator("img").get_attribute("src") == src
+    page.keyboard.press("Escape")
+    box.wait_for(state="detached")
+
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    tray = page.locator("#room .room-piece")
+    tray.first.wait_for()
+    n = tray.count()
+    tray.first.locator("img").click()
+    box.wait_for()
+    box.click(position={"x": 5, "y": 5})  # tap outside the picture
+    box.wait_for(state="detached")
+    assert tray.count() == n, "tapping the photo doesn't remove the piece"
+    tray.first.locator("i").click()
+    page.wait_for_function(f"document.querySelectorAll('#room .room-piece').length === {n - 1}")
+
+    tab(page, "trends")
+    img = page.locator("#trends .trend .card .img img").first
+    img.wait_for()
+    img.click()
+    box.wait_for()
+    assert box.locator("img").get_attribute("src") == img.get_attribute("src")
+    box.locator(".lightbox-close").click()
+    box.wait_for(state="detached")
+    assert not page.errors, page.errors

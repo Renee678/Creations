@@ -595,7 +595,7 @@ body.room-open { padding-bottom: 110px; }
 .book-shelf h3 small { font: 400 12px Jost, sans-serif; font-style: normal; color: var(--muted); }
 
 /* Lightbox: tap a try-on, a Daily Look hero or My model to see it full size */
-.tryon-shot img, .bk-hero img, .model-shot img { cursor: zoom-in; }
+.tryon-shot img, .bk-hero img, .model-shot img, img.zoom { cursor: zoom-in; }
 .lightbox { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px;
   background: rgba(20, 16, 34, .82); cursor: zoom-out; }
 .lightbox figure { margin: 0; max-width: 100%; max-height: 100%; }

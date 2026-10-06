@@ -367,7 +367,7 @@ async function pollLook(id, tries, poll) {
 }
 
 function productCard(p, styleTags, opts = {}) {
-  const img = p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.parentElement.textContent='${esc(p.product_type)}'">` : esc(p.product_type);
+  const img = p.image_url ? `<img class="zoom" src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" onerror="this.parentElement.textContent='${esc(p.product_type)}'">` : esc(p.product_type);
   const saving = p.saving_usd > 0 ? `<span class="saving">Save about $${Math.round(p.saving_usd)}</span>` : "";
   const shop = p.shop_links
     ? `<div class="shop"><a class="gel" href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">SHEIN ↗</a><a class="gel" href="${esc(p.shop_links.asos)}" target="_blank" rel="noopener">ASOS ↗</a>${p.shop_links.amazon ? `<a class="gel" href="${esc(p.shop_links.amazon)}" target="_blank" rel="noopener">Amazon ↗</a>` : ""}</div>`
@@ -882,7 +882,7 @@ function dotsHtml(p) {
 const ARROW = `<svg class="bk-arrow" viewBox="0 0 60 40" aria-hidden="true"><path d="M4 6 Q34 2 52 30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M44 28 L52 31 L53 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 function pieceImg(p) {
-  return p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'bp-none',textContent:'${esc(p.product_type)}'}))">`
+  return p.image_url ? `<img class="zoom" src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'bp-none',textContent:'${esc(p.product_type)}'}))">`
     : `<span class="bp-none">${esc(p.product_type)}</span>`;
 }
 
@@ -1244,7 +1244,7 @@ function previewHtml(pieces, photoUrl) {
 }
 
 const pins = (pieces) => pieces.filter((p) => p.image_url).map((p, i) =>
-  `<figure class="pin" style="--r:${(i % 2 ? 1 : -1) * (2 + i % 3)}deg"><img src="${esc(p.image_url)}" alt=""><figcaption>${esc(p.product_type)}</figcaption></figure>`).join("");
+  `<figure class="pin" style="--r:${(i % 2 ? 1 : -1) * (2 + i % 3)}deg"><img class="zoom" src="${esc(p.image_url)}" alt="${esc(p.name)}"><figcaption>${esc(p.product_type)}</figcaption></figure>`).join("");
 
 const waitHtml = (text) => `<div class="tryon-wait"><span class="spinner"></span> ${esc(text)}</div>`;
 const errorHtml = (key, text) => `<p class="status error">${esc(text)} <button type="button" class="linklike" data-tryon-retry="${key}">Try again</button></p>`;
@@ -1380,8 +1380,8 @@ function renderRoom() {
   const canTry = pieces.some((p) => WEARABLE.has(p.category));
   const total = pieces.reduce((s, p) => s + p.price, 0);
   tray.innerHTML = `<button type="button" class="room-me" data-room-photo title="${myModel ? "My model (change it in Profile)" : hasPhoto ? "Change your try-on photo" : "Add a full-body photo of you"}">${me}</button>
-    <div class="room-pieces">${pieces.map((p) => `<button type="button" class="room-piece" data-room="${esc(p.id)}" title="Remove ${esc(p.name)}">
-      ${p.image_url ? `<img src="${esc(p.image_url)}" alt="">` : `<span>${esc(p.product_type)}</span>`}<i>×</i></button>`).join("")}</div>
+    <div class="room-pieces">${pieces.map((p) => `<button type="button" class="room-piece" data-room="${esc(p.id)}" title="${esc(p.name)}: tap the photo to see it, × to remove">
+      ${p.image_url ? `<img class="zoom" src="${esc(p.image_url)}" alt="${esc(p.name)}">` : `<span>${esc(p.product_type)}</span>`}<i aria-label="Remove">×</i></button>`).join("")}</div>
     <div class="room-actions"><span class="room-total">$${total.toFixed(2)}</span>
       ${tryonRunning ? `<button type="button" class="gel primary" disabled><span class="spinner small"></span> Dressing you…</button>`
         : canTry ? `<button type="button" class="gel primary" data-room-try>✨ Try it on me</button>`
@@ -1580,8 +1580,8 @@ $("#lb-sections").addEventListener("click", onSaveClick);
 $("#lb-create-btn").addEventListener("click", () => { lbRequested = true; loadLookbook(true); });
 setupPriceRange("lookbook", () => loadLookbook());
 
-// ---------- lightbox: a try-on, a Daily Look hero or My model, full size ----------
-const ZOOMABLE = ".tryon-shot img, .bk-hero img, .model-shot img";
+// ---------- lightbox: a try-on, a Daily Look hero, My model or any product photo, full size ----------
+const ZOOMABLE = ".tryon-shot img, .bk-hero img, .model-shot img, img.zoom";
 
 function openLightbox(src, alt) {
   closeLightbox();
@@ -1602,6 +1602,14 @@ document.addEventListener("click", (e) => {
   if (img && img.getAttribute("src")) openLightbox(img.getAttribute("src"), img.alt);
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+// A product photo inside a button (the fitting-room tray) opens full size instead of pressing the button;
+// the tray's × still removes the piece. Capture runs before the button's own click handler.
+document.addEventListener("click", (e) => {
+  const img = e.target.closest("button img.zoom");
+  if (!img || e.target.closest("#lightbox")) return;
+  e.stopPropagation(); e.preventDefault();
+  openLightbox(img.getAttribute("src"), img.alt);
+}, true);
 
 // ---------- installable app ----------
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
