@@ -88,19 +88,51 @@ function setStatus(text, isError = false) {
   const s = $("#status"); s.hidden = !text; s.textContent = text || ""; s.classList.toggle("error", isError);
 }
 
-async function handleFile(file) {
+// Renee: picking a photo only pins it. Nothing runs until "Find my dupes", and old results go at once,
+// so what's below always belongs to the photo above.
+let findFile = null;      // the pinned photo
+let findLookFor = null;   // the photo currentLookId was made from
+
+function handleFile(file) {
+  findFile = file;
+  currentLookId = null; findPoll += 1;
   $("#preview").src = URL.createObjectURL(file); $("#preview").hidden = false;
   document.querySelectorAll("#drop .hint").forEach((el) => el.setAttribute("hidden", "")); $("#drop-text").textContent = "Try another photo";
   $("#results").innerHTML = "";
-  setStatus("Uploading…");
+  setStatus("");
+  $("#find").classList.add("has-photo");
+  $("#find-go").hidden = false;
+  if (!priceRange.find) showFindDefaultRange();
+  setFindBusy(false);
+}
+
+function setFindBusy(text) {
+  const b = $("#find-btn");
+  b.disabled = !!text;
+  b.textContent = text ? "Finding…" : currentLookId ? "Find again ✦" : "Find my dupes ✦";
+  if (text) $("#results").innerHTML = `<div class="find-loading"><span class="spinner"></span><span>${esc(text)}</span></div>`;
+}
+
+$("#find-btn").addEventListener("click", () => {
+  if (!findFile) return;
+  if (currentLookId && findLookFor === findFile) return refreshLook();  // same photo, new price range
+  uploadLook(findFile);
+});
+
+async function uploadLook(file) {
+  setStatus("");
+  setFindBusy("Reading your photo…");
   const form = new FormData(); form.append("user_id", userId); form.append("image", file);
+  const poll = ++findPoll;
   try {
     const look = await api("/api/looks", { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } }).catch((err) => {
       if (err.message === "access code required") store.set("accessCode", "");
       throw err;
     });
-    pollLook(look.id, 0);
-  } catch (err) { setStatus(err.message, true); }
+    if (poll !== findPoll || file !== findFile) return;  // another photo was picked meanwhile
+    findLookFor = file;
+    pollLook(look.id, 0, poll);
+  } catch (err) { setFindBusy(false); $("#results").innerHTML = ""; setStatus(err.message, true); }
 }
 
 // ---------- price range (one per page, remembered on this device) ----------
@@ -117,6 +149,15 @@ function showPriceRange(page, r) {
   box.querySelector(".pr-min").value = r.low;
   box.querySelector(".pr-max").value = r.high;
   box.querySelector(".pr-out").textContent = `$${Math.round(r.low)} – $${Math.round(r.high)}`;
+  paintRange(box, r);
+}
+
+// One track, two thumbs: only the stretch between them is filled.
+function paintRange(box, r) {
+  const max = Number(box.querySelector(".pr-max").max) || 300;
+  const fill = box.querySelector(".pr-fill");
+  fill.style.left = `${(Math.min(r.low, max) / max) * 100}%`;
+  fill.style.right = `${100 - (Math.min(r.high, max) / max) * 100}%`;
 }
 
 function setupPriceRange(page, reload) {
@@ -143,24 +184,38 @@ function setupPriceRange(page, reload) {
 }
 
 let currentLookId = null;
-setupPriceRange("find", () => currentLookId && refreshLook());
+let findPoll = 0;  // bumped by every new photo or search: a stale poll stops instead of drawing old results
+setupPriceRange("find", () => priceRange.find || showFindDefaultRange());  // applies when "Find" is pressed
 
-async function refreshLook() {
-  try {
-    const look = await api(`/api/looks/${currentLookId}?${priceQuery("find")}`);
-    renderLook(look.result);
-  } catch (err) { setStatus(err.message, true); }
+// Before the first search, show the range the server will use: up to 1.5x the per-item budget.
+function showFindDefaultRange() {
+  api(`/api/users/${userId}`).then((me) => priceRange.find
+    || showPriceRange("find", { low: 0, high: Math.min(300, Math.round((me.budget_per_item || 30) * 1.5 / 5) * 5) })).catch(() => {});
 }
 
-async function pollLook(id, tries) {
+async function refreshLook() {
+  const poll = ++findPoll;
+  setFindBusy("Finding dupes in your price range…");
+  try {
+    const look = await api(`/api/looks/${currentLookId}?${priceQuery("find")}`);
+    if (poll !== findPoll) return;
+    setFindBusy(false); renderLook(look.result);
+  } catch (err) { setFindBusy(false); setStatus(err.message, true); }
+}
+
+async function pollLook(id, tries, poll) {
+  if (poll !== findPoll) return;
+  const fail = (msg) => { setFindBusy(false); $("#results").innerHTML = ""; setStatus(msg, true); };
   try {
     const look = await api(`/api/looks/${id}?${priceQuery("find")}`);
-    if (look.status === "done") { setStatus(""); currentLookId = id; renderLook(look.result); return; }
-    if (look.status === "failed") { setStatus(look.error || "Analysis failed. Please try another photo.", true); return; }
-    setStatus(look.attempts > 1 ? `The AI is busy, retrying (attempt ${look.attempts})…` : "Spotting each piece and searching for dupes…");
-    if (tries < 90) setTimeout(() => pollLook(id, tries + 1), 1500);
-    else setStatus("This is taking too long. Refresh the page in a little while.", true);
-  } catch (err) { setStatus(err.message, true); }
+    if (poll !== findPoll) return;
+    if (look.status === "done") { currentLookId = id; setStatus(""); setFindBusy(false); renderLook(look.result); return; }
+    if (look.status === "failed") return fail(look.error || "Analysis failed. Please try another photo.");
+    setFindBusy(look.attempts > 1 ? `The AI is busy, retrying (attempt ${look.attempts})…`
+      : tries < 2 ? "Reading your photo…" : "Finding dupes…");
+    if (tries < 90) setTimeout(() => pollLook(id, tries + 1, poll), 1500);
+    else fail("This is taking too long. Refresh the page in a little while.");
+  } catch (err) { fail(err.message); }
 }
 
 function productCard(p, styleTags, opts = {}) {

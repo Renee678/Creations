@@ -90,15 +90,21 @@
           <div class="caption">today's inspo ♡</div>
         </div>
       </div>
-      <div id="status" class="status" hidden></div>
       <div class="price-range" id="price-find">
         <span class="pr-label">Price per item</span>
-        <label>from <input type="range" class="pr-min" min="0" max="300" step="5" aria-label="Lowest price"></label>
-        <label>to <input type="range" class="pr-max" min="5" max="300" step="5" aria-label="Highest price"></label>
+        <div class="pr-slider">
+          <div class="pr-track"><div class="pr-fill"></div></div>
+          <input type="range" class="pr-min" min="0" max="300" step="5" aria-label="Lowest price">
+          <input type="range" class="pr-max" min="0" max="300" step="5" aria-label="Highest price">
+        </div>
         <output class="pr-out"></output>
         <button type="button" class="linklike pr-reset">reset to my budget</button>
         <span class="muted small">Close matches just outside the range fill any gaps, labelled.</span>
       </div>
+      <div class="find-go" id="find-go" hidden>
+        <button type="button" id="find-btn" class="gel primary big-btn">Find my dupes ✦</button>
+      </div>
+      <div id="status" class="status" hidden></div>
       <div id="results"></div>
     </section>
 
@@ -146,8 +152,11 @@
       </div>
       <div class="price-range" id="price-lookbook">
         <span class="pr-label">Price per item</span>
-        <label>from <input type="range" class="pr-min" min="0" max="300" step="5" aria-label="Lowest price"></label>
-        <label>to <input type="range" class="pr-max" min="5" max="300" step="5" aria-label="Highest price"></label>
+        <div class="pr-slider">
+          <div class="pr-track"><div class="pr-fill"></div></div>
+          <input type="range" class="pr-min" min="0" max="300" step="5" aria-label="Lowest price">
+          <input type="range" class="pr-max" min="0" max="300" step="5" aria-label="Highest price">
+        </div>
         <output class="pr-out"></output>
         <button type="button" class="linklike pr-reset">reset to my budget</button>
         <span class="muted small">Close matches just outside the range fill any gaps, labelled.</span>

@@ -72,6 +72,7 @@ def test_every_tab_opens_without_errors(page):
 def find_dupes(page, outfit_photo):
     looks = responses(page, r"/api/looks/\d+")
     page.locator("#file").set_input_files(outfit_photo)
+    page.locator("#find-btn").click()  # picking a photo only pins it (feedback batch 14)
     # Stop at the page's own error message (AI failed, access code, too slow) instead of waiting out the timeout.
     page.locator("#results .item, #status.error").first.wait_for()
     error = page.locator("#status.error")
@@ -253,4 +254,67 @@ def test_a_saved_outfit_becomes_a_look_book_page(page):
     with page.expect_response(lambda r: "/outfits/" in r.url and r.request.method == "DELETE"):
         page.locator("[data-book-delete]").click()
     page.wait_for_function("!document.querySelector('#book-contents [data-book-open=\"2\"]')")
+    assert not page.errors, page.errors
+
+
+def test_find_dupes_waits_for_the_button_and_clears_old_results(page):
+    """Feedback batch 14 #1: picking a photo doesn't start the search; "Find my dupes" does. A new photo clears
+    the old results at once, and moving the price range after results waits for the button too."""
+    posts, fetches = [], []
+    page.on("request", lambda r: posts.append(r.url) if r.method == "POST" and r.url.endswith("/api/looks") else None)
+    page.on("request", lambda r: fetches.append(r.url) if re.search(r"/api/looks/\d+", r.url) else None)
+    first, second = outfit_photos()[:2]
+
+    page.locator("#file").set_input_files(first)
+    page.locator("#find-btn").wait_for()
+    assert page.locator("#price-find").is_visible(), "the price range is set before searching"
+    page.wait_for_timeout(800)
+    assert not posts and page.locator("#results").inner_html().strip() == "", "a photo alone must not start the search"
+
+    page.locator("#find-btn").click()
+    page.locator("#results .item").first.wait_for()
+    assert len(posts) == 1
+
+    page.locator("#file").set_input_files(second)
+    assert page.locator("#results .item").count() == 0, "old results go as soon as a new photo is picked"
+    page.wait_for_timeout(800)
+    assert len(posts) == 1, "the new photo waits for the button too"
+    page.locator("#find-btn").click()
+    page.locator("#results .item").first.wait_for()
+    assert len(posts) == 2
+
+    seen = len(fetches)
+    page.locator("#price-find .pr-max").fill("100")
+    page.locator("#price-find .pr-max").dispatch_event("change")
+    page.wait_for_timeout(500)
+    assert len(fetches) == seen, "moving the price doesn't re-run the search by itself"
+    with page.expect_request(lambda r: "price_max=100" in r.url):
+        page.locator("#find-btn").click()
+    page.locator("#results .item").first.wait_for()
+    assert not page.errors, page.errors
+
+
+def test_price_range_is_one_slider_filled_only_between_the_thumbs(page):
+    """Feedback batch 14 #2: at $0 the "from" slider showed a blue stretch left of its thumb. One track with two
+    thumbs now, filled only between them, on Find dupes and Lookbook alike."""
+    page.locator("#file").set_input_files(outfit_photos()[0])
+    for box in ("#price-find", "#price-lookbook"):
+        if box == "#price-lookbook":
+            tab(page, "lookbook")
+        b = page.locator(box)
+        assert b.locator(".pr-slider").count() == 1 and b.locator("input[type=range]").count() == 2
+        assert b.locator(".pr-min").evaluate("e => getComputedStyle(e).appearance") == "none", \
+            "the browser's own fill is off: it drew the stretch left of the low thumb"
+        for low, high in ((0, 60), (90, 210)):
+            b.locator(".pr-min").fill(str(low))
+            b.locator(".pr-min").dispatch_event("input")
+            b.locator(".pr-max").fill(str(high))
+            b.locator(".pr-max").dispatch_event("input")
+            # Where the browser draws each thumb's centre: half a thumb in from each end of the input.
+            box_ = b.locator(".pr-min").bounding_box()
+            thumb = 20  # style.css: .pr-slider thumbs are 20px wide
+            centre = lambda v: box_["x"] + thumb / 2 + (box_["width"] - thumb) * v / 300  # noqa: E731
+            fill = b.locator(".pr-fill").bounding_box()
+            assert abs(fill["x"] - centre(low)) < 2, f"nothing filled left of the low thumb (at ${low})"
+            assert abs(fill["x"] + fill["width"] - centre(high)) < 2, "and the fill ends at the high thumb"
     assert not page.errors, page.errors
