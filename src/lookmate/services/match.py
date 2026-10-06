@@ -50,14 +50,16 @@ LENGTHS = [("mini", ("mini", "micro")), ("midi", ("midi", "knee length", "knee-l
 LENGTH_ORDER = ["mini", "midi", "maxi"]
 
 # Leg shape, for trousers and jeans: a wide-leg original never gets skinny or pencil pants, and the other way round.
-LEGS = [("narrow", ("skinny", "pencil", "slim", "tapered", "cigarette", "drainpipe", "jegging")),
+LEGS = [("narrow", ("skinny", "pencil", "slim", "tapered", "cigarette", "drainpipe", "jegging", "jeggings")),
         ("wide", ("wide", "palazzo", "flare", "flared", "bootcut", "boot cut", "boot-cut", "straight", "barrel",
-                  "baggy", "balloon", "culotte", "kick flare", "relaxed leg", "loose"))]
+                  "baggy", "balloon", "culotte", "kick flare", "relaxed leg", "loose", "relaxed", "regular leg",
+                  "mom", "dad", "boyfriend", "kort"))]  # mom, dad and boyfriend jeans are straight or relaxed
 LEG_SUBTYPES = {"trousers", "jeans"}
 
 # A shade word next to the colour: light blue and dark blue are not the same colour.
-SHADES = [("dark", ("dark", "deep", "indigo", "midnight", "raw denim", "rinse", "dark wash", "dark-wash", "ink")),
-          ("light", ("light", "pale", "baby", "powder", "sky", "ice", "icy", "pastel", "bleach", "bleached", "light wash",
+SHADES = [("dark", ("dark", "deep", "indigo", "midnight", "raw denim", "rinse", "dark wash", "dark-wash", "darkwash",
+                    "ink")),
+          ("light", ("light", "pale", "baby", "powder", "sky", "ice", "icy", "pastel", "bleach", "bleached", "bleach wash", "acid wash", "lightwash", "light wash",
                      "light-wash"))]
 # A front opening is what makes a cardigan; a knit "with buttons down the front" is one even when not named so.
 FRONT_OPENING = re.compile(r"\b(with (\w+ )?buttons|button[- ]?(front|up|down|through)|buttons? down the front|buttoned|front buttons?|"
@@ -216,8 +218,8 @@ class Target:
             return False  # a knit that doesn't say it has short sleeves has long ones
         if self.warmth and warmth(described) not in (None, self.warmth):
             return False  # a summer top never gets a winter jumper, nor a winter coat a summer one
-        if self.leg and leg(text) != self.leg:
-            return False  # wide-leg trousers want wide or straight legs, stated, never skinny or pencil
+        if self.leg and leg(text) not in (None, self.leg):
+            return False  # wide or straight legs never take skinny or pencil, nor the other way round
         if self.colour and not same_colour(self.colour, colour_family(product.colour, product.name)):
             return False  # a white skirt wants a white skirt
         if not self.same_shade(product):

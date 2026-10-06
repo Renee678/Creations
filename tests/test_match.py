@@ -250,3 +250,23 @@ def test_a_summer_top_never_gets_a_winter_jumper():
     assert coat.warmth == "winter"
     assert not coat.check(ProductView("l", "Linen jacket", "Jackets", "outerwear", "Black", "", "", 40.0))
     assert warmth("cable knit tank") is None, "says both: all-season, passes"
+
+
+def test_light_blue_straight_jeans_take_mom_and_dad_jeans_in_light_wash():
+    """Renee (2026-10-06): light blue high-rise straight-leg jeans got "No light blue jeans in our catalog yet":
+    the leg rule wanted a stated straight leg and "lightwash" wasn't light. Only an opposite stated shape is out."""
+    from lookmate.services.match import leg, shade
+
+    target = Target("bottom", "high-rise straight-leg jeans", "light blue", ["high-rise", "straight leg"])
+    assert target.subtype == "jeans" and target.leg == "wide" and target.shade == "light"
+    jeans = lambda name, colour="Blue": _product(name, name, colour, "bottom", "Jeans")  # noqa: E731
+    for name in ["ASOS DESIGN high rise 'original' mom jeans in lightwash blue", "Topshop Kort jeans in bleach",
+                 "ASOS DESIGN dad jeans in light stone wash", "ASOS DESIGN straight leg jeans in light wash blue",
+                 "ASOS DESIGN high rise jeans in light blue"]:
+        assert target.check(jeans(name)), name
+    assert not target.check(jeans("ASOS DESIGN skinny jeans in dark navy", "Navy")), "dark and skinny"
+    assert not target.check(jeans("ASOS DESIGN skinny jeans in light blue")), "skinny is the opposite shape"
+    assert not target.check(jeans("ASOS DESIGN straight leg jeans in darkwash blue")), "darkwash is dark"
+    assert [leg("mom jeans"), leg("boyfriend jeans"), leg("jeggings"), leg("high rise jeans")] == \
+        ["wide", "wide", "narrow", None]
+    assert [shade("lightwash"), shade("acid wash"), shade("darkwash")] == ["light", "light", "dark"]
