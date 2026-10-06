@@ -1,9 +1,10 @@
 name: CI
 
 on:
+  # Push only: each run is titled with the commit it tested (pull_request runs all show the PR title).
+  # The checks still appear on the PR, since they attach to its head commit.
   push:
-    branches: [main]  # PR branches run once, through pull_request
-  pull_request:
+    branches: [main, "claude/**"]
 
 concurrency:  # a newer push cancels the run it replaces
   group: ci-${{ github.ref }}
