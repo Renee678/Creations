@@ -25,6 +25,15 @@ SUBTYPES: dict[str, list[tuple[str, tuple[str, ...]]]] = {
     "shoes": [("boots", ("boot",)), ("sneakers", ("sneaker", "trainer")), ("sandals", ("sandal", "slide", "flip flop")),
               ("heels", ("heel", "pump", "court", "stiletto", "slingback")),
               ("flats", ("flat", "ballet", "ballerina", "loafer", "mary jane", "moccasin", "mule"))],
+    # Accessories: a bangle never gets earrings or a necklace. Bangles and cuffs before bracelets, so a "bangle
+    # bracelet" is a bangle and a beaded bracelet is not.
+    "accessory": [("earrings", ("earring", "studs", "stud earring", "hoop", "ear cuff", "huggie")),
+                  ("necklace", ("necklace", "pendant", "choker", "chain necklace")),
+                  ("bangle", ("bangle", "cuff bracelet", "cuff")), ("bracelet", ("bracelet", "anklet")),
+                  ("ring", ("ring",)), ("belt", ("belt",)), ("sunglasses", ("sunglasses", "sunnies", "glasses")),
+                  ("hat", ("hat", "beanie", "cap", "beret", "bucket")), ("scarf", ("scarf", "scarves", "bandana")),
+                  ("hair", ("hair clip", "claw clip", "headband", "scrunchie", "hair bow", "barrette")),
+                  ("watch", ("watch",)), ("gloves", ("glove",))],
     "bag": [("backpack", ("backpack",)), ("clutch", ("clutch",)), ("tote", ("tote",)),
             ("crossbody", ("cross-body", "crossbody", "cross body")), ("shoulder", ("shoulder", "hobo", "baguette"))],
 }
@@ -230,12 +239,12 @@ class Target:
         return True
 
     def same_shade(self, product) -> bool:
-        """A light colour wants a candidate that says it's light; a dark one never takes a light one."""
+        """Light never takes a stated dark, nor dark a stated light; jeans that just say "blue" pass either."""
         theirs = shade(f"{product.colour} {product.name}")
-        if self.shade == "light":
-            return theirs == "light"
-        return not (self.shade == "dark" and theirs == "light")
+        return not (self.shade and theirs and theirs != self.shade)
 
     def colour_score(self, product) -> float:
+        """1 only when the family and the shade both agree, so "Same colour" is never said of blue for light blue."""
         score = colour_match(self.colour, colour_family(product.colour, product.name))
-        return 0.5 if score == 1.0 and not self.same_shade(product) else score
+        same = shade(f"{product.colour} {product.name}") == self.shade
+        return 0.5 if score == 1.0 and not same else score

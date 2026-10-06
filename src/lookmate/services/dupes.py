@@ -8,7 +8,7 @@ from .match import Target, length
 from .price_range import PriceRange, search_in_range
 from .ranking import RankedPick, UserContext, rank
 
-CANDIDATES_PER_ITEM = 150  # a wide pool, because the type, colour and length rules then remove most of it
+CANDIDATES_PER_ITEM = 500  # a wide pool, because the type, colour, shade and season rules then remove most of it
 PICKS_PER_ITEM = 4
 
 

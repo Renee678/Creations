@@ -5,7 +5,7 @@ from lookmate.llm.schemas import DetectedItem, LookAnalysis
 from lookmate.services.dupes import find_dupes
 from lookmate.services.match import Target, colour_match, length, subtype
 from lookmate.services.price_range import PriceRange
-from lookmate.services.ranking import UserContext
+from lookmate.services.ranking import UserContext, rank
 
 SKIRT = DetectedItem(category="bottom", name="satin bias-cut maxi skirt", colour="ivory", fit="bias-cut, floor length",
                      details=["satin", "bias cut"], style_tags=["quiet_luxury"],
@@ -156,8 +156,9 @@ def test_light_blue_wide_leg_trousers_never_get_navy_pencil_jeans():
     assert not target.check(_product("s", "Light blue skinny trousers", "Light Blue", "bottom", "Trousers")), \
         "a wide-leg original never gets skinny"
     assert not target.check(_product("d", "Dark blue wide leg trousers", "Dark Blue", "bottom", "Trousers"))
-    assert not target.check(_product("u", "Blue wide leg trousers", "Blue", "bottom", "Trousers")), \
-        "light blue wants a candidate that says it's light"
+    unshaded = _product("u", "Blue wide leg trousers", "Blue", "bottom", "Trousers")
+    assert target.check(unshaded), "a plain 'blue' passes a light blue original (2026-10-06, jeans found nothing)"
+    assert target.colour_score(unshaded) == 0.5, "but it isn't called the same colour"
     good = _product("ok", "Pale blue wide leg tailored trousers", "Pale Blue", "bottom", "Trousers")
     assert target.check(good)
     assert target.check(_product("st", "Light blue straight leg trousers", "Light Blue", "bottom", "Trousers")), \
@@ -270,3 +271,28 @@ def test_light_blue_straight_jeans_take_mom_and_dad_jeans_in_light_wash():
     assert [leg("mom jeans"), leg("boyfriend jeans"), leg("jeggings"), leg("high rise jeans")] == \
         ["wide", "wide", "narrow", None]
     assert [shade("lightwash"), shade("acid wash"), shade("darkwash")] == ["light", "light", "dark"]
+
+
+def test_jeans_that_just_say_blue_pass_a_light_blue_search():
+    """Renee (2026-10-06): light blue straight jeans found "No light blue jeans in our catalog yet"; most catalog
+    jeans say only "Blue". An unstated shade passes; a stated opposite one doesn't."""
+    target = Target("bottom", "high-rise straight-leg jeans", "light blue", ["high-rise", "straight leg"])
+    plain = _product("p", "ASOS DESIGN 90s straight jeans", "Blue", "bottom", "Jeans")
+    assert target.check(plain)
+    assert not target.check(_product("d", "ASOS DESIGN straight jeans in dark blue", "Dark Blue", "bottom", "Jeans"))
+    reasons = rank(DetectedItem(category="bottom", name="high-rise straight-leg jeans", colour="light blue", fit="",
+                                details=["straight leg"], style_tags=[], search_query=""),
+                   [SearchResult(plain, 0.9)], UserContext())[0].reasons
+    assert "Same colour" not in reasons
+
+
+def test_a_bangle_never_gets_earrings_or_a_necklace():
+    """Renee (2026-10-06): a gold thin bangle got bow stud earrings, a pearl necklace and a beaded bracelet."""
+    target = Target("accessory", "gold thin bangle bracelet", "gold")
+    assert target.subtype == "bangle"
+    acc = lambda name: _product(name, name, "Gold", "accessory", "Jewellery")  # noqa: E731
+    for name in ["Bow stud earrings in gold", "Pearl necklace in gold", "Beaded bracelet in gold"]:
+        assert not target.check(acc(name)), name
+    assert target.check(acc("Thin bangle in gold"))
+    assert subtype("accessory", "Studded leather belt") == "belt", "a studded belt isn't earrings"
+    assert subtype("accessory", "Gold hoop earrings") == "earrings" and subtype("accessory", "Ear cuff") == "earrings"
