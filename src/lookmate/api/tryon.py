@@ -129,7 +129,7 @@ async def create_tryon(
         raise HTTPException(429, "Today's try-on quota is used up. Please come back tomorrow.")
 
     rec = TryOn(id=secrets.token_hex(16), user_id=user_id, request_sha256=key, product_ids=ids,
-                media_type=media_type, photo=data)
+                media_type=media_type, photo=data, from_model=model is not None)
     db.add(rec)
     db.commit()
     rt.tryon_queue.enqueue(tryon_job(rec.id))

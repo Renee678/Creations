@@ -193,11 +193,22 @@ def model_prompt(height_cm: float | None = None, weight_kg: float | None = None)
     return "\n".join(line.rstrip() for line in MODEL_PROMPT.format(size=size).splitlines())
 
 
-def nano_banana_pieces(shown: list[str], described: list[str]) -> str:
+FACE_REFERENCE = """Image 2 is a close-up of this same person's face and hair: the face, hairstyle and hair length
+in the result must match it exactly (same hairstyle and hair length: a chin-length bob stays a chin-length bob,
+short hair stays short). Use it only for the face and hair, never for the clothes."""
+
+
+def nano_banana_prompt(shown: list[str], described: list[str], face: bool = False) -> str:
+    """The try-on prompt; with `face`, image 2 is a close-up of the person's face and the garments follow it."""
+    prompt = NANO_BANANA_PROMPT.format(pieces=nano_banana_pieces(shown, described, "images 3 onward" if face else None))
+    return f"{prompt}\n{FACE_REFERENCE}" if face else prompt
+
+
+def nano_banana_pieces(shown: list[str], described: list[str], where: str | None = None) -> str:
     """The outfit part of the prompt: pieces with a photo, then pieces known only by their description."""
     parts = []
     if shown:
-        parts.append("the clothes and accessories shown in the other images: " + "; ".join(shown))
+        parts.append(f"the clothes and accessories shown in {where or 'the other images'}: " + "; ".join(shown))
     if described:
         parts.append("these pieces, which have no photo, as described: " + "; ".join(described))
     return ", and ".join(parts)
@@ -209,19 +220,23 @@ class NanoBananaTryOn(ReplicateTryOn):
 
     name = "nano-banana"
     whole_outfit = True
+    takes_face = True  # dress_outfit accepts a face close-up (My model try-ons)
 
     def __init__(self, token: str, model: str = NANO_BANANA, timeout_s: float = 150.0, http: httpx.Client | None = None):
         super().__init__(token, model, timeout_s, http)
 
-    def dress_outfit(self, person: bytes, media_type: str, garments: list[Garment]) -> tuple[bytes, str]:
+    def dress_outfit(self, person: bytes, media_type: str, garments: list[Garment],
+                     face: tuple[bytes, str] | None = None) -> tuple[bytes, str]:
+        """`face`: a close-up of the person's head (see tryon.face), sent as image 2 so the face stays theirs."""
         # Only photos we fetched ourselves go in. A shop URL would make the model fetch it, and a CDN that
         # stalled us usually stalls it too, failing the whole outfit; such a piece is described in words.
         shown = [g for g in garments if g.image]
         described = [g for g in garments if not g.image]
-        images = [self._file_input(person, media_type)] + [self._file_input(g.image, g.media_type) for g in shown]
+        images = [self._file_input(person, media_type)] + ([self._file_input(*face)] if face else []) \
+            + [self._file_input(g.image, g.media_type) for g in shown]
         body = {"input": {
-            "prompt": NANO_BANANA_PROMPT.format(pieces=nano_banana_pieces(
-                [g.description for g in shown], [g.description for g in described])),
+            "prompt": nano_banana_prompt([g.description for g in shown], [g.description for g in described],
+                                         face=face is not None),
             "image_input": images,
             "aspect_ratio": "match_input_image",  # keep the person's own framing
             "output_format": "jpg",

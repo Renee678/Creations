@@ -97,6 +97,11 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
   result has an unguessable id and a delete button. "My model" is the one picture of the user Lookmate keeps:
   the generated (or chosen) model image, saved with the profile so try-ons work on any device, with a
   "Delete my model" button; the photo it was made from is dropped as soon as the job ends.
+- **A try-on on My model keeps the user's face.** In a full-body frame the face is a few dozen pixels and the image
+  model tends to redraw it as someone else. So a close-up of the head, cut from My model and upscaled, goes in as a
+  second reference image, and afterwards the model's own head is blended back onto the render with a feathered oval
+  (Pillow, deterministic) when the frames line up and nothing in the outfit sits on the head. The result records
+  `face_reference` and `head_pasted`.
 - **Image → text → vector search.** Claude describes each item in catalog language; search runs on text
   embeddings (BGE-small, computed locally with fastembed). No model training needed.
 - **Exact search in memory.** ~5k products × 384 dims is a few milliseconds with NumPy, so an ANN index
@@ -167,7 +172,7 @@ adds its own `AMAZON_MAX_ITEMS` on top:
 | `CATALOG_SIZE` | `5000` | Products from ASOS, Polyvore and H&M, split evenly across them |
 | `AMAZON_MAX_ITEMS` | `40000` | Products from the Amazon source, on top of `CATALOG_SIZE` |
 | `REPLICATE_API_TOKEN` | empty | Rendered try-on and "My model" on Replicate; empty (and no FASHN key) shows a collage preview, and My model keeps the uploaded photo |
-| `TRYON_MODEL` | `google/nano-banana` | Replicate try-on model: Nano Banana (warm, one call per outfit) or `cuuupid/idm-vton` (cheaper, slow cold starts) |
+| `TRYON_MODEL` | `google/nano-banana` | Replicate try-on model: Nano Banana (warm, one call per outfit), `google/nano-banana-pro` (better at keeping the face, slower and dearer) or `cuuupid/idm-vton` (cheaper, slow cold starts) |
 | `FASHN_API_KEY` | empty | Use FASHN's specialist try-on API instead (seconds per garment, about $0.075 an image) |
 | `DAILY_TRYON_LIMIT` | `30` | Global cap on rendered try-ons per UTC day; `0` disables it |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |

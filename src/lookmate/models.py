@@ -155,6 +155,7 @@ class TryOn(Base):
     result_image: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     result_media_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     model: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    from_model: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # the person is the user's "My model"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

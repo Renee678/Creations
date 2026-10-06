@@ -6,6 +6,7 @@ the queue delivers at least once.
 
 import base64
 import logging
+import re
 import signal
 import threading
 import time
@@ -22,6 +23,7 @@ from .services.style_memory import record_look, user_context
 from .services.trends import refresh_if_due
 from .services.vocab import STYLES
 from .tryon.client import TRYON_STAGE, TryOnError, plan_steps
+from .tryon.face import face_crop, paste_head
 from .tryon.garments import garment_for, garment_from_words
 
 log = logging.getLogger("lookmate.worker")
@@ -154,6 +156,14 @@ def process_analysis(rt: Runtime, analysis_id: int) -> str:
         return "done"
 
 
+HEADWEAR = re.compile(r"\b(hats?|caps?|beanies?|berets?|fedoras?|bucket hat|headbands?|hair clips?|hoods?|balaclavas?|"
+                      r"visors?|headwear|headscarf|bandanas?|turbans?)\b", re.I)
+
+
+def _on_the_head(p) -> bool:
+    return p.category == "accessory" and bool(HEADWEAR.search(f"{p.name} {p.product_type}"))
+
+
 def process_tryon(rt: Runtime, tryon_id: str) -> str:
     """Dress the user's photo in the outfit, one garment per model call (see tryon.client)."""
     job = tryon_job(tryon_id)
@@ -173,6 +183,7 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
         steps = plan_steps([{"category": p.category, "product": p} for p in pieces])
 
         described: list[str] = []
+        meta: dict[str, bool] = {}
 
         timings: dict[str, int] = {}
 
@@ -217,8 +228,22 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
                 garments = [(p.id, fetched[p.id]) for p in pieces if p.id in fetched]
                 if not garments:
                     raise TryOnError("None of these pieces has a photo the try-on model can use.")
-                image, media_type = model(rt.tryon.dress_outfit, image, media_type, [g for _, g in garments])
+                face = None
+                if rec.from_model and getattr(rt.tryon, "takes_face", False):
+                    # My model is a full-body shot, so its face is tiny: send a close-up too (tryon.face).
+                    face = face_crop(rec.photo)
+                    meta["face_reference"] = face is not None
+                args = (image, media_type, [g for _, g in garments]) + ((face,) if face else ())
+                image, media_type = model(rt.tryon.dress_outfit, *args)
                 described.extend(pid for pid, g in garments if g.image is None)  # drawn from words, no photo
+                if rec.from_model and not any(_on_the_head(p) for p in pieces):
+                    # Safety net: put My model's own head back when the frames line up and nothing sits on it.
+                    t0 = time.monotonic()
+                    pasted = paste_head(rec.photo, image)
+                    if pasted:
+                        image, media_type = pasted
+                    meta["head_pasted"] = pasted is not None
+                    timings["paste_ms"] = round((time.monotonic() - t0) * 1000)
                 return image, media_type, [pid for pid, _ in garments]
             if rt.tryon.renders:
                 fetched = fetch([step["product"] for step in steps])
@@ -244,6 +269,7 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
             "model": rt.tryon.name,
             "latency_ms": round((time.monotonic() - started) * 1000),
             "timings_ms": timings,
+            **meta,
         })
         rt.redis.delete(TRYON_STAGE.format(tryon_id))
         rt.queue.ack(job)
