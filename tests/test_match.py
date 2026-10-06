@@ -138,3 +138,62 @@ def test_a_piece_cut_off_at_the_edge_is_hidden_and_never_takes_a_main_pieces_pic
     first, second = result["sections"]
     assert first["item"]["name"] == "button-front cardigan" and not first["hidden"], "main pieces come first"
     assert second["hidden"] and second["item"]["partial"], "the sliver is hidden until the user ticks it"
+
+
+def _product(pid, name, colour, category, product_type, price=40.0):
+    return ProductView(pid, name, product_type, category, colour, "", "", price)
+
+
+def test_light_blue_wide_leg_trousers_never_get_navy_pencil_jeans():
+    """Renee (2026-10-06): light blue pinstripe wide-leg trousers got "denim pencil pants", dark navy, "Same colour"."""
+    trousers = DetectedItem(category="bottom", name="high-waisted wide-leg trousers", colour="light blue",
+                            fit="wide-leg", details=["high waist"], style_tags=["minimalist"],
+                            search_query="light blue high-waisted wide-leg trousers")
+    target = Target(trousers.category, trousers.name, trousers.colour, trousers.details, trousers.fit)
+    jeans = _product("j", "Fleece lined pockets stretchy denim solid color pencil pants", "", "bottom", "Pants")
+    assert subtype("bottom", jeans.name) == "jeans", "denim pants are jeans, not trousers"
+    assert not target.check(jeans)
+    assert not target.check(_product("s", "Light blue skinny trousers", "Light Blue", "bottom", "Trousers")), \
+        "a wide-leg original never gets skinny"
+    assert not target.check(_product("d", "Dark blue wide leg trousers", "Dark Blue", "bottom", "Trousers"))
+    assert not target.check(_product("u", "Blue wide leg trousers", "Blue", "bottom", "Trousers")), \
+        "light blue wants a candidate that says it's light"
+    good = _product("ok", "Pale blue wide leg tailored trousers", "Pale Blue", "bottom", "Trousers")
+    assert target.check(good)
+    assert target.check(_product("st", "Light blue straight leg trousers", "Light Blue", "bottom", "Trousers")), \
+        "straight sits with wide"
+
+    analysis = LookAnalysis(is_outfit=True, vibe="", style_tags=[], items=[trousers])
+    section = find_dupes(analysis, FakeCatalog([(jeans, 0.95), (good, 0.8)]), UserContext(), PriceRange(0, 85))["sections"][0]
+    assert [x["id"] for x in section["picks"]] == ["ok"] and "Same colour" in section["picks"][0]["reasons"]
+
+
+def test_jeans_and_trousers_never_stand_in_for_each_other():
+    jeans = Target("bottom", "straight leg jeans", "blue")
+    trousers = Target("bottom", "straight leg trousers", "black")
+    assert not jeans.check(_product("t", "Straight leg trousers", "Blue", "bottom", "Trousers"))
+    assert not trousers.check(_product("j", "Straight leg denim pants", "Black", "bottom", "Pants"))
+    assert jeans.check(_product("j2", "Straight leg jeans", "Blue", "bottom", "Jeans"))
+
+
+def test_a_cardigan_never_gets_a_jumper():
+    """Renee (2026-10-06): a cream crew-neck cardigan got four jumpers filed under "Jumpers & Cardigans"."""
+    target = Target("top", "fine-knit crew-neck cardigan", "cream", ["dark buttons"], "regular")
+    jumpers = ["ASOS DESIGN cropped jumper in mini cable stitch", "ASOS DESIGN one shoulder jumper in cable",
+               "ASOS DESIGN Petite crew neck jumper in sheer rib yarn", "JDY soft ribbed roll neck knitted jumper"]
+    for name in jumpers:
+        assert not target.check(_product(name, name, "Cream", "top", "Jumpers & Cardigans")), name
+    assert target.check(_product("c", "ASOS DESIGN crew neck cardigan in fine knit", "Cream", "top", "Jumpers & Cardigans"))
+    # The other way round, and a knit with buttons down the front is a cardigan even when not named one.
+    jumper = Target("top", "cable knit jumper", "cream")
+    assert not jumper.check(_product("c", "Fine knit cardigan", "Cream", "top", "Jumpers & Cardigans"))
+    assert Target("top", "crew-neck knit", "cream", ["buttons down the front"]).subtype == "cardigan"
+
+
+def test_same_colour_only_when_the_shade_agrees_too():
+    target = Target("bottom", "wide leg jeans", "dark blue")
+    assert target.colour == "navy"
+    light = Target("top", "shirt", "light blue")
+    assert light.colour_score(_product("a", "Light blue shirt", "Light Blue", "top", "Shirts")) == 1.0
+    assert light.colour_score(_product("b", "Blue shirt", "Blue", "top", "Shirts")) == 0.5
+    assert Target("top", "lightweight shirt", "blue").shade is None, "lightweight is not light"

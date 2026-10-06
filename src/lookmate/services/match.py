@@ -15,7 +15,7 @@ from .colours import colour_word, family
 # Checked in order: the first match wins, so "denim skirt" is a skirt and "t-shirt" is a tee, not a shirt.
 SUBTYPES: dict[str, list[tuple[str, tuple[str, ...]]]] = {
     "bottom": [("skirt", ("skirt", "skort")), ("shorts", ("short",)), ("leggings", ("legging",)),
-               ("jeans", ("jean",)), ("trousers", ("trouser", "pant", "jogger", "culotte", "chino", "cargo"))],
+               ("jeans", ("jean", "denim", "jegging")), ("trousers", ("trouser", "pant", "jogger", "culotte", "chino", "cargo"))],
     "dress": [("jumpsuit", ("jumpsuit", "playsuit", "romper", "dungaree")), ("dress", ("dress", "gown"))],
     "top": [("cardigan", ("cardigan",)), ("hoodie", ("hoodie", "sweatshirt")), ("tee", ("t-shirt", "tee")),
             ("tank", ("tank", "cami", "camisole", "vest")), ("bodysuit", ("bodysuit",)), ("corset", ("corset", "bustier")),
@@ -44,6 +44,20 @@ LENGTHS = [("mini", ("mini", "micro")), ("midi", ("midi", "knee length", "knee-l
            ("maxi", ("maxi", "floor length", "floor-length", "full length", "ankle length", "long skirt", "long dress"))]
 LENGTH_ORDER = ["mini", "midi", "maxi"]
 
+# Leg shape, for trousers and jeans: a wide-leg original never gets skinny or pencil pants, and the other way round.
+LEGS = [("narrow", ("skinny", "pencil", "slim", "tapered", "cigarette", "drainpipe", "jegging")),
+        ("wide", ("wide", "palazzo", "flare", "flared", "bootcut", "boot cut", "boot-cut", "straight", "barrel",
+                  "baggy", "balloon", "culotte", "kick flare", "relaxed leg", "loose"))]
+LEG_SUBTYPES = {"trousers", "jeans"}
+
+# A shade word next to the colour: light blue and dark blue are not the same colour.
+SHADES = [("dark", ("dark", "deep", "indigo", "midnight", "raw denim", "rinse", "dark wash", "dark-wash", "ink")),
+          ("light", ("light", "pale", "baby", "powder", "sky", "ice", "icy", "pastel", "bleach", "bleached", "light wash",
+                     "light-wash"))]
+# A front opening is what makes a cardigan; a knit "with buttons down the front" is one even when not named so.
+FRONT_OPENING = re.compile(r"\b(with (\w+ )?buttons|button[- ]?(front|up|down|through)|buttons? down the front|buttoned|front buttons?|"
+                           r"open[- ]front|zip[- ]?(front|up)|opens at the front)\b")
+
 LIGHT = {"white", "cream", "beige"}
 SAME_COLOUR = [{"white", "cream"}]  # off-white and ivory read as white; beige or grey do not
 DARK = {"black", "navy", "grey", "brown"}
@@ -63,6 +77,38 @@ def subtype(category: str, text: str) -> str | None:
 
 def length(text: str) -> str | None:
     return _first(text, LENGTHS)
+
+
+def _whole_word(text: str, table) -> str | None:
+    """Like _first, but whole words only: "lightweight" is not light, "slimming" is not slim."""
+    t = text.lower()
+    for name, words in table:
+        if any(re.search(rf"\b{re.escape(w)}\b", t) for w in words):
+            return name
+    return None
+
+
+def leg(text: str) -> str | None:
+    return _whole_word(text, LEGS)
+
+
+def shade(text: str) -> str | None:
+    return _whole_word(text, SHADES)
+
+
+def product_kind(product) -> str | None:
+    """The garment type from the product's own name; the shop's label only when the name doesn't say.
+
+    ASOS files a cable jumper under "Jumpers & Cardigans": read together, that jumper looked like a cardigan.
+    A label naming two types decides nothing.
+    """
+    kind = subtype(product.category, product.name)
+    if kind:
+        return kind
+    table = SUBTYPES.get(product.category, [])
+    label = product.product_type.lower()
+    kinds = {name for name, words in table if any(re.search(rf"\b{re.escape(w)}", label) for w in words)}
+    return kinds.pop() if len(kinds) == 1 else None
 
 
 def colour_family(colour: str, name: str = "") -> str | None:
@@ -106,14 +152,18 @@ class Target:
         text = " ".join([name, fit, *(details or [])])
         self.category = category
         self.subtype = subtype(category, name) or subtype(category, text)
+        if self.subtype == "knit" and FRONT_OPENING.search(text.lower()):
+            self.subtype = "cardigan"  # "crew-neck knit with dark buttons" opens at the front
         self.length = length(text) if self.subtype in LENGTH_SUBTYPES else None
         self.cropped = bool(CROPPED.search(text.lower())) if self.subtype in ("trousers", "jeans") else None
+        self.leg = leg(text) if self.subtype in LEG_SUBTYPES else None
         self.colour = colour_family(colour, name)
+        self.shade = shade(f"{colour} {name}") if self.colour else None
         self.patterned = bool(PATTERNED.search(text.lower()))
 
     def check(self, product) -> bool:
         text = f"{product.name} {product.product_type}"
-        kind = subtype(product.category, text)
+        kind = product_kind(product)
         if self.subtype and kind != self.subtype:
             return False  # a skirt is never a dupe for trousers, however close the fabric
         label = _shop_label_kinds(product)
@@ -123,12 +173,24 @@ class Target:
             return False  # a maxi skirt wants a maxi skirt, not a midi or one of unknown length
         if self.cropped is not None and bool(CROPPED.search(text.lower())) != self.cropped:
             return False  # cropped trousers for cropped, full length (stated or not) for full length
+        if self.leg and leg(text) != self.leg:
+            return False  # wide-leg trousers want wide or straight legs, stated, never skinny or pencil
         if self.colour and not same_colour(self.colour, colour_family(product.colour, product.name)):
             return False  # a white skirt wants a white skirt
+        if not self.same_shade(product):
+            return False  # light blue wants light blue, not navy-dark denim
         patterned = PATTERNED.search(text.lower()) or LOUD_IN_DESCRIPTION.search(product.description[:300].lower())
         if bool(patterned) != self.patterned:
             return False  # a plain top never gets a Mickey Mouse sweatshirt, and a floral one wants a print
         return True
 
+    def same_shade(self, product) -> bool:
+        """A light colour wants a candidate that says it's light; a dark one never takes a light one."""
+        theirs = shade(f"{product.colour} {product.name}")
+        if self.shade == "light":
+            return theirs == "light"
+        return not (self.shade == "dark" and theirs == "light")
+
     def colour_score(self, product) -> float:
-        return colour_match(self.colour, colour_family(product.colour, product.name))
+        score = colour_match(self.colour, colour_family(product.colour, product.name))
+        return 0.5 if score == 1.0 and not self.same_shade(product) else score

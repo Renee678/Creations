@@ -110,7 +110,7 @@ def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, 
         score = W_SIM * c.score + W_STYLE * s_style + W_FIT * s_fit + W_PRICE * s_price + W_COLOUR * s_colour
 
         reasons = []
-        if s_colour == 1.0 or item.colour.lower() in p.colour.lower():
+        if s_colour == 1.0:  # same family and shade: "blue" is not the same colour as "dark blue"
             reasons.append("Same colour")
         elif s_colour == 0.0 and target.colour:
             reasons.append("Different colour")
