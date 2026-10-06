@@ -9,8 +9,6 @@ from dataclasses import dataclass
 
 from ..catalog.service import Catalog, SearchResult
 
-DEFAULT_STRETCH = 1.5  # with no range chosen: anything up to 1.5x the per-item budget
-
 
 @dataclass(frozen=True)
 class PriceRange:
@@ -19,7 +17,7 @@ class PriceRange:
 
     @classmethod
     def from_params(cls, low: float | None, high: float | None, budget: float) -> "PriceRange":
-        high = high if high is not None else round(budget * DEFAULT_STRETCH)
+        high = high if high is not None else budget  # no range chosen: $0 up to the per-item budget, exactly
         low = low if low is not None else 0.0
         return cls(min(low, high), max(low, high))
 

@@ -284,7 +284,7 @@ async function uploadLook(file) {
 }
 
 // ---------- price range (one per page, remembered on this device) ----------
-const priceRange = {};  // page -> {low, high}, or undefined for the server default (0 to 1.5x budget)
+const priceRange = {};  // page -> {low, high}, or undefined for the server default (0 to the budget)
 
 function priceQuery(page) {
   const r = priceRange[page];
@@ -335,10 +335,10 @@ let currentLookId = null;
 let findPoll = 0;  // bumped by every new photo or search: a stale poll stops instead of drawing old results
 setupPriceRange("find", () => priceRange.find || showFindDefaultRange());  // applies when "Find" is pressed
 
-// Before the first search, show the range the server will use: up to 1.5x the per-item budget.
+// Before the first search, show the range the server will use: $0 up to the per-item budget.
 function showFindDefaultRange() {
   api(`/api/users/${userId}`).then((me) => priceRange.find
-    || showPriceRange("find", { low: 0, high: Math.min(300, Math.round((me.budget_per_item || 50) * 1.5 / 5) * 5) })).catch(() => {});
+    || showPriceRange("find", { low: 0, high: Math.min(300, me.budget_per_item || 50) })).catch(() => {});
 }
 
 async function refreshLook() {

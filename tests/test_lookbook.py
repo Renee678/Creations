@@ -203,7 +203,7 @@ def test_lookbook_takes_a_price_range(client, user):
     lb = client.get(f"/api/users/{user['id']}/lookbook", params={"price_min": 0, "price_max": 20}).json()
     assert lb["price_range"] == {"low": 0, "high": 20}
     default = client.get(f"/api/users/{user['id']}/lookbook").json()
-    assert default["price_range"] == {"low": 0, "high": 45}, "no range chosen: up to 1.5x the $30 budget"
+    assert default["price_range"] == {"low": 0, "high": 30}, "no range chosen: $0 up to the $30 budget"
 
 
 def test_photo_checks_say_which_photo_is_for_try_on(client, runtime, user):

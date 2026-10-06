@@ -321,7 +321,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--tryon", action="store_true", help="also dress --person in each photo's top dupes")
     ap.add_argument("--person", type=Path, help="full-body photo (or My model image) for --tryon")
     ap.add_argument("--price-min", type=float, help="lowest price for the dupes search (default 0)")
-    ap.add_argument("--price-max", type=float, help="highest price (default 1.5x the default budget, as in the app)")
+    ap.add_argument("--price-max", type=float, help="highest price (default the $50 default budget, as in the app)")
     args = ap.parse_args(argv)
 
     from .config import get_settings

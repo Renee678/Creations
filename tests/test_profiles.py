@@ -44,6 +44,6 @@ def test_the_default_budget_per_item_is_50_and_a_saved_one_is_kept(client):
     uid = client.post("/api/users", json=no_budget).json()["id"]
     assert client.get(f"/api/users/{uid}").json()["budget_per_item"] == 50
     lb = client.get(f"/api/users/{uid}/lookbook").json()
-    assert lb["price_range"] == {"low": 0, "high": 75}, "up to 1.5x the $50 default"
+    assert lb["price_range"] == {"low": 0, "high": 50}, "$0 up to the $50 default, exactly"
     saved = client.post("/api/users", json=PROFILE).json()
     assert saved["budget_per_item"] == 30, "a budget the user chose stays theirs"

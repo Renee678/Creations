@@ -154,7 +154,7 @@ def test_the_real_search_keeps_every_shown_dupe_in_range(runtime):
     from lookmate.services.price_range import PriceRange
     from lookmate.services.ranking import UserContext
 
-    for high in (15, 40, 75):
+    for high in (15, 40, 50):
         _, summary = run(EVALS / "cases.csv", EVALS / "photos", FakeVision(),
                          lambda analysis: find_dupes(analysis, runtime.catalog, UserContext(), PriceRange(0, high)))
         assert summary["out_of_range"] == [] and summary["price_in_range"] in (1.0, None), high

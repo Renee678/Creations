@@ -7,7 +7,8 @@ from lookmate.services.price_range import PriceRange, search_in_range
 
 
 def test_range_defaults_to_the_budget_and_orders_its_ends():
-    assert PriceRange.from_params(None, None, 30) == PriceRange(0, 45)
+    assert PriceRange.from_params(None, None, 30) == PriceRange(0, 30), "Renee: the range equals the budget"
+    assert PriceRange.from_params(None, None, 50) == PriceRange(0, 50)
     assert PriceRange.from_params(80, 20, 30) == PriceRange(20, 80)
 
 

@@ -1003,3 +1003,18 @@ def test_the_profile_form_starts_at_a_50_dollar_budget(browser, base_url):
     field.wait_for()
     assert field.input_value() == "50"
     context.close()
+
+
+def test_the_default_price_range_is_the_budget_exactly(page):
+    """Renee (2026-10-06): with the hard filter, the default range is $0 up to the budget per item, not 1.5x."""
+    if LIVE_URL:
+        pytest.skip("the live profile's budget is whatever the tester saved")
+    page.locator("#file").set_input_files(outfit_photos()[0])
+    page.wait_for_function("document.querySelector('#price-find .pr-max').value === '50'")
+    result = find_dupes(page, outfit_photos()[0])
+    assert result["price_range"] == {"low": 0, "high": 50}
+    tab(page, "lookbook")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok) as resp:
+        page.locator("[data-lb-browse]").click()
+    assert resp.value.json()["price_range"] == {"low": 0, "high": 50}
+    assert not page.errors, page.errors

@@ -28,7 +28,7 @@ what the offline model returns for them; delete them once you add real photos.
 ```bash
 python scripts/run_eval.py            # uses Claude when ANTHROPIC_API_KEY is in .env, else the offline model
 python scripts/run_eval.py --fake     # offline, to check the harness itself
-python scripts/run_eval.py --price-min 0 --price-max 85   # the price range for the dupes search (default $0-$75)
+python scripts/run_eval.py --price-min 0 --price-max 85   # the price range for the dupes search (default $0-$50)
 ```
 
 Locally it uses the app's own settings (`.env`): the database and catalog the app uses. On a new database it
