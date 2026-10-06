@@ -723,6 +723,7 @@ function outfitCard(o, section) {
   return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>
       <span class="outfit-actions">${save}<button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
     ${o.why ? `<p class="outfit-why">✦ ${esc(o.why)}</p>` : ""}
+    ${o.missing_note ? `<p class="muted small outfit-missing">${esc(o.missing_note)}</p>` : ""}
     <div class="grid outfit-pieces">${inRowOrder(o.pieces).map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></div>`;
 }
 

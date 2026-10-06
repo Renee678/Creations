@@ -943,3 +943,52 @@ def test_photos_uploaded_while_the_lookbook_is_still_opening_are_read(page):
     route.fulfill(response=stale)
     page.wait_for_function("document.querySelector('#me-status').hidden && !!document.querySelector('#me-analysis .me-summary')")
     assert not page.errors, page.errors
+
+
+def test_nothing_outside_the_price_range_is_ever_shown(page):
+    """Renee (2026-10-06): $0-$85 showed $190 jeans as "Above your price range: closest match". The range is a
+    hard filter on Find dupes and in the Lookbook; when it holds nothing, the page says so."""
+    low, high = 0, 10
+    b = page.locator("#price-find")
+    assert "outside the range" not in b.inner_text(), "no promise of pricier fill-ins"
+    page.locator("#file").set_input_files(outfit_photos()[0])
+    b.locator(".pr-min").fill(str(low))
+    b.locator(".pr-min").dispatch_event("change")
+    b.locator(".pr-max").fill(str(high))
+    b.locator(".pr-max").dispatch_event("change")
+    looks = responses(page, r"/api/looks/\d+")
+    page.locator("#find-btn").click()
+    page.locator("#results .item").first.wait_for()
+    result = next(d for d in reversed([r.json() for r in looks]) if d.get("status") == "done")["result"]
+    assert result["price_range"] == {"low": low, "high": high}
+    prices = [float(t.strip().lstrip("$")) for t in page.locator("#results .card .price").all_inner_texts()]
+    assert all(low <= x <= high for x in prices), prices
+    text = page.locator("#results").inner_text()
+    assert "price range: closest" not in text.lower() and "above your price" not in text.lower()
+    for s in result["sections"]:
+        assert all(low <= p["price"] <= high for p in s["picks"])
+        if not s["picks"] and not s["hidden"] and s["note"].startswith("Nothing in"):
+            assert s["note"] == f"Nothing in ${low}–${high} matches this piece. Widen the price range to see more."
+            assert s["note"] in text
+
+    tab(page, "lookbook")
+    lb_box = page.locator("#price-lookbook")
+    assert "outside the range" not in lb_box.inner_text()
+    lb_high = 15
+    for thumb, value in ((".pr-min", 0), (".pr-max", lb_high)):
+        lb_box.locator(thumb).fill(str(value))
+        lb_box.locator(thumb).dispatch_event("change")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok) as resp:
+        page.locator("[data-lb-browse]").click()
+    lb = resp.value.json()
+    pieces = [p for s in lb["sections"] for o in s["outfits"] for p in o["pieces"]]
+    assert lb["price_range"] == {"low": 0, "high": lb_high}
+    assert all(p["price"] <= lb_high for p in pieces), [p["price"] for p in pieces if p["price"] > lb_high]
+    notes = [o["missing_note"] for s in lb["sections"] for o in s["outfits"] if o["missing_note"]]
+    if not LIVE_URL:  # the offline catalog has no $0-$10 match for the outfit photo's second piece
+        assert any(s["note"].startswith("Nothing in") for s in result["sections"])
+        assert pieces and notes, "outfits keep what fits and say what the range left out"
+    if notes:
+        page.locator("#lb-sections .outfit-missing").first.wait_for()
+        assert page.locator("#lb-sections .outfit-missing").first.inner_text().startswith(f"Nothing in $0–${lb_high} for the ")
+    assert not page.errors, page.errors

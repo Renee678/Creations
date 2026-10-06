@@ -156,7 +156,8 @@ def test_bad_hex_from_the_model_is_replaced():
     assert Swatch(name="x", hex="C19A6B").hex == "#c19a6b"
 
 
-def test_lookbook_pieces_stay_in_the_price_range_when_they_can(runtime):
+def test_lookbook_pieces_are_always_in_the_price_range(runtime):
+    """Renee (2026-10-06): the price range is a hard filter; a slot is empty rather than over budget."""
     from lookmate.services.lookbook import Palette, _fill_slot
     from lookmate.services.price_range import PriceRange
     from lookmate.services.ranking import UserContext
@@ -164,18 +165,27 @@ def test_lookbook_pieces_stay_in_the_price_range_when_they_can(runtime):
     for low, high in [(0, 15), (0, 30), (20, 60)]:
         price = PriceRange(low, high)
         for category in ("top", "bottom", "dress", "outerwear", "shoes", "bag"):
-            fits = [p for p in runtime.catalog.products.values() if p.category == category and low <= p.price <= high]
             piece = _fill_slot(runtime.catalog, UserContext(), Palette.from_analysis(None), "minimalist",
                                category, category, "black", set(), price)
-            if fits:
+            if piece is not None:
                 assert low <= piece["price"] <= high, (low, high, category, piece["name"])
                 assert "In your price range" in piece["reasons"]
-            elif piece is None:
-                near = [p for p in runtime.catalog.products.values() if p.category == category and p.price <= high * 3]
-                assert not near, "a slot is only left out when nothing is within 3x the range"
-            else:
-                assert piece["price"] <= high * 3, "never a wildly overpriced piece in an outfit"
-                assert any("price range" in r for r in piece["reasons"]), "a widened pick says so"
+
+
+def test_an_outfit_says_which_piece_the_price_range_left_out(runtime):
+    from lookmate.services.lookbook import build_lookbook
+    from lookmate.services.price_range import PriceRange
+    from lookmate.services.ranking import UserContext
+
+    cheapest_shoes = min(p.price for p in runtime.catalog.products.values() if p.category == "shoes")
+    high = cheapest_shoes - 0.01
+    lb = build_lookbook(runtime.catalog, UserContext(), None, [], price=PriceRange(0, high))
+    outfits = [o for s in lb["sections"] for o in s["outfits"]]
+    assert outfits and all(p["price"] <= high for o in outfits for p in o["pieces"]), "nothing over the range"
+    noted = [o for o in outfits if o["missing_note"]]
+    assert noted and all(o["missing_note"].startswith(f"Nothing in $0–${high:,.0f} for the ") for o in noted)
+    assert all(o["missing_note"].endswith("Widen the price range to see more.") for o in noted)
+    assert all(p["category"] != "shoes" for o in outfits for p in o["pieces"])
 
 
 def test_an_outfit_leaves_out_a_piece_rather_than_blow_the_budget(runtime):

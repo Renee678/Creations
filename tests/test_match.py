@@ -63,8 +63,9 @@ def test_colour_and_length_never_relax_only_price_does():
 
     pricey = [(p("ivory-maxi-dear", "Satin maxi skirt", "Ivory", price=90), 0.8)] + no_exact
     section = dupes(pricey)
-    assert [x["id"] for x in section["picks"]] == ["ivory-maxi-dear"], "the price range widens; the match doesn't"
-    assert any("price range" in r for r in section["picks"][0]["reasons"]), "and the pick says it's above the range"
+    assert section["picks"] == [], "the price range is a hard filter too (Renee, 2026-10-06)"
+    assert section["note"] == "Nothing in $0–$60 matches this piece. Widen the price range to see more.", \
+        "the price is why, and it says so"
 
 
 def test_garment_types_lengths_and_colours_are_read_from_words():
@@ -118,10 +119,10 @@ def test_heather_grey_lounge_set_finds_grey_knits_and_trousers():
     assert floral.check(t("f1", "Floral knit jumper", "Pink")) and not floral.check(t("f2", "Plain knit jumper", "Pink"))
 
 
-def test_a_pick_above_the_range_says_so_first():
+def test_nothing_outside_the_price_range_is_shown():
+    """Renee: light blue wide-leg trousers, $0-$85, got $190 navy pencil jeans as "closest match"."""
     pricey = [(p("ivory-maxi-dear", "Satin maxi skirt", "Ivory", price=90), 0.8)]
-    reasons = dupes(pricey)["picks"][0]["reasons"]
-    assert "price range" in reasons[0] and "Within your budget" not in reasons
+    assert dupes(pricey)["picks"] == []
 
 
 def test_a_piece_cut_off_at_the_edge_is_hidden_and_never_takes_a_main_pieces_pick():
