@@ -170,17 +170,15 @@
     <!-- My style: the personal report (colours, face, fit, style DNA) -->
     <section id="style" class="panel" hidden>
       <h1>My <span class="hand">Look Book</span></h1>
-      <p class="muted">Your cover, your colour report, then a page for every outfit you saved. Tap a page to open it, then swipe or use the arrows.</p>
+      <p class="muted">Your cover, your colour report, your favourite pieces, then a page for every outfit you saved. Swipe or use the arrow keys to turn the pages.</p>
       <div id="my-outfits" class="my-outfits">
-        <div class="trend-filter"><div id="mo-seasons" class="chips"></div><div id="mo-styles" class="chips"></div></div>
-        <div id="book-contents" class="book-contents"></div>
+        <nav id="book-tabs" class="booknav" aria-label="Look Book pages"></nav>
+        <div id="book-outfits" hidden>
+          <div class="trend-filter"><div id="mo-seasons" class="chips"></div><div id="mo-styles" class="chips"></div></div>
+          <div id="book-contents" class="book-contents"></div>
+        </div>
         <div id="book-viewer" class="book-viewer" hidden>
-          <div class="book-nav">
-            <button type="button" class="linklike" data-book-contents>← Contents</button>
-            <button type="button" class="gel book-arrow" data-book-step="-1" aria-label="Previous page">‹</button>
-            <span id="book-pager" class="book-pager"></span>
-            <button type="button" class="gel book-arrow" data-book-step="1" aria-label="Next page">›</button>
-          </div>
+          <span id="book-pager" class="book-pager"></span>
           <div id="book-page" class="book-page"></div>
           <div id="book-actions" class="book-actions"></div>
         </div>

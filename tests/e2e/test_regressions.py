@@ -228,24 +228,30 @@ def test_a_saved_outfit_becomes_a_look_book_page(page):
     page.wait_for_function("document.querySelector('#lb-sections .save-outfit').textContent.includes('Saved')")
 
     tab(page, "style")
-    look = page.locator("#book-contents [data-book-open='3']")
+    # Feedback item 31: page tabs instead of "← Contents" and arrows. The book opens on its cover.
+    page.locator("#book-page .bk-cover").wait_for()
+    tabs = page.locator("#book-tabs button")
+    assert [t.inner_text().strip() for t in tabs.all()] == ["Cover", "About me", "Favourites", "Outfits · 1"]
+    assert page.locator("#book-tabs button.on").inner_text().strip() == "Cover"
+    assert page.locator("[data-book-step], [data-book-contents]").count() == 0, "no arrows or contents link"
+    for name, sel in (("About me", ".bk-about #style-report"), ("Favourites", ".fav-closet"), ("Cover", ".bk-cover")):
+        page.locator("#book-tabs button", has_text=name).click()
+        page.locator(f"#book-page {sel}").wait_for()
+        assert page.locator("#book-tabs button.on").inner_text().strip() == name
+
+    page.locator("#book-tabs button", has_text="Outfits").click()
+    look = page.locator("#book-contents .book-thumb-look")
     look.wait_for()
-    assert page.locator("#book-contents .book-thumb-cover").count() == 1, "page 1 is the cover"
-    assert page.locator("#book-contents .book-thumb-about").count() == 1, "page 2 is About me"
-    assert page.locator("#book-contents [data-book-open='2'].book-thumb-favourites").count() == 1, "then Favourites"
+    assert look.count() == 1 and page.locator("#book-contents .book-thumb-cover").count() == 0, "the Outfits tab lists outfits"
     look.click()
     page.locator("#book-page .bk-look").wait_for()
+    assert page.locator("#book-tabs button.on").inner_text().strip().startswith("Outfits")
     assert first["title"] in page.locator("#book-page").inner_text(), "the saved outfit's own page"
     assert page.locator("#book-page .bk-it img, #book-page .bk-it .bp-none").count() == len(first["pieces"])
 
-    page.locator("[data-book-step='-1']").click()
+    page.keyboard.press("ArrowLeft")  # arrow keys (and swipes) still turn the pages
     page.locator("#book-page .fav-closet").wait_for()
-    page.locator("[data-book-step='-1']").click()
-    page.locator("#book-page .bk-about #style-report").wait_for()
-    page.locator("[data-book-step='-1']").click()
-    page.locator("#book-page .bk-cover").wait_for()
-    for _ in range(3):
-        page.keyboard.press("ArrowRight")
+    page.keyboard.press("ArrowRight")
     page.locator("#book-page .bk-look").wait_for()
 
     # Coordinator, 2026-10-05: a page goes out as a 3:4 image for Xiaohongshu.
@@ -259,6 +265,7 @@ def test_a_saved_outfit_becomes_a_look_book_page(page):
     with page.expect_response(lambda r: "/outfits/" in r.url and r.request.method == "DELETE"):
         page.locator("[data-book-delete]").click()
     page.wait_for_function("!document.querySelector('#book-contents .book-thumb-look')")
+    assert page.locator("#book-tabs button.on").inner_text().strip() == "Outfits · 0"
     assert not page.errors, page.errors
 
 
@@ -346,7 +353,7 @@ def test_a_piece_saved_in_find_dupes_appears_in_its_my_style_folder(page):
     folder = folder_of(SimpleNamespace(**pick))
     label = dict(FOLDERS)[folder]
     tab(page, "style")
-    page.locator("#book-contents .book-thumb-favourites").click()
+    page.locator("#book-tabs button", has_text="Favourites").click()
     section = page.locator(f"#book-page .fav-folder[data-folder='{folder}']")
     section.wait_for()
     assert label in section.locator(".rail-h").inner_text()

@@ -427,12 +427,18 @@ body.room-open { padding-bottom: 110px; }
   align-items: center; justify-content: center; text-align: center; font: 500 13px/1.4 var(--f-body); }
 .book-viewer { margin-top: 14px; }
 .book-viewer[hidden], .book-contents[hidden] { display: none; }
-.book-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-.book-arrow { min-width: 40px; font-size: 20px; padding: 4px 12px; }
-.book-arrow:disabled { opacity: .35; }
-.book-pager { display: flex; gap: 5px; align-items: center; flex: 1; justify-content: center; }
-.book-pager i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
-.book-pager i.on { width: 16px; border-radius: 3px; background: var(--violet); }
+/* Look Book page tabs (they replaced "← Contents" and the arrows); the active tab is a violet pill */
+.booknav { display: flex; gap: 6px; flex-wrap: wrap; background: rgba(255,255,255,.62); padding: 5px; border-radius: 999px;
+  width: max-content; max-width: 100%; box-shadow: var(--note-shadow); margin: 0 0 14px; box-sizing: border-box; }
+.booknav button { font: 500 14px var(--f-body); border: 0; background: transparent; color: var(--muted); padding: 8px 16px;
+  border-radius: 999px; cursor: pointer; box-shadow: none; text-shadow: none; }
+.booknav button.on { background: linear-gradient(180deg, #b78cff, #8a4fd6); color: #fff; box-shadow: 0 4px 10px rgba(138,79,214,.3); }
+.booknav button:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+@media (max-width: 600px) { .booknav { border-radius: 22px; } .booknav button { padding: 7px 12px; } }
+.book-pager { display: flex; gap: 6px; align-items: center; justify-content: center; margin: 0 0 10px; }
+.book-pager:empty { display: none; }
+.book-pager button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: #d9c2ff; cursor: pointer; }
+.book-pager button.on { width: 20px; border-radius: 4px; background: #8a4fd6; }
 .book-actions { display: flex; gap: 10px; justify-content: center; align-items: center; margin-top: 12px; flex-wrap: wrap; }
 .book-page { touch-action: pan-y; }
 

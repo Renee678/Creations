@@ -558,7 +558,7 @@ function outfitCard(o, section) {
 
 // ---------- My Look Book (My style): a cover, About me, then one page per saved outfit ----------
 let moSeason = "", moStyle = "";
-let book = { pages: [], at: -1, views: {} };  // views: outfit id -> "flat" | "me"
+let book = { pages: [], at: 0, views: {} };  // at: page shown, -1 = the Outfits grid; views: outfit id -> "flat" | "me"
 
 const seasonNow = () => ["winter", "winter", "spring", "spring", "spring", "summer", "summer", "summer", "autumn", "autumn", "autumn", "winter"][new Date().getMonth()];
 const OCCASION_NAMES = { work: "for the office", weekend: "for the weekend", date: "for date night", party: "for the party", travel: "for the trip" };
@@ -578,7 +578,7 @@ async function loadBook() {
   book.pages = [{ kind: "cover", s, me, r }, { kind: "about", s }, { kind: "favourites", fav },
     ...r.outfits.map((o) => ({ kind: "look", o }))];
   renderContents();
-  if (book.at >= 0) openPage(Math.min(book.at, book.pages.length - 1));
+  if (book.at >= 0) openPage(Math.min(book.at, book.pages.length - 1)); else closeBook();
 }
 
 function pageLabel(pg) {
@@ -588,8 +588,10 @@ function pageLabel(pg) {
   return [pg.o.title, `${SEASON_NAMES[pg.o.season] || pg.o.season} · ${pg.o.style}`];
 }
 
+// The Outfits tab: a grid of the outfit pages (filtered by season and style); a tap opens one.
 function renderContents() {
   const thumbs = book.pages.map((pg, i) => {
+    if (pg.kind !== "look") return "";
     const [title, sub] = pageLabel(pg);
     const img = pg.kind === "look" ? (pg.o.tryon_image || (pg.o.pieces[0] || {}).image_url)
       : pg.kind === "favourites" ? ((pg.fav.folders.find((f) => f.count) || { items: [{}] }).items[0].image_url || "") : "";
@@ -600,30 +602,42 @@ function renderContents() {
   $("#book-contents").innerHTML = `<div class="book-grid">${thumbs}<button type="button" class="book-thumb book-add" data-goto="lookbook">+ Make a look<br>in Lookbook</button></div>${empty}`;
 }
 
+// Tabs instead of "← Contents" and arrows (Renee, 2026-10-06): Cover, About me, Favourites, Outfits · N.
+const BOOK_TABS = [["cover", "Cover"], ["about", "About me"], ["favourites", "Favourites"]];
+function renderBookTabs() {
+  const pg = book.pages[book.at];
+  const active = book.at < 0 || (pg && pg.kind === "look") ? "outfits" : pg && pg.kind;
+  const looks = book.pages.filter((p) => p.kind === "look").length;
+  $("#book-tabs").innerHTML = BOOK_TABS.map(([kind, label]) => {
+    const i = book.pages.findIndex((p) => p.kind === kind);
+    return `<button type="button" class="${active === kind ? "on" : ""}" data-book-open="${i}">${label}</button>`;
+  }).join("") + `<button type="button" class="${active === "outfits" ? "on" : ""}" data-book-outfits>Outfits · ${looks}</button>`;
+}
+
 function openPage(i) {
   book.at = i;
   const pg = book.pages[i];
   if (!pg) return closeBook();
-  $("#book-contents").hidden = true;
+  $("#book-outfits").hidden = true;
   $("#book-viewer").hidden = false;
+  renderBookTabs();
   $("#book-page").innerHTML = pg.kind === "cover" ? coverPage(pg) : pg.kind === "about" ? aboutPage(pg)
     : pg.kind === "favourites" ? favouritesPage(pg) : lookPage(pg.o);
-  $("#book-pager").innerHTML = book.pages.map((_, j) => `<i class="${j === i ? "on" : ""}"></i>`).join("");
+  // On an outfit page: one dot per outfit, to jump between them.
+  $("#book-pager").innerHTML = pg.kind === "look" ? book.pages.map((p, j) => p.kind !== "look" ? ""
+    : `<button type="button" class="${j === i ? "on" : ""}" data-book-open="${j}" aria-label="${esc(p.o.title)}"></button>`).join("") : "";
   $("#book-actions").innerHTML = pg.kind === "look" ? `
       <button type="button" class="gel" data-book-rename="${pg.o.id}">✎ Rename</button>
       <button type="button" class="gel primary" data-room-all="${esc(pg.o.pieces.map((p) => p.id).join(","))}" data-goto="lookbook">Try it on me</button>
       <button type="button" class="gel" data-book-image="${pg.o.id}">⤓ Save as image</button>
       <button type="button" class="linklike" data-book-delete="${pg.o.id}">Delete</button>` : "";
-  document.querySelectorAll("[data-book-step]").forEach((b) => {
-    const to = i + Number(b.dataset.bookStep);
-    b.disabled = to < 0 || to >= book.pages.length;
-  });
 }
 
 function closeBook() {
   book.at = -1;
   $("#book-viewer").hidden = true;
-  $("#book-contents").hidden = false;
+  $("#book-outfits").hidden = false;
+  renderBookTabs();
 }
 
 function coverPage({ s, me, r }) {
@@ -736,9 +750,7 @@ $("#my-outfits").addEventListener("click", async (e) => {
   if (st) { moStyle = st.dataset.moStyle; book.at = -1; closeBook(); return loadBook(); }
   const open = e.target.closest("[data-book-open]");
   if (open) return openPage(Number(open.dataset.bookOpen));
-  if (e.target.closest("[data-book-contents]")) return closeBook();
-  const step = e.target.closest("[data-book-step]");
-  if (step) return openPage(Math.max(0, Math.min(book.pages.length - 1, book.at + Number(step.dataset.bookStep))));
+  if (e.target.closest("[data-book-outfits]")) return closeBook();
   const v = e.target.closest("[data-book-view]");
   if (v) { book.views[v.dataset.outfit] = v.dataset.bookView; return openPage(book.at); }
   const ren = e.target.closest("[data-book-rename]");
@@ -769,7 +781,7 @@ $("#my-outfits").addEventListener("click", async (e) => {
   const del = e.target.closest("[data-book-delete]");
   if (del && confirm("Delete this look from your book?")) {
     await api(`/api/users/${userId}/outfits/${del.dataset.bookDelete}`, { method: "DELETE" }).catch(() => {});
-    book.at = Math.min(book.at, book.pages.length - 2);
+    book.at = -1;  // back to the Outfits grid
     loadBook();
   }
 });
