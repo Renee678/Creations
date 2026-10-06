@@ -518,4 +518,3 @@ body.room-open { padding-bottom: 110px; }
 .fav-card figcaption b { font: italic 500 14px/1.25 "Bodoni Moda", Georgia, serif; }
 .fav-links { display: flex; gap: 8px; flex-wrap: wrap; }
 .fav-links a { color: var(--gel-deep); font-size: 12px; }
-.fav-card .room-add { align-self: flex-start; }

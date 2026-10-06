@@ -349,6 +349,7 @@ def test_a_piece_saved_in_find_dupes_appears_in_its_my_style_folder(page):
     section.wait_for()
     assert label in section.locator("h3").inner_text()
     assert section.locator(f"[data-fav-remove='{pick['id']}']").count() == 1, f"saved piece is not under {label}"
+    assert section.locator("[data-room]").count() == 0, "no fitting-room button in Favourites (Renee)"
     with page.expect_response(lambda r: "/saved/" in r.url and r.request.method == "DELETE"):
         section.locator(f"[data-fav-remove='{pick['id']}']").click()
     page.wait_for_function(f"!document.querySelector(\"[data-fav-remove='{pick['id']}']\")")

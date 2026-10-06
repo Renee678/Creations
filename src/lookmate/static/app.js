@@ -657,7 +657,6 @@ function favCard(p) {
   const links = p.shop_links ? `<a href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">SHEIN ↗</a><a href="${esc(p.shop_links.asos)}" target="_blank" rel="noopener">ASOS ↗</a>${p.shop_links.amazon ? `<a href="${esc(p.shop_links.amazon)}" target="_blank" rel="noopener">Amazon ↗</a>` : ""}` : "";
   return `<figure class="fav-card">${pieceImg(p)}<figcaption><b>${esc(boardLabel(p))}</b><span>$${p.price.toFixed(2)}</span>
       <span class="fav-links">${links}</span>
-      <button type="button" class="room-add" data-room="${esc(p.id)}">+ fitting room</button>
       <button type="button" class="linklike" data-fav-remove="${esc(p.id)}">Remove</button></figcaption></figure>`;
 }
 
