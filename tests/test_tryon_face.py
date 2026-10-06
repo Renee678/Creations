@@ -49,13 +49,26 @@ def test_the_face_close_up_is_upscaled_and_shows_the_hair():
 def test_the_head_is_pasted_back_only_when_the_frames_line_up():
     model = person()
     render = person(head=(200, 160, 60))  # same pose, the head redrawn as someone else
-    out, _ = paste_head(model, render)
-    assert pixel(out, (150, 45)) < (90, 90, 90), "My model's own head is back"
+    (out, _), why = paste_head(model, render)
+    assert why == "" and pixel(out, (150, 45)) < (90, 90, 90), "My model's own head is back"
     assert pixel(out, (150, 300)) == pixel(render, (150, 300)), "the outfit is untouched"
-    assert paste_head(model, person(size=(400, 400))) is None, "a different frame: skipped"
-    assert paste_head(model, person(head=(200, 160, 60), dx=60)) is None, "the person moved: skipped"
-    big, _ = paste_head(model, person(size=(600, 800), head=(200, 160, 60)))
+    assert paste_head(model, person(size=(400, 400))) == (None, "frame"), "a different crop: skipped"
+    assert paste_head(model, person(head=(200, 160, 60), dx=60)) == (None, "moved"), "the person moved: skipped"
+    assert paste_head(b"nope", render) == (None, "unreadable")
+    (big, _), _ = paste_head(model, person(size=(600, 800), head=(200, 160, 60)))
     assert pixel(big, (300, 90)) < (90, 90, 90), "the same frame at a larger size is scaled"
+
+
+def test_nano_banana_s_own_3_4_frame_and_a_small_shift_still_get_the_head_back():
+    # Renee's run: Nano Banana answers a 3:4 model (here 600x800) with its 864x1184 bucket, and the person
+    # can drift a little. The old 1% frame check skipped the paste-back, so her bob didn't come back.
+    model = person(size=(600, 800))
+    render = person(size=(864, 1184), head=(200, 160, 60), dx=25)
+    (out, _), why = paste_head(model, render)
+    assert why == ""
+    assert pixel(out, (432 + 25, 130)) < (90, 90, 90), "her head, put where the render drew the head"
+    assert min(pixel(out, (432 - 25 - 70, 130))) > 200, "no second head beside it, just backdrop"
+    assert pixel(out, (432 + 25, 400))[0] > 180 > pixel(out, (432 + 25, 400))[1], "the red top is untouched"
 
 
 def test_nano_banana_gets_the_face_as_image_two(monkeypatch):
@@ -121,6 +134,7 @@ def test_a_try_on_on_my_model_sends_the_face_and_pastes_the_head(client, runtime
     out = _try_on(client, runtime, user, pick(runtime, "top", "bottom"))
     assert fake.faces[0] is not None and fake.faces[0][1] == "image/jpeg", "the face close-up went in"
     assert out["result"]["face_reference"] is True and out["result"]["head_pasted"] is True
+    assert "head_paste_skipped" not in out["result"]
     assert "paste_ms" in out["result"]["timings_ms"]
     assert pixel(client.get(out["image_url"]).content, (150, 45)) < (90, 90, 90), "her own head and hair"
 
@@ -132,7 +146,8 @@ def test_no_paste_under_a_hat(client, runtime, user, monkeypatch):
     fake = WholeOutfit(person(head=(200, 160, 60)))
     _setup(client, runtime, user, monkeypatch, fake)
     out = _try_on(client, runtime, user, pick(runtime, "top", "bottom") + [hat])
-    assert out["result"]["face_reference"] is True and "head_pasted" not in out["result"]
+    assert out["result"]["face_reference"] is True and out["result"]["head_pasted"] is False
+    assert out["result"]["head_paste_skipped"] == "headwear"
 
 
 def test_a_photo_try_on_has_no_face_reference_or_paste(client, runtime, user, monkeypatch):

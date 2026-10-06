@@ -5,7 +5,7 @@ someone else (Renee's chin-length bob came back long). Two deterministic helpers
 
 - face_crop: a close-up of the head, cut from the saved model and upscaled, sent as an extra reference image.
 - paste_head: after the render, the head from the model is blended back onto the result with a feathered
-  oval, when the two pictures line up (same aspect ratio) and the outfit has nothing on the head.
+  oval, aligned to where the render put the head, when the frames match and the outfit has nothing on the head.
 """
 
 import io
@@ -15,7 +15,9 @@ from PIL import Image, ImageDraw, ImageFilter
 FACE_SIZE = 768        # the close-up's longest side, upscaled so the model sees the face in detail
 BG_DIFF = 40           # how far (0-255, any channel) a pixel must be from the backdrop to count as the person
 HEAD_H = 0.17          # head height, top of the hair to the chin, as a share of a standing full-body frame
-ASPECT_TOLERANCE = 0.01
+ASPECT_TOLERANCE = 0.06  # covers the image models' own aspect buckets (3:4 comes back 864x1184), not a new crop
+MAX_SHIFT_X = 0.08      # how far the render may move the head (share of the frame) and still get it pasted back
+MAX_SHIFT_Y = 0.05
 
 
 def _open(data: bytes) -> Image.Image:
@@ -67,27 +69,39 @@ def face_crop(data: bytes) -> tuple[bytes, str] | None:
     return out.getvalue(), "image/jpeg"
 
 
-def paste_head(model: bytes, result: bytes) -> tuple[bytes, str] | None:
-    """The result with the model's head blended back in, or None when the two don't line up."""
+def paste_head(model: bytes, result: bytes) -> tuple[tuple[bytes, str] | None, str]:
+    """((image, media type), "") with the model's head blended back in, or (None, why it was skipped).
+
+    The render rarely comes back in exactly the model's frame: Nano Banana answers a 3:4 picture with its own
+    3:4 bucket (864x1184, a 2.7% narrower frame), and the person can shift a little. So the model is scaled to
+    the render's height and its head is moved onto the render's head, within limits. Reasons: "unreadable",
+    "frame" (a really different crop), "moved" (the person is somewhere else in the picture).
+    """
     try:
         src, dst = _open(model), _open(result)
     except (OSError, ValueError):
-        return None
-    if abs(src.width / src.height - dst.width / dst.height) > ASPECT_TOLERANCE * (src.width / src.height):
-        return None  # a different frame: the head would land in the wrong place
-    if src.size != dst.size:
-        src = src.resize(dst.size, Image.LANCZOS)
+        return None, "unreadable"
+    src_ratio = src.width / src.height
+    if abs(src_ratio - dst.width / dst.height) > ASPECT_TOLERANCE * src_ratio:
+        return None, "frame"  # a different crop: the head would come out the wrong size
+    if src.height != dst.height:
+        src = src.resize((max(1, round(src.width * dst.height / src.height)), dst.height), Image.LANCZOS)
     l, t, r, b = head_box(src)
     rl, rt_, rr, _ = head_box(dst)
-    if abs((l + r) - (rl + rr)) / 2 > dst.width * 0.05 or abs(t - rt_) > dst.height * 0.04:
-        return None  # the render moved the person: a pasted head would float beside theirs
-    # A feathered oval a little larger than the head, so the hairline and the neck blend in.
+    dx, dy = round((rl + rr - l - r) / 2), rt_ - t
+    if abs(dx) > dst.width * MAX_SHIFT_X or abs(dy) > dst.height * MAX_SHIFT_Y:
+        return None, "moved"  # a pasted head would float beside theirs
+    # The model, moved so its head sits on the render's head, then a feathered oval a little larger than the
+    # head, so the hairline and the neck blend in.
+    moved = dst.copy()
+    moved.paste(src, (dx, dy))
+    l, t, r, b = l + dx, t + dy, r + dx, b + dy
     pad_x, pad_y = (r - l) * 0.08, (b - t) * 0.04
     box = (round(l - pad_x), round(t - pad_y), round(r + pad_x), round(b + pad_y))
     mask = Image.new("L", dst.size, 0)
     ImageDraw.Draw(mask).ellipse(box, fill=255)
     mask = mask.filter(ImageFilter.GaussianBlur(max(2, (r - l) * 0.06)))
-    dst.paste(src, (0, 0), mask)
+    dst.paste(moved, (0, 0), mask)
     out = io.BytesIO()
     dst.save(out, "JPEG", quality=92)
-    return out.getvalue(), "image/jpeg"
+    return (out.getvalue(), "image/jpeg"), ""
