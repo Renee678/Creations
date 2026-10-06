@@ -18,10 +18,11 @@ def test_load_test_hits_only_free_endpoints_and_reports_latency_errors_and_rate_
     async def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         n["i"] += 1
+        i = n["i"]  # read before the sleep: other clients' requests count up meanwhile
         await asyncio.sleep(0.001)
-        if n["i"] % 10 == 0:
+        if i % 10 == 0:
             return httpx.Response(429)
-        if n["i"] % 25 == 0:
+        if i % 25 == 0:
             return httpx.Response(502)
         return httpx.Response(200, json={})
 
