@@ -21,7 +21,10 @@ set_default ACCESS_CODE "$(tr -dc 'a-z0-9' </dev/urandom | head -c 8)"
 set_default DAILY_LOOK_LIMIT 50
 set_default DAILY_TRYON_LIMIT 20
 set_default DAILY_STYLIST_LIMIT 100
-set_default CATALOG_SOURCE asos,polyvore,amazon  # a value already in .env (e.g. asos,polyvore) is kept
+# Amazon is off on the 4 GB server for now (Renee, 2026-10-06): its import ran the box out of memory.
+# Turn an old default back into ASOS + Polyvore; any other value already in .env is kept.
+sed -i 's/^CATALOG_SOURCE=asos,polyvore,amazon$/CATALOG_SOURCE=asos,polyvore/' .env
+set_default CATALOG_SOURCE asos,polyvore
 grep -qE '^ANTHROPIC_API_KEY=.+' .env || echo "!! ANTHROPIC_API_KEY is empty: the site will use the offline fake model"
 
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"

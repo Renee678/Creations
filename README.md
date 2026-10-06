@@ -159,7 +159,7 @@ adds its own `AMAZON_MAX_ITEMS` on top:
 |---|---|---|
 | `ANTHROPIC_API_KEY` | empty | Enables Claude; empty uses the offline fake |
 | `LLM_MODEL` | `claude-opus-5-5` | Model for vision and trend research |
-| `CATALOG_SOURCE` | `asos,polyvore,amazon` (compose), `asos,polyvore` (local mode) | Comma-separated mix of `asos`, `polyvore`, `amazon`, `hm`, `seed` |
+| `CATALOG_SOURCE` | `asos,polyvore` (compose and local mode; add `amazon` on a server with more than 4 GB) | Comma-separated mix of `asos`, `polyvore`, `amazon`, `hm`, `seed` |
 | `EMBEDDER` | `bge` (compose) | `bge` or `hash` (offline lexical) |
 | `CATALOG_SIZE` | `5000` | Products from ASOS, Polyvore and H&M, split evenly across them |
 | `AMAZON_MAX_ITEMS` | `40000` | Products from the Amazon source, on top of `CATALOG_SIZE` |

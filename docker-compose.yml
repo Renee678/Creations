@@ -19,7 +19,7 @@ services:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
       # ASOS + Polyvore + Amazon catalog (real photos) + semantic embeddings by default; set to seed/hash for a fully offline run.
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
       CATALOG_IMPORT: external  # the importer service below does it; the API only serves
@@ -47,7 +47,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
       CATALOG_IMPORT: external
@@ -71,7 +71,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
     volumes:

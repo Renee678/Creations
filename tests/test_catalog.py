@@ -448,3 +448,8 @@ def test_the_compose_importer_runs_apart_from_the_api_with_a_memory_cap():
         assert services[name]["environment"]["CATALOG_IMPORT"] == "external"
     deploy = (Path(__file__).resolve().parents[1] / "scripts" / "deploy.sh").read_text()
     assert "CATALOG_SOURCE=asos,polyvore$/" not in deploy, "a CATALOG_SOURCE Renee set in .env is kept"
+    # Renee, 2026-10-06: no Amazon on the server until its import is proven on 4 GB.
+    assert "set_default CATALOG_SOURCE asos,polyvore\n" in deploy
+    assert "s/^CATALOG_SOURCE=asos,polyvore,amazon$/CATALOG_SOURCE=asos,polyvore/" in deploy
+    for name in ("api", "worker", "importer"):
+        assert services[name]["environment"]["CATALOG_SOURCE"] == "${CATALOG_SOURCE:-asos,polyvore}"
