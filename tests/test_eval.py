@@ -120,3 +120,41 @@ def test_photos_are_sent_as_the_app_sends_them(tmp_path):
     junk = tmp_path / "junk.webp"
     junk.write_bytes(b"not an image")
     assert load_photo(junk) == (b"not an image", "image/webp"), "the model gets to say it can't read it"
+
+
+def test_price_in_range_counts_every_shown_dupe_and_names_the_ones_outside():
+    """Renee (2026-10-06): prove the hard price filter: the share of shown dupes inside the run's range."""
+    from lookmate.eval import CaseResult, evaluate_case
+    from lookmate.llm.schemas import LookAnalysis
+
+    pick = lambda name, price: {"name": name, "price": price, "id": name, "category": "top", "colour": "white",  # noqa: E731
+                                "product_type": "", "description": ""}
+    llm = SimpleNamespace(analyze_look=lambda *a: LookAnalysis(
+        is_outfit=True, vibe="", style_tags=[], items=[item("top", "shirt", "white"), item("shoes", "flats", "black", partial=True)]))
+    result = {"price_range": {"low": 0, "high": 85}, "sections": [
+        {"item": {}, "hidden": False, "picks": [pick("Cheap shirt", 20.0), pick("Pricey jeans", 190.0), pick("Edge", 85.0)]},
+        {"item": {}, "hidden": True, "picks": [pick("Hidden flats", 300.0)]},  # not shown, not counted
+    ]}
+    res = evaluate_case("a.jpg", [Expected("a.jpg", "top", "shirt")], b"x", "image/jpeg", llm, lambda a: result)
+    assert res.prices == [("Cheap shirt", 20.0, True), ("Pricey jeans", 190.0, False), ("Edge", 85.0, True)]
+
+    clean = CaseResult("b.jpg", [], prices=[("Fine", 10.0, True)], price_range={"low": 0, "high": 85})
+    s = summarise([res, clean])
+    assert s["price_in_range"] == pytest.approx(3 / 4) and s["price_checked"] == 4
+    assert s["out_of_range"] == [("a.jpg", "Pricey jeans", 190.0, {"low": 0, "high": 85})]
+    md = to_markdown([res, clean], s, "fake")
+    assert "| Price in range (shown dupes inside the run's price range) | 75% | 4 picks |" in md
+    assert "| 2/3 |" in md and "| 1/1 |" in md, "per photo"
+    assert "- a.jpg: Pricey jeans, $190.00 (range $0–$85)" in md
+    assert "### Picks outside the price range\n\nNone." in to_markdown([clean], summarise([clean]), "fake")
+
+
+def test_the_real_search_keeps_every_shown_dupe_in_range(runtime):
+    from lookmate.services.dupes import find_dupes
+    from lookmate.services.price_range import PriceRange
+    from lookmate.services.ranking import UserContext
+
+    for high in (15, 40, 75):
+        _, summary = run(EVALS / "cases.csv", EVALS / "photos", FakeVision(),
+                         lambda analysis: find_dupes(analysis, runtime.catalog, UserContext(), PriceRange(0, high)))
+        assert summary["out_of_range"] == [] and summary["price_in_range"] in (1.0, None), high

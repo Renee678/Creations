@@ -28,6 +28,7 @@ what the offline model returns for them; delete them once you add real photos.
 ```bash
 python scripts/run_eval.py            # uses Claude when ANTHROPIC_API_KEY is in .env, else the offline model
 python scripts/run_eval.py --fake     # offline, to check the harness itself
+python scripts/run_eval.py --price-min 0 --price-max 85   # the price range for the dupes search (default $0-$75)
 ```
 
 Locally it uses the app's own settings (`.env`): the database and catalog the app uses. On a new database it
@@ -59,6 +60,9 @@ the way the fitting room does, and saves the picture in `evals/out/`. Check each
   (`services/match.py`), so a "blouse" counts as `shirt` and "ivory" as the white family.
 - **Dupes precision@5**: of the top 5 dupes shown for each found piece, the share that is right for the
   *labelled* piece (same type, colour family, length and pattern). Wrong perception shows up here as wrong dupes.
+- **Price in range**: the share of all dupes shown (top 5 of every visible piece) whose price is inside the
+  run's price range. The range is a hard filter, so this should be 100%; any pick outside it is listed by name
+  and price under "Picks outside the price range".
 - **Pieces with no dupes shown**: the share of found pieces where the search showed nothing rather than a
   near-miss.
 - **Extra items**: detected items with no label (possibly real pieces you didn't label).

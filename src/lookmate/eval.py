@@ -164,6 +164,16 @@ class CaseResult:
     dupes_ms: float = 0.0
     error: str | None = None
     tryon_image: str | None = None
+    price_range: dict | None = None  # the range the search used: {"low", "high"}
+    prices: list[tuple[str, float, bool]] = field(default_factory=list)  # every shown pick: name, price, in range
+
+
+def price_checks(result: dict) -> list[tuple[str, float, bool]]:
+    """Every dupe a shopper would see (top picks of each visible section): is its price inside the range used?"""
+    r = result.get("price_range") or {}
+    low, high = r.get("low", 0), r.get("high", math.inf)
+    return [(p["name"], p["price"], low <= p["price"] <= high)
+            for s in result["sections"] if not s.get("hidden") for p in s["picks"][:TOP_K]]
 
 
 def evaluate_case(image: str, expected: list[Expected], data: bytes, media_type: str, llm, dupes) -> CaseResult:
@@ -185,6 +195,7 @@ def evaluate_case(image: str, expected: list[Expected], data: bytes, media_type:
     result = dupes(analysis)
     res.dupes_ms = (time.perf_counter() - t0) * 1000
     sections = result["sections"]
+    res.price_range, res.prices = result.get("price_range"), price_checks(result)
     for exp, i in res.pairs:
         if i is None:
             continue
@@ -209,6 +220,7 @@ def summarise(results: list[CaseResult]) -> dict:
     sections = [n for r in results for _, n in r.precision]
     extra = sum(len(r.detected) - sum(1 for _, i in r.pairs if i is not None) for r in results if not r.error)
     latency = [r.perception_ms + r.dupes_ms for r in results if not r.error]
+    priced = [x for r in results for x in r.prices]
     return {
         "images": len(results), "errors": sum(1 for r in results if r.error), "expected": expected,
         "category_recall": (matched / expected) if expected else None, "matched": matched,
@@ -218,6 +230,9 @@ def summarise(results: list[CaseResult]) -> dict:
         "sections": len(sections), "extra_items": extra,
         "latency_median_ms": statistics.median(latency) if latency else None,
         "latency_p95_ms": percentile(latency, 95),
+        "price_in_range": (sum(ok for _, _, ok in priced) / len(priced)) if priced else None,
+        "price_checked": len(priced),
+        "out_of_range": [(r.image, name, price, r.price_range) for r in results for name, price, ok in r.prices if not ok],
     }
 
 
@@ -244,16 +259,18 @@ def to_markdown(results: list[CaseResult], summary: dict, model: str) -> str:
             lines.append(f"| {names[key]} accuracy | {_pct(value)} | {n} |")
     lines += [
         f"| Dupes precision@{TOP_K} (right type, colour, length, pattern) | {_pct(s['dupes_precision'])} | {s['dupes_shown']} picks |",
+        f"| Price in range (shown dupes inside the run's price range) | {_pct(s['price_in_range'])} | {s['price_checked']} picks |",
         f"| Pieces with no dupes shown | {_pct(s['zero_result_rate'])} | {s['sections']} |",
         f"| Extra items detected (not labelled) | {s['extra_items']} | |",
         f"| Latency per photo, median / p95 (perception + search) | {_ms(s['latency_median_ms'])} / {_ms(s['latency_p95_ms'])} | |",
         f"| Failed calls | {s['errors']} | {s['images']} |",
         "", "### Per photo", "",
-        "| Photo | Labelled | Found | Wrong attributes | Dupes right | Latency |", "|---|---|---|---|---|---|",
+        "| Photo | Labelled | Found | Wrong attributes | Dupes right | Price in range | Latency |",
+        "|---|---|---|---|---|---|---|",
     ]
     for r in results:
         if r.error:
-            lines.append(f"| {r.image} | {len(r.expected)} | error | {r.error} | | |")
+            lines.append(f"| {r.image} | {len(r.expected)} | error | {r.error} | | | |")
             continue
         found = sum(1 for _, i in r.pairs if i is not None)
         wrong = []
@@ -265,8 +282,12 @@ def to_markdown(results: list[CaseResult], summary: dict, model: str) -> str:
         if missed:
             wrong.append("missed " + ", ".join(missed))
         right, shown = sum(p for p, _ in r.precision), sum(n for _, n in r.precision)
+        in_range = sum(ok for _, _, ok in r.prices)
         lines.append(f"| {r.image} | {len(r.expected)} | {found} | {'; '.join(wrong) or '-'} | {right}/{shown} "
-                     f"| {_ms(r.perception_ms + r.dupes_ms)} |")
+                     f"| {in_range}/{len(r.prices)} | {_ms(r.perception_ms + r.dupes_ms)} |")
+    lines += ["", "### Picks outside the price range", ""]
+    lines += [f"- {image}: {name}, ${price:.2f} (range ${rng['low']:.0f}–${rng['high']:.0f})"
+              for image, name, price, rng in s["out_of_range"]] or ["None."]
     tried = [r for r in results if r.tryon_image]
     if tried:
         lines += ["", "### Try-on identity (check by eye, fill in pass/fail)", "",
@@ -299,12 +320,15 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--fake", action="store_true", help="use the offline FakeVision even if a key is set")
     ap.add_argument("--tryon", action="store_true", help="also dress --person in each photo's top dupes")
     ap.add_argument("--person", type=Path, help="full-body photo (or My model image) for --tryon")
+    ap.add_argument("--price-min", type=float, help="lowest price for the dupes search (default 0)")
+    ap.add_argument("--price-max", type=float, help="highest price (default 1.5x the default budget, as in the app)")
     args = ap.parse_args(argv)
 
     from .config import get_settings
     from .llm.client import FakeVision, make_vision_llm
     from .runtime import build_runtime
     from .services.dupes import find_dupes
+    from .services.price_range import PriceRange
     from .services.ranking import UserContext
 
     settings = get_settings()
@@ -315,9 +339,10 @@ def main(argv: list[str] | None = None) -> None:
     llm = FakeVision() if args.fake or not settings.anthropic_api_key else make_vision_llm(
         settings.anthropic_api_key, settings.llm_model, settings.llm_timeout_s)
     user = UserContext()
+    price = PriceRange.from_params(args.price_min, args.price_max, user.budget_per_item)
 
     def dupes(analysis):
-        return find_dupes(analysis, rt.catalog, user)
+        return find_dupes(analysis, rt.catalog, user, price)
 
     tryon = None
     if args.tryon:
