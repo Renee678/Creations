@@ -563,3 +563,12 @@ body.room-open { padding-bottom: 110px; }
 .fav-closet .empty { border: 2px dashed var(--h-soft); border-radius: 20px; min-height: 120px; display: grid; place-items: center; text-align: center;
   color: var(--h-mute); font-family: var(--f-hand); font-size: 22px; padding: 14px; margin-top: 22px; background: rgba(255,255,255,.4); }
 @media (prefers-reduced-motion: reduce) { .fav-closet .hang { animation: none; } }
+
+/* My model (Profile, and the first try-on): the standing figure every try-on dresses */
+.model-card { margin-top: 26px; }
+.model-card h2 { margin: 0 0 4px; font-family: var(--f-display); }
+.model-shot { margin: 12px 0 8px; max-width: 240px; border-radius: 16px; overflow: hidden; background: #eef0f3;
+  box-shadow: 0 8px 20px rgba(19,50,79,.12); }
+.model-shot img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; }
+.model-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
+.model-note { margin: 4px 0 0; }

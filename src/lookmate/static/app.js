@@ -24,6 +24,7 @@ function show(tab) {
   for (const id of ["find", "lookbook", "style", "trends", "profile"]) $("#" + id).hidden = id !== tab;
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   if (tab === "style") loadBook();
+  if (tab === "profile") renderModel();
   if (tab === "trends") loadTrends();
   if (tab === "lookbook") loadLookbook(); else renderRoom();
 }
@@ -55,6 +56,7 @@ async function openProfile() {
   chips($("#style-options"), vocab.styles, true, p.preferred_styles || []);
   $("#profile-title").textContent = userId ? "My profile" : "Tell us about you";
   $("#profile-msg").textContent = p.fit_advice ? `Fit advice: ${p.fit_advice}` : "";
+  renderModel();
 }
 
 $("#profile-form").addEventListener("submit", async (e) => {
@@ -73,8 +75,124 @@ $("#profile-form").addEventListener("submit", async (e) => {
     userId = String(saved.id); store.set("userId", userId);
     $("#tabs").hidden = false;
     $("#profile-msg").textContent = `Saved. Fit advice: ${saved.fit_advice}`;
-    if (isNew) show("find");
+    if (isNew) {
+      // One more, skippable step: My model. Skipped, the fitting room offers it the first time it's used.
+      modelOnboarding = true;
+      renderModel();
+      $("#my-model").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   } catch (err) { $("#profile-msg").textContent = err.message; }
+});
+
+// ---------- My model: one full-body photo becomes the standing figure every try-on dresses ----------
+// Only the saved model is kept, on the server, so it works on every device. The photo picked for it stays in
+// this page until it is sent, and the server drops it once the model is drawn.
+let myModel = null;       // the saved model: { id, image_url, generated, note }
+let modelDraft = null;    // a model being made, or made and not saved yet
+let modelFile = null;     // the photo it was made from, for "Try again" and "Use my original photo instead"
+let modelErr = "";
+let modelOnboarding = false;  // just signed up: offered as a step that can be skipped
+let modelForTryOn = null;     // the try-on waiting for a model (set when the fitting room offers the step)
+
+async function loadMyModel() {
+  if (!userId) { myModel = null; return; }
+  try { myModel = (await api(`/api/users/${userId}/model`)).model; } catch { myModel = null; }
+  renderModel();
+  renderRoom();
+}
+
+function modelHtml(where) {
+  const skip = where === "tryon" ? `<button type="button" class="linklike" data-model-skip>Skip, use a photo instead</button>`
+    : modelOnboarding ? `<button type="button" class="linklike" data-model-skip>Skip for now</button>` : "";
+  const d = modelDraft;
+  if (d && ["queued", "processing"].includes(d.status)) {
+    return `<div class="tryon-wait"><span class="spinner"></span> Creating your model… <span class="muted small">usually under a minute</span></div>`;
+  }
+  if (d && d.status === "failed") {
+    return `<p class="status error">${esc(d.error || "Couldn't create your model.")}</p>
+      <div class="model-actions"><button type="button" class="gel primary" data-model-create>Try again</button>
+      <button type="button" class="linklike" data-model-original>Use my original photo instead</button> ${skip}</div>`;
+  }
+  if (d && d.status === "done") {
+    return `<figure class="model-shot"><img src="${esc(d.image_url)}" alt="Your model"></figure>
+      ${d.note ? `<p class="muted small model-note">${esc(d.note)}</p>` : ""}
+      <div class="model-actions"><button type="button" class="gel primary" data-model-save>Save</button>
+      ${d.generated ? `<button type="button" class="gel" data-model-create>Try again</button>
+      <button type="button" class="linklike" data-model-original>Use my original photo instead</button>` : ""}</div>`;
+  }
+  if (myModel && !modelFile) {
+    return `<figure class="model-shot"><img src="${esc(myModel.image_url)}" alt="My model"></figure>
+      ${myModel.note && !myModel.generated ? `<p class="muted small model-note">${esc(myModel.note)}</p>` : ""}
+      <div class="model-actions"><button type="button" class="gel" data-model-pick>Make a new one</button>
+      <button type="button" class="linklike" data-model-delete>Delete my model</button></div>`;
+  }
+  const preview = modelFile ? `<figure class="model-shot"><img src="${URL.createObjectURL(modelFile)}" alt="Your photo"></figure>` : "";
+  return `${preview}${modelErr ? `<p class="status error">${esc(modelErr)}</p>` : ""}
+    <p class="muted small">Standing, facing the camera, head to toe. Your photo is deleted once the model is made.</p>
+    <div class="model-actions"><button type="button" class="gel${modelFile ? "" : " primary"}" data-model-pick>${modelFile ? "Choose another photo" : "Choose a full-body photo"}</button>
+    ${modelFile ? `<button type="button" class="gel primary" data-model-create>Create my model</button>` : ""} ${skip}</div>`;
+}
+
+function renderModel() {
+  $("#my-model").hidden = !userId;
+  document.querySelectorAll(".model-step").forEach((el) => { el.innerHTML = modelHtml(el.dataset.where); });
+}
+
+async function createModel(original = false) {
+  if (!modelFile) return $("#model-file").click();
+  modelErr = "";
+  modelDraft = { status: "queued" };
+  renderModel();
+  const form = new FormData();
+  form.append("photo", modelFile, "me.jpg");
+  form.append("original", original ? "true" : "false");
+  try {
+    modelDraft = await api(`/api/users/${userId}/model`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } });
+    while (["queued", "processing"].includes(modelDraft.status)) {
+      renderModel();
+      await new Promise((ok) => setTimeout(ok, 2000));
+      modelDraft = await api(`/api/body-models/${modelDraft.id}`);
+    }
+  } catch (err) { modelDraft = null; modelErr = networkHint(err); }
+  renderModel();
+}
+
+async function onModelClick(e) {
+  const b = e.target.closest("[data-model-pick], [data-model-create], [data-model-original], [data-model-save], [data-model-delete], [data-model-skip]");
+  if (!b) return;
+  const d = b.dataset;
+  if ("modelPick" in d) return $("#model-file").click();
+  if ("modelCreate" in d) return createModel(false);
+  if ("modelOriginal" in d) return createModel(true);
+  if ("modelDelete" in d) {
+    await api(`/api/users/${userId}/model`, { method: "DELETE" }).catch(() => {});
+    myModel = null; renderModel(); renderRoom();
+    return;
+  }
+  if ("modelSave" in d) {
+    try { myModel = await api(`/api/body-models/${modelDraft.id}/save`, { method: "POST" }); }
+    catch (err) { modelErr = err.message; return renderModel(); }
+    modelDraft = null; modelFile = null;
+    renderModel(); renderRoom();
+  }
+  // Saved or skipped, carry on where the step was offered: the app after sign-up, or the try-on.
+  if (modelOnboarding) { modelOnboarding = false; renderModel(); return show("find"); }
+  if (modelForTryOn !== null && (myModel || b.closest('[data-where="tryon"]'))) {
+    const key = modelForTryOn;
+    modelForTryOn = null;
+    store.set("modelOffered", "1");  // asked once; without a model the fitting room uses a photo from now on
+    startTryOn(key);
+  }
+}
+document.addEventListener("click", onModelClick);
+
+$("#model-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  modelFile = await shrinkPhoto(file, 1536);
+  modelDraft = null; modelErr = "";
+  renderModel();
 });
 
 // ---------- find look-alikes ----------
@@ -1016,8 +1134,16 @@ let tryonRunning = false;
 function startTryOn(key) {
   if (tryonRunning) return;
   pendingOutfit = key;
-  tryonPhoto = tryonPhoto || savedTryonPhoto();
-  if (!tryonPhoto) {
+  if (!myModel && !store.get("modelOffered")) {
+    // The first try-on without a model offers to make one (the same step as in Profile); it's saved there too.
+    pendingOutfit = null;
+    modelForTryOn = key;
+    tryonBox(key, `<div class="tryon-need"><p><strong>First, create your model</strong>: one full-body photo becomes you
+      in plain basics on a studio background, and every try-on dresses it.</p><div class="model-step" data-where="tryon"></div></div>`);
+    return renderModel();
+  }
+  tryonPhoto = myModel ? null : tryonPhoto || savedTryonPhoto();
+  if (!myModel && !tryonPhoto) {
     // Photos never leave the device they were picked on, so a new phone or browser has to be given one once.
     tryonBox(key, `<div class="tryon-need"><p><strong>Pick a full-body photo of you</strong> (standing, facing the camera, head to knees).</p>
       <p class="muted small">Your photos stay on the device you picked them on, so this phone or browser needs one once. It remembers it after that.</p>
@@ -1031,7 +1157,7 @@ function startTryOn(key) {
   renderRoom();
   const started = Date.now();
   // Show the pieces pinned next to you straight away; the rendered picture replaces it when ready.
-  tryonBox(key, previewHtml(pieces, URL.createObjectURL(tryonPhoto)));
+  tryonBox(key, previewHtml(pieces, myModel ? myModel.image_url : URL.createObjectURL(tryonPhoto)));
   const tick = setInterval(() => {
     const el = $(`#tryon-${key} .tryon-clock`);
     if (!el) return;
@@ -1041,7 +1167,7 @@ function startTryOn(key) {
   const done = (html) => { clearInterval(tick); tryonRunning = false; tryonBox(key, html); renderRoom(); };
   if (key === "room") $("#room-result").scrollIntoView({ behavior: "smooth", block: "start" });
   const form = new FormData();
-  form.append("photo", tryonPhoto, "me.jpg");
+  if (!myModel) form.append("photo", tryonPhoto, "me.jpg");  // with a saved model the server dresses it
   form.append("product_ids", pieces.map((p) => p.id).join(","));
   api(`/api/users/${userId}/tryons`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } })
     .then((t) => pollTryOn(key, t.id, started, 0, done))
@@ -1099,8 +1225,9 @@ function renderedHtml(key, t) {
       <figure class="tryon-shot"><span class="tape"></span><img src="${esc(t.image_url)}" alt="You wearing this outfit"><figcaption>${t.result.rendered ? "you, in this look ♡" : "you + this look ♡"}</figcaption></figure>
       <div class="tryon-pins">${pins(pinned)}</div>
     </div>
-    <p class="muted small">${note} Your photo was deleted after rendering.
-      <button type="button" class="linklike" data-tryon-new="${key}">Use another photo</button> ·
+    <p class="muted small">${note} ${myModel ? "Dressed on My model." : "Your photo was deleted after rendering."}
+      ${myModel ? `<button type="button" class="linklike" data-model-open>Change my model</button>`
+        : `<button type="button" class="linklike" data-tryon-new="${key}">Use another photo</button>`} ·
       <button type="button" class="linklike" data-tryon-delete="${esc(t.id)}" data-outfit="${key}">Delete this picture</button></p>`;
 }
 
@@ -1167,12 +1294,12 @@ function renderRoom() {
   tray.hidden = !pieces.length || $("#lookbook").hidden || !$("#lb-sections .outfit");
   document.body.classList.toggle("room-open", !tray.hidden);
   if (!pieces.length) return;
-  const photo = store.get("tryonPhoto");
-  const hasPhoto = photo && photo.startsWith("data:image/");
-  const me = hasPhoto ? `<img src="${photo}" alt="You">` : `<span class="room-me-empty">+ your photo</span>`;
+  const photo = myModel ? myModel.image_url : store.get("tryonPhoto");
+  const hasPhoto = !!myModel || (photo && photo.startsWith("data:image/"));
+  const me = hasPhoto ? `<img src="${esc(photo)}" alt="You">` : `<span class="room-me-empty">+ your photo</span>`;
   const canTry = pieces.some((p) => WEARABLE.has(p.category));
   const total = pieces.reduce((s, p) => s + p.price, 0);
-  tray.innerHTML = `<button type="button" class="room-me" data-room-photo title="${hasPhoto ? "Change your try-on photo" : "Add a full-body photo of you"}">${me}</button>
+  tray.innerHTML = `<button type="button" class="room-me" data-room-photo title="${myModel ? "My model (change it in Profile)" : hasPhoto ? "Change your try-on photo" : "Add a full-body photo of you"}">${me}</button>
     <div class="room-pieces">${pieces.map((p) => `<button type="button" class="room-piece" data-room="${esc(p.id)}" title="Remove ${esc(p.name)}">
       ${p.image_url ? `<img src="${esc(p.image_url)}" alt="">` : `<span>${esc(p.product_type)}</span>`}<i>×</i></button>`).join("")}</div>
     <div class="room-actions"><span class="room-total">$${total.toFixed(2)}</span>
@@ -1190,10 +1317,14 @@ document.addEventListener("click", (e) => {
   if (all) return all.dataset.roomAll.split(",").forEach((id) => toggleRoom(id, true));
   if (e.target.closest("[data-room-try]")) {
     // No photo on this device yet: open the picker straight away, then try on.
-    if (!(tryonPhoto || savedTryonPhoto())) { pendingOutfit = "room"; return $("#tryon-file").click(); }
+    if (!myModel && store.get("modelOffered") && !(tryonPhoto || savedTryonPhoto())) { pendingOutfit = "room"; return $("#tryon-file").click(); }
     return startTryOn("room");
   }
-  if (e.target.closest("[data-room-photo]")) { pendingOutfit = null; return $("#tryon-file").click(); }
+  if (e.target.closest("[data-room-photo]")) {
+    if (myModel) return show("profile");
+    pendingOutfit = null; return $("#tryon-file").click();
+  }
+  if (e.target.closest("[data-model-open]")) return show("profile");
   if (e.target.closest("[data-lb-browse]")) { lbRequested = true; return loadLookbook(true); }
   if (e.target.closest("[data-room-clear]")) { room = {}; store.set("room", "{}"); renderRoom(); }
 });
@@ -1373,5 +1504,6 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").cat
 (async function boot() {
   vocab = await api("/api/vocab");
   await openProfile();
+  loadMyModel();
   if (userId) { $("#tabs").hidden = false; show("find"); } else { show("profile"); }
 })();

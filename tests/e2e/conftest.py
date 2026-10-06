@@ -150,6 +150,8 @@ def page(browser, base_url, request):
     form.locator("[name=age]").fill("26")
     pg.locator("#style-options .chip").first.click()
     form.locator("button[type=submit]").click()
+    # Sign-up ends with the skippable "My model" step; skipped, the first try-on offers it again.
+    pg.locator("#my-model [data-model-skip]").click()
     pg.locator("#find").wait_for(state="visible")
     yield pg
     context.close()

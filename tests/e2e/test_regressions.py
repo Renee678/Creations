@@ -198,6 +198,8 @@ def test_tryon_uses_the_uploaded_full_body_photo(page):
     create_looks(page)
     page.locator("[data-room-all]").first.click()
     page.locator("#room [data-room-try]").click()
+    # Without a model, the first try-on offers to make one; skipped, it uses the uploaded photo.
+    page.locator("#tryon-room [data-model-skip]").click()
     page.wait_for_function("document.querySelector('#tryon-room') && document.querySelector('#tryon-room').textContent.includes('stubbed')")
 
     assert not pickers, "try-on asked for a photo again although a full-body photo was uploaded"
@@ -422,3 +424,82 @@ def test_a_southern_hemisphere_shopper_starts_on_their_own_season(page):
     from lookmate.services.trends import season_of
 
     _check_four_seasons(page, FLIP[season_of(datetime.now(timezone.utc).month)])
+
+
+def test_my_model_is_made_in_profile_and_dresses_every_try_on(page):
+    """Feedback #33: Profile -> My model: one full-body photo -> Create my model -> Save; try-ons then dress it.
+
+    Offline there is no Replicate token, so the photo is saved as it is, with a note (the fallback). The try-on
+    call is stubbed, so this never spends Replicate credit on the live site.
+    """
+    if LIVE_URL:
+        pytest.skip("creates and deletes a model on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    assert box.is_visible() and box.locator("[data-model-create]").count() == 0, "nothing to create before a photo"
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    box.locator("[data-model-create]").click()
+    box.locator(".model-shot img").wait_for()
+    assert "REPLICATE_API_TOKEN" in box.locator(".model-note").inner_text(), "the fallback says why"
+    assert box.locator("[data-model-original]").count() == 0, "a saved-as-is photo has no 'use original'"
+    with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):
+        box.locator("[data-model-save]").click()
+    box.locator("[data-model-delete]").wait_for()
+
+    # Saved on the server: a new visit on another device finds it.
+    page.reload()
+    tab(page, "profile")
+    box.locator("[data-model-delete]").wait_for()
+    image_url = box.locator(".model-shot img").get_attribute("src")
+    assert image_url.startswith("/api/body-models/")
+
+    # The fitting room dresses the model: no photo is asked for or sent.
+    sent = []
+    page.route("**/api/users/*/tryons", lambda route: (sent.append(route.request.post_data_buffer),
+               route.fulfill(status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"}))))
+    page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(
+        content_type="application/json", body=json.dumps({"id": "e2e-stub", "status": "failed", "error": "stubbed by e2e"})))
+    pickers = []
+    page.on("filechooser", lambda fc: pickers.append(fc))
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    assert page.locator("#room .room-me img").get_attribute("src") == image_url, "the tray shows My model"
+    page.locator("#room [data-room-try]").click()
+    page.wait_for_function("document.querySelector('#tryon-room') && document.querySelector('#tryon-room').textContent.includes('stubbed')")
+    assert not pickers and len(sent) == 1
+    assert b'name="photo"' not in sent[0], "with a saved model the server dresses it; no photo is uploaded"
+
+    # Delete my model: gone from the server too.
+    tab(page, "profile")
+    box.locator("[data-model-delete]").click()
+    box.locator("[data-model-pick]").wait_for()
+    assert page.request.get(image_url).status == 404
+    assert page.errors == []
+
+
+def test_skipped_at_sign_up_my_model_is_offered_in_the_fitting_room(page):
+    """Feedback #33: skipped at sign-up, the first try-on shows the same step; what's made is saved to Profile."""
+    if LIVE_URL:
+        pytest.skip("creates a model on the server; offline only")
+    page.route("**/api/users/*/tryons", lambda route: route.fulfill(
+        status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
+    page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(
+        content_type="application/json", body=json.dumps({"id": "e2e-stub", "status": "failed", "error": "stubbed by e2e"})))
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room [data-room-try]").click()
+    step = page.locator("#tryon-room .model-step")
+    with page.expect_file_chooser() as fc:
+        step.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    step.locator("[data-model-create]").click()
+    step.locator("[data-model-save]").click()
+    page.wait_for_function("document.querySelector('#tryon-room').textContent.includes('stubbed')")
+
+    tab(page, "profile")
+    page.locator("#my-model [data-model-delete]").wait_for()
+    assert page.locator("#my-model .model-shot img").get_attribute("src").startswith("/api/body-models/")
