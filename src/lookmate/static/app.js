@@ -629,6 +629,16 @@ function flatLayHtml(pieces, { book = false } = {}) {
   return `<div class="board flatlay${book ? " bk-board" : ""}${twoCols ? " board-2" : ""}">${items}</div>`;
 }
 
+// Lookbook tab (Renee, feedback #36): an outfit's pieces in one plain row, outer layer first, accessories last.
+const ROW_ORDER = ["outerwear", "top", "dress", "bottom", "shoes", "bag", "accessory"];
+function pieceRowHtml(pieces) {
+  const rank = (p) => (ROW_ORDER.indexOf(p.category) + 1 || ROW_ORDER.length + 1);
+  const sorted = [...pieces].sort((a, b) => rank(a) - rank(b));
+  return `<div class="piece-row">${sorted.map((p) => `<figure class="piece-cell piece-${esc(p.category)}">
+      <div class="piece-img">${pieceImg(p)}</div>
+      <figcaption><span class="piece-name">${esc(boardLabel(p))}</span>${priceLink(p)}</figcaption></figure>`).join("")}</div>`;
+}
+
 /** "$54.50 · ASOS ↗", linking to the piece in its shop (Renee: labels link to the shop). */
 function priceLink(p) {
   const price = `$${p.price.toFixed(2)}`;
@@ -676,7 +686,7 @@ function outfitCard(o, section) {
   return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>
       <span class="outfit-actions">${save}<button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
     ${o.why ? `<p class="outfit-why">✦ ${esc(o.why)}</p>` : ""}
-    ${flatLayHtml(o.pieces)}
+    ${pieceRowHtml(o.pieces)}
     <details class="shop-pieces"><summary>Shop each piece (${o.pieces.length})</summary>
       <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></details></div>`;
 }
@@ -1441,7 +1451,7 @@ function mineCard(m) {
     <div class="outfit"><div class="item-head"><h3>${esc(m.title)}</h3><span class="muted">$${m.total_price.toFixed(2)} total</span>
       <span class="outfit-actions">${saveButton(`mine:${ids}`, { title: m.title, product_ids: m.pieces.map((x) => x.pick.id), style_id: m.style_id, source: "mine", why: m.why || null, inspo_look_id: Number(lbInspo) || null })}
       <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
-    ${flatLayHtml(m.pieces.map((x) => x.pick))}
+    ${pieceRowHtml(m.pieces.map((x) => x.pick))}
     ${m.why ? `<p class="outfit-why">✦ ${esc(m.why)}</p>` : `<p class="muted small">Not reviewed by the AI stylist.</p>`}
     <div class="grid mine-grid">${rows}</div></div></div>`;
 }

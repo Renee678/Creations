@@ -594,3 +594,31 @@ body.room-open { padding-bottom: 110px; }
   border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); cursor: default; }
 .lightbox-close { position: fixed; top: 14px; right: 14px; width: 44px; height: 44px; border-radius: 50%; border: 0;
   background: rgba(255,255,255,.92); color: #1f2440; font-size: 20px; cursor: pointer; }
+
+/* Lookbook tab: an outfit's pieces in one row, equal cards, each linking to its shop (feedback #36) */
+.piece-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 190px); gap: 12px; margin: 8px 0 12px;
+  overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 4px; }
+.piece-cell { margin: 0; display: flex; flex-direction: column; gap: 6px; scroll-snap-align: start; min-width: 0; }
+.piece-img { aspect-ratio: 3 / 4; background: #fff; border-radius: 14px; display: grid; place-items: center; overflow: hidden;
+  box-shadow: 0 6px 16px rgba(18, 48, 90, .08); }
+.piece-img img { width: 100%; height: 100%; object-fit: contain; }
+.piece-cell figcaption { display: flex; flex-direction: column; gap: 2px; }
+.piece-name { font: 500 13px/1.3 var(--f-body); color: var(--ink); }
+.piece-cell .shop-link { white-space: normal; }
+@media (max-width: 600px) { .piece-row { grid-auto-columns: 42%; } }
+
+/* Fitting room: a sticky side panel on wide screens; the bottom bar stays on narrower ones (feedback #36) */
+@media (min-width: 1100px) {
+  body.room-open { padding-bottom: 0; }
+  body.room-open main { max-width: 1260px; padding-right: 220px; }
+  .room { left: auto; right: max(16px, calc((100vw - 1260px) / 2 + 16px)); top: 96px; bottom: auto; transform: none;
+    width: 188px; max-height: calc(100vh - 120px); flex-direction: column; align-items: stretch; gap: 10px; padding: 14px 12px; }
+  .room-actions { display: contents; }
+  .room-total { order: -2; font-size: 18px; text-align: center; }
+  .room-me { order: -1; align-self: center; }
+  .room-pieces { flex-direction: column; overflow-x: hidden; overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+  .room-piece { width: 100%; height: 120px; background: #fff; }
+  .room-piece img { object-fit: contain; }
+  .room-actions > button, .room-actions > .room-need { order: 1; width: 100%; text-align: center; }
+  .room-actions > button[data-room-clear] { order: 2; }
+}

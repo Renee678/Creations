@@ -505,21 +505,26 @@ def test_skipped_at_sign_up_my_model_is_offered_in_the_fitting_room(page):
     assert page.locator("#my-model .model-shot img").get_attribute("src").startswith("/api/body-models/")
 
 
-def test_flat_lays_link_to_shops_and_outfits_shelve_by_season(page):
-    """Feedback #34: Lookbook results are white flat lays whose labels link to the shop ("$54.50 · ASOS ↗"),
-    and My Look Book → Outfits files saved looks under season shelves, empty seasons left out."""
+def test_lookbook_pieces_link_to_shops_and_outfits_shelve_by_season(page):
+    """Feedback #34/#36: a Lookbook outfit is one row of pieces, outer layer first, each with a "$54.50 · ASOS ↗"
+    shop link (no board); My Look Book → Outfits files saved looks under season shelves, empty seasons left out."""
     tab(page, "lookbook")
     with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok) as resp:
         page.locator("[data-lb-browse]").click()
     first = next(o for s in resp.value.json()["sections"] for o in s["outfits"])
     card = page.locator("#lb-sections .outfit").first
     card.wait_for()
-    assert card.locator(".board").count() == 1 and card.locator(".flatlay .bk-it").count() == len(first["pieces"])
-    assert card.locator(".flatlay .bk-arrow").count() == len(first["pieces"]), "a curved arrow per label"
-    links = card.locator(".bk-lab a.shop-link")
-    assert links.count() == len(first["pieces"])
-    for i, p in enumerate(first["pieces"]):
-        link = links.nth(i)
+    assert card.locator(".board, .flatlay").count() == 0, "no board or collage on the Lookbook tab"
+    cells = card.locator(".piece-row .piece-cell")
+    assert cells.count() == len(first["pieces"])
+    boxes = [cells.nth(i).bounding_box() for i in range(cells.count())]
+    assert len({round(b["y"]) for b in boxes}) == 1, "one row"
+    assert len({round(b["width"]) for b in boxes}) == 1, "equal-size cards"
+    assert [b["x"] for b in boxes] == sorted(b["x"] for b in boxes)
+    order = ["outerwear", "top", "dress", "bottom", "shoes", "bag", "accessory"]
+    shown = sorted(first["pieces"], key=lambda p: order.index(p["category"]) if p["category"] in order else 99)
+    for i, p in enumerate(shown):
+        link = cells.nth(i).locator("a.shop-link")
         assert re.fullmatch(rf"\${p['price']:.2f} · (ASOS|SHEIN|Amazon) ↗", link.inner_text().strip()), link.inner_text()
         assert link.get_attribute("href").startswith("https://") and link.get_attribute("target") == "_blank"
 
@@ -600,3 +605,24 @@ def test_try_on_and_my_model_pictures_open_full_size(page):
     page.keyboard.press("Escape")
     lightbox.wait_for(state="detached")
     assert page.errors == []
+
+
+
+def test_the_fitting_room_is_a_side_panel_on_wide_screens_and_a_bottom_bar_on_phones(page):
+    """Feedback #36: at 1100px and wider the fitting room docks beside the content without covering it."""
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    room = page.locator("#room")
+    room.wait_for()
+    tray, content = room.bounding_box(), page.locator("#lb-sections").bounding_box()
+    assert tray["height"] > tray["width"], "a vertical panel"
+    assert tray["x"] >= content["x"] + content["width"], "beside the content, not over it"
+    kids = [room.locator(sel).bounding_box()["y"] for sel in (".room-total", ".room-pieces", "[data-room-try]", "[data-room-clear]")]
+    assert kids == sorted(kids), "total, pieces, Try it on me, clear: top to bottom"
+    thumbs = room.locator(".room-piece")
+    assert thumbs.count() > 1 and thumbs.nth(1).bounding_box()["y"] > thumbs.nth(0).bounding_box()["y"], "stacked"
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    tray = room.bounding_box()
+    assert tray["width"] > tray["height"] and tray["y"] + tray["height"] > 844 - 40, "the bottom bar on a phone"
