@@ -74,7 +74,9 @@ of themselves and asked for personal styling advice.
 - Use only these style labels for style_tags: {", ".join(STYLES)}.
 - photo_checks: one entry per photo, in the order given. Say how the person is framed, whether the photo
   works for colour analysis, and whether it works for a virtual try-on (one person, standing, facing the
-  camera, head to at least the knees). The tip tells the user, kindly, what to retake if it doesn't.
+  camera, head to at least the knees). Every photo of the person helps read their style, so the tip says,
+  warmly, what this photo adds, with at most one soft hint (e.g. daylight shows colours truest). Never call
+  a photo of the person unusable or list what is wrong with it.
 If no person's face is clearly visible, set usable to false and fill the rest with your best neutral defaults.
 Write everything in English."""
 

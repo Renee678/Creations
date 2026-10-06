@@ -738,6 +738,50 @@ def test_the_browser_hands_shop_photos_to_the_server_when_a_piece_enters_the_fit
     assert page.errors == []
 
 
+def test_no_photo_of_the_person_is_marked_unusable_in_the_lookbook(page):
+    """Feedback #40: try-on dresses My model, so Lookbook photos are for colours, style and likes. A real photo
+    of the person never gets a red "not usable" (even a seated, warm-lit one); only a photo with nobody in it
+    gets a gentle note. The analysis is stubbed with the checks Renee's photos got."""
+    if LIVE_URL:
+        pytest.skip("rewrites the analysis; offline only")
+    checks = [
+        {"framing": "upper_body", "good_for_colour": True, "good_for_tryon": False, "tip": "Great for your colours."},
+        {"framing": "full_body", "good_for_colour": False, "good_for_tryon": False,
+         "tip": "A lovely photo of your style; daylight would show your colours truest."},
+    ]
+
+    def with_checks(route):
+        res = route.fetch()
+        data = res.json()
+
+        def walk(x):
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    if k == "photo_checks" and v:
+                        x[k] = checks
+                    else:
+                        walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(data)
+        route.fulfill(response=res, body=json.dumps(data))
+
+    page.route(re.compile(r".*/api/users/\d+/lookbook.*"), with_checks)
+    tab(page, "lookbook")
+    upload_me(page)
+    captions = page.locator("#lookbook figcaption[id^=me-check-]")
+    page.wait_for_function("document.querySelectorAll('#lookbook figcaption[id^=me-check-].ok').length === 2")
+    text = " ".join(captions.all_inner_texts())
+    assert "not usable" not in text and "✗" not in text
+    assert page.locator("#lookbook figcaption.warn").count() == 0
+    first, second = captions.nth(0).inner_text().splitlines(), captions.nth(1).inner_text().splitlines()
+    assert first[:2] == ["Waist up", "✓ style + colours"], first
+    assert second[:2] == ["Full body", "✓ style"], "a seated, warm-lit full-body photo still counts for style"
+    assert "None of these photos" not in page.locator("#lookbook").inner_text()
+    assert page.errors == []
+
+
 def test_the_fitting_room_is_a_side_panel_on_wide_screens_and_a_bottom_bar_on_phones(page):
     """Feedback #36: at 1100px and wider the fitting room docks beside the content without covering it."""
     tab(page, "lookbook")

@@ -224,7 +224,7 @@ html, body { overflow-x: hidden; }
 .me-photo figcaption strong { display: block; color: var(--ink); }
 .me-photo figcaption span { display: block; }
 .me-photo figcaption.ok strong { color: var(--good); }
-.me-photo figcaption.warn strong { color: #b4235a; }
+.me-photo figcaption.note strong { color: var(--muted); }
 
 /* per-page price range */
 .price-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 6px 0 22px;

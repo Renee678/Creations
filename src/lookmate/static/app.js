@@ -603,18 +603,22 @@ const cap = (s) => String(s || "").replace(/^./, (c) => c.toUpperCase());
 const FRAMING = { face: "Selfie", upper_body: "Waist up", full_body: "Full body", no_person: "No person found" };
 
 /** Label each uploaded photo and keep the best full-body one for try-on. */
+// Try-on dresses My model, so a Lookbook photo is about the person: their colours, style and what they like.
+// Every photo of them counts for something, so none is marked unusable (Renee, feedback #40); only a photo
+// with nobody in it gets a gentle note.
 function applyPhotoChecks(checks) {
   if (!checks || !checks.length || checks.length !== mePhotos.length) return;
   checks.forEach((c, i) => {
     const el = $(`#me-check-${i}`);
     if (!el) return;
-    const uses = [c.good_for_colour && "colours", c.good_for_tryon && "try-on"].filter(Boolean);
-    el.className = uses.length ? "ok" : "warn";
-    el.innerHTML = `<strong>${esc(FRAMING[c.framing] || c.framing)}</strong><span>${uses.length ? `✓ ${uses.join(" + ")}` : "✗ not usable"}</span><span>${esc(c.tip)}</span>`;
+    const person = c.framing !== "no_person";
+    const uses = ["style", c.good_for_colour && "colours", c.good_for_tryon && "try-on"].filter(Boolean);
+    el.className = person ? "ok" : "note";
+    el.innerHTML = `<strong>${esc(FRAMING[c.framing] || c.framing)}</strong>`
+      + `<span>${person ? `✓ ${uses.join(" + ")}` : "Add a photo of you"}</span><span>${esc(c.tip)}</span>`;
   });
   const best = checks.findIndex((c) => c.good_for_tryon);
   if (best >= 0) setTryonPhoto(mePhotos[best]);
-  else setMeStatus("None of these photos works for try-on yet: add a full-body photo, standing and facing the camera.");
 }
 
 function renderAnalysis(a) {
