@@ -548,3 +548,55 @@ def test_flat_lays_link_to_shops_and_outfits_shelve_by_season(page):
     shelves.first.locator(".book-thumb-look").click()
     page.locator("#book-page .bk-flat .bk-lab a.shop-link").first.wait_for()
     assert not page.errors, page.errors
+
+
+def test_try_on_and_my_model_pictures_open_full_size(page):
+    """Feedback #35: the try-on polaroid, the Daily Look hero and My model open full size; ✕, Esc or a click
+    outside closes it."""
+    if LIVE_URL:
+        pytest.skip("creates a model on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    box.locator("[data-model-create]").click()
+    with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):
+        box.locator("[data-model-save]").click()
+    shot = box.locator(".model-shot img")
+    shot.wait_for()
+    src = shot.get_attribute("src")
+
+    lightbox = page.locator("#lightbox")
+    for close in ("Escape", "button", "outside"):
+        shot.click()
+        lightbox.wait_for()
+        assert lightbox.locator("img").get_attribute("src") == src
+        lightbox.locator("img").click()  # a click on the picture itself keeps it open
+        assert lightbox.is_visible()
+        if close == "Escape":
+            page.keyboard.press("Escape")
+        elif close == "button":
+            lightbox.locator(".lightbox-close").click()
+        else:
+            page.mouse.click(5, 450)
+        lightbox.wait_for(state="detached")
+
+    # The try-on result ("you, in this look") opens the same way.
+    page.route("**/api/users/*/tryons", lambda route: route.fulfill(
+        status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
+    page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(content_type="application/json", body=json.dumps(
+        {"id": "e2e-stub", "status": "done", "image_url": src,
+         "result": {"rendered": True, "rendered_ids": [], "described_ids": []}})))
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room [data-room-try]").click()
+    result = page.locator("#tryon-room .tryon-shot:not(.rendering) img")
+    result.wait_for()
+    result.click()
+    lightbox.wait_for()
+    assert lightbox.locator("img").get_attribute("src") == src
+    page.keyboard.press("Escape")
+    lightbox.wait_for(state="detached")
+    assert page.errors == []

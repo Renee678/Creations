@@ -1507,6 +1507,29 @@ $("#lb-sections").addEventListener("click", onSaveClick);
 $("#lb-create-btn").addEventListener("click", () => { lbRequested = true; loadLookbook(true); });
 setupPriceRange("lookbook", () => loadLookbook());
 
+// ---------- lightbox: a try-on, a Daily Look hero or My model, full size ----------
+const ZOOMABLE = ".tryon-shot img, .bk-hero img, .model-shot img";
+
+function openLightbox(src, alt) {
+  closeLightbox();
+  const box = Object.assign(document.createElement("div"), { id: "lightbox", className: "lightbox" });
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.innerHTML = `<figure><img src="${esc(src)}" alt="${esc(alt || "")}"></figure>
+    <button type="button" class="lightbox-close" aria-label="Close">✕</button>`;
+  document.body.append(box);
+  box.querySelector(".lightbox-close").focus();
+}
+const closeLightbox = () => { const box = $("#lightbox"); if (box) box.remove(); };
+
+document.addEventListener("click", (e) => {
+  const box = e.target.closest("#lightbox");
+  if (box) { if (e.target.tagName !== "IMG") closeLightbox(); return; }  // ✕ or anywhere outside the picture
+  const img = e.target.closest(ZOOMABLE);
+  if (img && img.getAttribute("src")) openLightbox(img.getAttribute("src"), img.alt);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+
 // ---------- installable app ----------
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 

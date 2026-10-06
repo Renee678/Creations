@@ -584,3 +584,13 @@ body.room-open { padding-bottom: 110px; }
 .book-shelf { margin: 0 0 22px; }
 .book-shelf h3 { font: italic 500 22px/1 "Bodoni Moda", serif; margin: 6px 0 10px; display: flex; align-items: baseline; gap: 8px; }
 .book-shelf h3 small { font: 400 12px Jost, sans-serif; font-style: normal; color: var(--muted); }
+
+/* Lightbox: tap a try-on, a Daily Look hero or My model to see it full size */
+.tryon-shot img, .bk-hero img, .model-shot img { cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px;
+  background: rgba(20, 16, 34, .82); cursor: zoom-out; }
+.lightbox figure { margin: 0; max-width: 100%; max-height: 100%; }
+.lightbox img { display: block; max-width: min(100%, 1200px); max-height: calc(100vh - 32px); object-fit: contain;
+  border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); cursor: default; }
+.lightbox-close { position: fixed; top: 14px; right: 14px; width: 44px; height: 44px; border-radius: 50%; border: 0;
+  background: rgba(255,255,255,.92); color: #1f2440; font-size: 20px; cursor: pointer; }
