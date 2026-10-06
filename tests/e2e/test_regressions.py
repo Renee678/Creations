@@ -239,7 +239,7 @@ def test_a_saved_outfit_becomes_a_look_book_page(page):
     assert page.locator("#book-page .bk-it img, #book-page .bk-it .bp-none").count() == len(first["pieces"])
 
     page.locator("[data-book-step='-1']").click()
-    page.locator("#book-page .bk-fav").wait_for()
+    page.locator("#book-page .fav-closet").wait_for()
     page.locator("[data-book-step='-1']").click()
     page.locator("#book-page .bk-about #style-report").wait_for()
     page.locator("[data-book-step='-1']").click()
@@ -349,12 +349,26 @@ def test_a_piece_saved_in_find_dupes_appears_in_its_my_style_folder(page):
     page.locator("#book-contents .book-thumb-favourites").click()
     section = page.locator(f"#book-page .fav-folder[data-folder='{folder}']")
     section.wait_for()
-    assert label in section.locator("h3").inner_text()
+    assert label in section.locator(".rail-h").inner_text()
+    # Feedback item 31: the lilac closet. One silver rail per folder with pieces, each piece on a hook.
+    rails = page.locator("#book-page .fav-closet .rail")
+    counts = {r.get_attribute("data-folder"): r.locator(".hang").count() for r in rails.all()}
+    assert counts and all(counts.values()), f"a rail for every non-empty folder only: {counts}"
+    assert page.locator("#book-page .fav-closet .seg button.off").count() == 9 - 1 - len(counts), "empty folders dimmed"
+    assert section.locator(".hang .hook").count() == section.locator(".hang").count()
+    assert section.locator(".hang .pricetag").first.inner_text().startswith("$")
+    hang = section.locator(".hang").first
+    assert hang.evaluate("e => getComputedStyle(e).animationName") == "sway", "hangers sway"
+    page.emulate_media(reduced_motion="reduce")
+    assert hang.evaluate("e => getComputedStyle(e).animationName") == "none", "but not with reduced motion"
     assert section.locator(f"[data-fav-remove='{pick['id']}']").count() == 1, f"saved piece is not under {label}"
     assert section.locator("[data-room]").count() == 0, "no fitting-room button in Favourites (Renee)"
+    remove = section.locator(f"[data-fav-remove='{pick['id']}']")
+    assert remove.inner_text().strip() == "✕"
     with page.expect_response(lambda r: "/saved/" in r.url and r.request.method == "DELETE"):
-        section.locator(f"[data-fav-remove='{pick['id']}']").click()
+        remove.click()
     page.wait_for_function(f"!document.querySelector(\"[data-fav-remove='{pick['id']}']\")")
+    page.locator("#book-page .fav-closet .empty").wait_for()  # the only piece: the dashed "empty closet" hint
     assert not page.errors, page.errors
 
 

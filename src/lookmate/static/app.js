@@ -650,25 +650,35 @@ function aboutPage({ s }) {
   return `<article class="bk bk-about"><div class="bk-head"><b>About me</b><span>${esc(s.analysis ? cap(s.analysis.season_detail) : "")}</span></div>${styleReport(s)}</article>`;
 }
 
-// Favourites: single pieces saved anywhere ("♡ Save to My Style"), in folders by what they are.
+// Favourites (Renee, 2026-10-06): a lilac closet. One silver rail per folder that has pieces; each piece hangs
+// from a hook and sways. Pieces saved anywhere with "♡ Save to My Style" land in their folder.
 let favFolder = "";  // "" = every folder
+const HOOK = `<svg class="hook" viewBox="0 0 58 32" aria-hidden="true"><path d="M29 2 q6 0 6 6 q0 5 -6 7" fill="none" stroke="#a98be0" stroke-width="2.6" stroke-linecap="round"/><path d="M29 15 C18 20 8 24 5 27 Q4 29 7 29 H51 Q54 29 53 27 C50 24 40 20 29 15Z" fill="#d9c2ff" stroke="#b48cf5" stroke-width="1.5"/><circle cx="29" cy="15" r="2.2" fill="#b48cf5"/></svg>`;
+const SINGULAR = { tops: "top", bottoms: "bottom", dresses: "dress", outerwear: "jacket or coat", shoes: "pair of shoes",
+  bags: "bag", hats: "hat", accessories: "accessory" };
+
 function favouritesPage({ fav }) {
-  const chip = (id, label, n) => `<button type="button" class="chip${favFolder === id ? " on" : ""}${n ? "" : " empty"}"
-      data-fav-folder="${id}"${n ? "" : " disabled"}>${esc(label)} <small>${n}</small></button>`;
+  const chip = (id, label, n) => `<button type="button" class="${favFolder === id ? "on" : ""}${n ? "" : " off"}"
+      data-fav-folder="${id}"${n ? "" : " disabled"}>${esc(label)} ${n}</button>`;
   const chips = chip("", "All", fav.total) + fav.folders.map((f) => chip(f.id, f.label, f.count)).join("");
-  const shown = fav.folders.filter((f) => f.count && (!favFolder || f.id === favFolder));
-  const body = shown.map((f) => `<section class="fav-folder" data-folder="${f.id}"><h3>${esc(f.label)} <small>${f.count}</small></h3>
-      <div class="fav-grid">${f.items.map(favCard).join("")}</div></section>`).join("")
-    || `<p class="muted">Nothing saved yet. Tap <strong>♡ Save to My Style</strong> on any piece in Find dupes or the Lookbook and it lands in its folder here.</p>`;
-  return `<article class="bk bk-fav"><div class="bk-head"><b>Favourites</b><span>${fav.total} ${fav.total === 1 ? "piece" : "pieces"}</span></div>
-      <div class="chips fav-chips">${chips}</div>${body}</article>`;
+  const rails = fav.folders.filter((f) => f.count && (!favFolder || f.id === favFolder)).map((f) => `
+      <div class="rail fav-folder" data-folder="${f.id}"><p class="rail-h"><b>${esc(f.label)}</b><i>${f.count}</i></p><div class="bar"></div>
+        <div class="hangers">${f.items.map(favCard).join("")}</div></div>`).join("");
+  const picked = fav.folders.find((f) => f.id === favFolder);
+  const empty = rails ? "" : `<div class="empty">${picked
+    ? `no ${esc(picked.label.toLowerCase())} yet ♡ tap “Save to My Style” on any ${esc(SINGULAR[picked.id] || "piece")} and it hangs here`
+    : "your closet is empty ♡ tap “Save to My Style” on any piece in Find dupes or the Lookbook and it hangs here"}</div>`;
+  return `<article class="fav-closet">
+      <div class="ht"><h2>My <em>favourites</em></h2><span>${fav.total} ${fav.total === 1 ? "piece" : "pieces"} hanging in your closet ♡</span></div>
+      <div class="seg">${chips}</div>${rails}${empty}</article>`;
 }
 
 function favCard(p) {
-  const links = p.shop_links ? `<a href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">SHEIN ↗</a><a href="${esc(p.shop_links.asos)}" target="_blank" rel="noopener">ASOS ↗</a>${p.shop_links.amazon ? `<a href="${esc(p.shop_links.amazon)}" target="_blank" rel="noopener">Amazon ↗</a>` : ""}` : "";
-  return `<figure class="fav-card">${pieceImg(p)}<figcaption><b>${esc(boardLabel(p))}</b><span>$${p.price.toFixed(2)}</span>
-      <span class="fav-links">${links}</span>
-      <button type="button" class="linklike" data-fav-remove="${esc(p.id)}">Remove</button></figcaption></figure>`;
+  const links = p.shop_links ? `<a class="lnk" href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">SHEIN ↗</a><a class="lnk" href="${esc(p.shop_links.asos)}" target="_blank" rel="noopener">ASOS ↗</a>${p.shop_links.amazon ? `<a class="lnk" href="${esc(p.shop_links.amazon)}" target="_blank" rel="noopener">Amazon ↗</a>` : ""}` : "";
+  return `<article class="hang">${HOOK}<div class="tagcard"><div class="art">${pieceImg(p)}</div>
+      <h4>${esc(boardLabel(p))}</h4>
+      <div class="row"><span class="pricetag">$${p.price.toFixed(2)}</span><button type="button" class="x" data-fav-remove="${esc(p.id)}" aria-label="Remove ${esc(p.name)}">✕</button></div>
+      <div>${links}</div></div></article>`;
 }
 
 function dotsHtml(p) {

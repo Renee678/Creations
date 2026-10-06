@@ -504,17 +504,56 @@ body.room-open { padding-bottom: 110px; }
   .bk-polaroid { width: 110px; }
 }
 
-/* Look Book: Favourites (single saved pieces, in folders) */
-.bk-fav .fav-chips { margin: 8px 0 14px; }
-.bk-fav .chip small { opacity: .7; margin-left: 2px; }
-.bk-fav .chip.empty { opacity: .4; cursor: default; }
-.fav-folder h3 { font: italic 500 22px/1.2 "Bodoni Moda", Georgia, serif; color: #3a2a22; margin: 18px 0 8px; }
-.fav-folder h3 small { font: 400 12px/1 Jost, sans-serif; color: #9a8476; letter-spacing: .1em; }
-.fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
-.fav-card { margin: 0; background: #fff; border-radius: 6px; padding: 8px; box-shadow: 0 1px 6px rgba(58,42,34,.08); }
-.fav-card img, .fav-card .bp-none { display: flex; align-items: center; justify-content: center; width: 100%;
-  aspect-ratio: 1; object-fit: contain; background: #f6f2ec; border-radius: 4px; color: #9a8476; font-size: 12px; }
-.fav-card figcaption { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 12px; color: #3a2a22; }
-.fav-card figcaption b { font: italic 500 14px/1.25 "Bodoni Moda", Georgia, serif; }
-.fav-links { display: flex; gap: 8px; flex-wrap: wrap; }
-.fav-links a { color: var(--gel-deep); font-size: 12px; }
+/* Look Book: Favourites, the lilac closet (approved 2026-10-06; design/favourites-spec.md) */
+.fav-closet { --h-a: #e9dcff; --h-b: #f4ecff; --h-c: #e3e6ff; --h-ink: #3b2563; --h-mute: #7a68a0;
+  --h-glass: rgba(255,255,255,.62); --h-accent: #8a4fd6; --h-soft: #c9adff;
+  position: relative; overflow: hidden; border-radius: 28px; padding: clamp(16px, 3vw, 32px);
+  background: linear-gradient(140deg, var(--h-a) 0%, var(--h-b) 50%, var(--h-c) 100%);
+  border: 1px solid rgba(255,255,255,.9); box-shadow: 0 20px 50px rgba(40,90,160,.12); }
+.fav-closet::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .8;
+  background-image: radial-gradient(circle, #fff 1.6px, transparent 1.8px), radial-gradient(circle, rgba(201,173,255,.6) 1.2px, transparent 1.4px);
+  background-size: 52px 52px, 26px 26px; background-position: 0 0, 13px 13px; }
+.fav-closet > * { position: relative; }
+.fav-closet .ht { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 6px 0 14px; }
+.fav-closet .ht h2 { font-family: var(--f-display); font-size: clamp(24px, 3.6vw, 36px); margin: 0; color: var(--h-ink); }
+.fav-closet .ht h2 em { font-family: var(--f-hand); font-style: normal; color: var(--h-accent); font-size: 1.25em; }
+.fav-closet .ht span { font-family: var(--f-hand); font-size: 22px; color: var(--h-mute); }
+.fav-closet .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.fav-closet .seg button { font: 500 14px var(--f-body); border: 1px solid rgba(255,255,255,.95); background: var(--h-glass);
+  color: var(--h-ink); padding: 7px 13px; border-radius: 999px; cursor: pointer; }
+.fav-closet .seg button.on { background: linear-gradient(180deg, #b78cff, var(--h-accent)); color: #fff; border-color: transparent; }
+.fav-closet .seg button.off { opacity: .4; cursor: default; }
+.fav-closet .rail { margin-top: 30px; }
+.fav-closet .rail-h { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px 8px; }
+.fav-closet .rail-h b { font-family: var(--f-hand); font-size: 28px; color: var(--h-accent); line-height: 1; }
+.fav-closet .rail-h i { font-style: normal; font: 600 12px var(--f-body); color: var(--h-mute); background: #fff; padding: 2px 8px; border-radius: 999px; }
+/* Silver chrome rail with short upright end stops */
+.fav-closet .bar { height: 10px; border-radius: 999px; position: relative;
+  background: linear-gradient(180deg, #fff 0%, #dfe7f3 35%, #a9b6c9 60%, #e9eef6 100%);
+  box-shadow: 0 4px 10px rgba(19,50,79,.18), inset 0 1px 0 #fff; }
+.fav-closet .bar::before, .fav-closet .bar::after { content: ""; position: absolute; top: -6px; width: 8px; height: 22px; border-radius: 4px;
+  background: linear-gradient(180deg, #fff 0%, #dfe7f3 35%, #a9b6c9 60%, #e9eef6 100%); }
+.fav-closet .bar::before { left: -2px; }
+.fav-closet .bar::after { right: -2px; }
+.fav-closet .hangers { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 18px; padding-inline: 8px; }
+.fav-closet .hang { display: grid; justify-items: center; transform-origin: top center; animation: sway 5s ease-in-out infinite; }
+.fav-closet .hang:nth-child(2n) { animation-delay: -2.5s; }
+.fav-closet .hang:nth-child(3n) { animation-delay: -1.2s; }
+@keyframes sway { 0%, 100% { transform: rotate(-1.4deg); } 50% { transform: rotate(1.4deg); } }
+.fav-closet .hook { width: 58px; height: 32px; }
+.fav-closet .tagcard { background: #fff; border-radius: 20px; padding: 10px; width: 100%; display: grid; gap: 8px; margin-top: -4px;
+  box-shadow: 0 12px 26px rgba(90,50,160,.14); border: 2px solid #fff; outline: 1px solid rgba(201,173,255,.5); box-sizing: border-box; }
+.fav-closet .art { background: #fff; border-radius: 14px; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; }
+.fav-closet .art img { width: 100%; height: 100%; object-fit: contain; }
+.fav-closet .art .bp-none { color: var(--h-mute); font-size: 13px; }
+.fav-closet .tagcard h4 { font: 500 14px/1.3 var(--f-body); margin: 0; color: var(--h-ink); }
+.fav-closet .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fav-closet .pricetag { font: 700 13px var(--f-display); background: linear-gradient(180deg, #c49dff, var(--h-accent)); color: #fff;
+  padding: 4px 12px 4px 16px; border-radius: 4px 999px 999px 4px; position: relative; }
+.fav-closet .pricetag::before { content: ""; position: absolute; left: 5px; top: 50%; width: 5px; height: 5px; border-radius: 50%;
+  background: #fff; transform: translateY(-50%); }
+.fav-closet .lnk { font: 500 12px var(--f-body); color: var(--h-accent); text-decoration: none; margin-right: 8px; }
+.fav-closet .x { border: 0; background: #f3ecff; color: var(--h-accent); border-radius: 50%; width: 28px; height: 28px; cursor: pointer; flex: none; }
+.fav-closet .empty { border: 2px dashed var(--h-soft); border-radius: 20px; min-height: 120px; display: grid; place-items: center; text-align: center;
+  color: var(--h-mute); font-family: var(--f-hand); font-size: 22px; padding: 14px; margin-top: 22px; background: rgba(255,255,255,.4); }
+@media (prefers-reduced-motion: reduce) { .fav-closet .hang { animation: none; } }
