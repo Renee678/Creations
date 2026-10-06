@@ -843,3 +843,34 @@ def test_the_fitting_room_is_a_side_panel_on_wide_screens_and_a_bottom_bar_on_ph
     page.set_viewport_size({"width": 390, "height": 844})
     tray = room.bounding_box()
     assert tray["width"] > tray["height"] and tray["y"] + tray["height"] > 844 - 40, "the bottom bar on a phone"
+
+
+def test_trying_the_same_outfit_again_draws_a_new_picture(page):
+    """Renee (2026-10-06): every click on "Try it on me" renders anew; a finished picture is never handed back."""
+    if LIVE_URL:
+        pytest.skip("runs real try-ons on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    box.locator("[data-model-original]").click()
+    box.locator(".model-shot img").wait_for()
+    with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):
+        box.locator("[data-model-save]").click()
+
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    ids = []
+    for _ in range(2):
+        with page.expect_response(lambda r: r.url.endswith("/tryons") and r.request.method == "POST") as posted:
+            page.locator("#room [data-room-try]").click()
+        res = posted.value
+        assert res.status == 202, "a new render was queued, not an old one handed back"
+        ids.append(res.json()["id"])
+        page.wait_for_function("""(id) => fetch('/api/tryons/' + id).then(r => r.json()).then(t => t.status === 'done')""",
+                               arg=ids[-1], polling=500)
+        page.locator("#tryon-room .tryon-shot:not(.rendering)").first.wait_for()
+    assert ids[0] != ids[1]
+    assert page.errors == []

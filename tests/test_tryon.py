@@ -92,12 +92,28 @@ def test_the_photo_is_dropped_after_the_job(client, runtime, user, renderer):
         assert s.get(TryOn, tryon_id).photo is None
 
 
-def test_same_photo_and_outfit_is_not_paid_for_twice(client, runtime, user, renderer):
+def test_a_double_click_while_rendering_is_not_paid_for_twice(client, runtime, user, renderer):
     ids = pick(runtime, "dress")
     first = request_tryon(client, user["id"], ids)
     second = request_tryon(client, user["id"], ids)
     assert second.status_code == 200 and second.json()["id"] == first.json()["id"]
     assert runtime.tryon_queue.depth()["ready"] == 1
+
+
+def test_trying_the_same_outfit_again_draws_a_new_picture(client, runtime, user, renderer):
+    """Renee: every click on "Try it on me" renders anew; a finished picture is never handed back."""
+    ids = pick(runtime, "dress")
+    first = request_tryon(client, user["id"], ids).json()["id"]
+    assert run_next_job(runtime) == "done"
+
+    again = request_tryon(client, user["id"], ids)
+    assert again.status_code == 202 and again.json()["deduplicated"] is False
+    second = again.json()["id"]
+    assert second != first
+    assert run_next_job(runtime) == "done"
+    assert len(renderer.calls) == 2, "two renders"
+    assert client.get(f"/api/tryons/{first}").json()["status"] == "done", "the earlier picture is kept"
+    assert client.get(f"/api/tryons/{second}").json()["status"] == "done"
 
 
 def test_busy_model_is_retried(client, runtime, user, renderer, monkeypatch):

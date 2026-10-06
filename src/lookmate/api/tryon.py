@@ -118,13 +118,17 @@ async def create_tryon(
         if not data:
             raise HTTPException(400, "empty image")
 
-    # Idempotent: the same photo and outfit return the existing try-on instead of paying again.
+    # Every click draws a new picture. Only a double submit is absorbed: while the same photo and outfit
+    # are still queued or rendering, that running try-on is returned instead of paying twice.
     key = hashlib.sha256(hashlib.sha256(data).digest() + ",".join(ids).encode()).hexdigest()
     existing = db.scalar(select(TryOn).where(TryOn.user_id == user_id, TryOn.request_sha256 == key))
-    if existing is not None and existing.status != "failed":
+    if existing is not None and existing.status in ("queued", "processing"):
         return JSONResponse(tryon_out(existing) | {"deduplicated": True}, status_code=200)
-    if existing is not None:  # a failed try-on is retried, not handed back
+    if existing is not None and existing.status == "failed":  # a failed try-on is retried, not handed back
         db.delete(existing)
+        db.flush()
+    elif existing is not None:  # a finished picture stays where it is, but gives up the key to the new render
+        existing.request_sha256 = hashlib.sha256(f"{key}:{existing.id}".encode()).hexdigest()
         db.flush()
 
     if rt.tryon.renders and not take_tryon_quota(rt.redis, settings.daily_tryon_limit):
