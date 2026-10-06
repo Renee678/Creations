@@ -503,3 +503,19 @@ body.room-open { padding-bottom: 110px; }
   .bk-poster { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr); gap: 8px; }
   .bk-polaroid { width: 110px; }
 }
+
+/* Look Book: Favourites (single saved pieces, in folders) */
+.bk-fav .fav-chips { margin: 8px 0 14px; }
+.bk-fav .chip small { opacity: .7; margin-left: 2px; }
+.bk-fav .chip.empty { opacity: .4; cursor: default; }
+.fav-folder h3 { font: italic 500 22px/1.2 "Bodoni Moda", Georgia, serif; color: #3a2a22; margin: 18px 0 8px; }
+.fav-folder h3 small { font: 400 12px/1 Jost, sans-serif; color: #9a8476; letter-spacing: .1em; }
+.fav-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.fav-card { margin: 0; background: #fff; border-radius: 6px; padding: 8px; box-shadow: 0 1px 6px rgba(58,42,34,.08); }
+.fav-card img, .fav-card .bp-none { display: flex; align-items: center; justify-content: center; width: 100%;
+  aspect-ratio: 1; object-fit: contain; background: #f6f2ec; border-radius: 4px; color: #9a8476; font-size: 12px; }
+.fav-card figcaption { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; font-size: 12px; color: #3a2a22; }
+.fav-card figcaption b { font: italic 500 14px/1.25 "Bodoni Moda", Georgia, serif; }
+.fav-links { display: flex; gap: 8px; flex-wrap: wrap; }
+.fav-links a { color: var(--gel-deep); font-size: 12px; }
+.fav-card .room-add { align-self: flex-start; }

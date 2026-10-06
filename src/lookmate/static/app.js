@@ -232,7 +232,7 @@ function productCard(p, styleTags, opts = {}) {
       <span class="reasons">${(p.reasons || []).map(esc).join(" · ")}</span>
       ${shop}
       ${opts.room ? `<button type="button" class="room-add" data-room="${esc(p.id)}">+ fitting room</button>` : ""}
-      <button class="save" data-save="${esc(p.id)}" data-tags="${esc((styleTags || []).join(","))}">♡ save to lookbook</button>
+      <button class="save" data-save="${esc(p.id)}" data-tags="${esc((styleTags || []).join(","))}">♡ Save to My Style</button>
     </div></div>`;
 }
 
@@ -264,7 +264,7 @@ async function onSaveClick(e) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ product_id: b.dataset.save, style_tags: b.dataset.tags ? b.dataset.tags.split(",") : [] }),
     });
-    b.classList.add("saved"); b.textContent = "♥ saved";
+    b.classList.add("saved"); b.textContent = "Saved ♥";
   } catch (err) { setStatus(err.message, true); }
 }
 $("#results").addEventListener("click", onSaveClick);
@@ -557,12 +557,15 @@ async function loadBook() {
   const q = new URLSearchParams();
   if (moSeason) q.set("season", moSeason);
   if (moStyle) q.set("style", moStyle);
-  const [s, me, r] = await Promise.all([api(`/api/users/${userId}/style`), api(`/api/users/${userId}`), api(`/api/users/${userId}/outfits?${q}`)]);
+  const [s, me, r, fav] = await Promise.all([api(`/api/users/${userId}/style`), api(`/api/users/${userId}`),
+    api(`/api/users/${userId}/outfits?${q}`), api(`/api/users/${userId}/saved`)]);
   const chip = (attr, id, label, on) => `<button type="button" class="chip ${on ? "on" : ""}" data-${attr}="${esc(id)}">${esc(label)}</button>`;
   $("#mo-seasons").innerHTML = r.total ? chip("mo-season", "", "All seasons", !moSeason) + r.seasons.map((x) => chip("mo-season", x, SEASON_NAMES[x], moSeason === x)).join("") : "";
   $("#mo-styles").innerHTML = r.total ? chip("mo-style", "", "All styles", !moStyle) + r.styles.map((x) => chip("mo-style", x.id, x.label, moStyle === x.id)).join("") : "";
   r.outfits.forEach((o) => o.pieces.forEach((p) => lbProducts.set(p.id, p)));
-  book.pages = [{ kind: "cover", s, me, r }, { kind: "about", s }, ...r.outfits.map((o) => ({ kind: "look", o }))];
+  fav.folders.forEach((f) => f.items.forEach((p) => lbProducts.set(p.id, p)));
+  book.pages = [{ kind: "cover", s, me, r }, { kind: "about", s }, { kind: "favourites", fav },
+    ...r.outfits.map((o) => ({ kind: "look", o }))];
   renderContents();
   if (book.at >= 0) openPage(Math.min(book.at, book.pages.length - 1));
 }
@@ -570,17 +573,19 @@ async function loadBook() {
 function pageLabel(pg) {
   if (pg.kind === "cover") return ["My Look Book", "Cover"];
   if (pg.kind === "about") return ["About me", pg.s.analysis ? cap(pg.s.analysis.season_detail) : "Your report"];
+  if (pg.kind === "favourites") return ["Favourites", `${pg.fav.total} saved ${pg.fav.total === 1 ? "piece" : "pieces"}`];
   return [pg.o.title, `${SEASON_NAMES[pg.o.season] || pg.o.season} · ${pg.o.style}`];
 }
 
 function renderContents() {
   const thumbs = book.pages.map((pg, i) => {
     const [title, sub] = pageLabel(pg);
-    const img = pg.kind === "look" ? (pg.o.tryon_image || (pg.o.pieces[0] || {}).image_url) : "";
+    const img = pg.kind === "look" ? (pg.o.tryon_image || (pg.o.pieces[0] || {}).image_url)
+      : pg.kind === "favourites" ? ((pg.fav.folders.find((f) => f.count) || { items: [{}] }).items[0].image_url || "") : "";
     return `<button type="button" class="book-thumb book-thumb-${pg.kind}" data-book-open="${i}">
         ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}<b>${esc(title)}</b><small>${esc(sub)}</small></button>`;
   }).join("");
-  const empty = book.pages.length === 2 ? `<p class="muted small book-empty">No outfits here yet. Tap <strong>♡ Save to My Style</strong> on a Lookbook outfit, or mix your own in the fitting room.</p>` : "";
+  const empty = !book.pages.some((pg) => pg.kind === "look") ? `<p class="muted small book-empty">No outfits here yet. Tap <strong>♡ Save to My Style</strong> on a Lookbook outfit, or mix your own in the fitting room.</p>` : "";
   $("#book-contents").innerHTML = `<div class="book-grid">${thumbs}<button type="button" class="book-thumb book-add" data-goto="lookbook">+ Make a look<br>in Lookbook</button></div>${empty}`;
 }
 
@@ -590,7 +595,8 @@ function openPage(i) {
   if (!pg) return closeBook();
   $("#book-contents").hidden = true;
   $("#book-viewer").hidden = false;
-  $("#book-page").innerHTML = pg.kind === "cover" ? coverPage(pg) : pg.kind === "about" ? aboutPage(pg) : lookPage(pg.o);
+  $("#book-page").innerHTML = pg.kind === "cover" ? coverPage(pg) : pg.kind === "about" ? aboutPage(pg)
+    : pg.kind === "favourites" ? favouritesPage(pg) : lookPage(pg.o);
   $("#book-pager").innerHTML = book.pages.map((_, j) => `<i class="${j === i ? "on" : ""}"></i>`).join("");
   $("#book-actions").innerHTML = pg.kind === "look" ? `
       <button type="button" class="gel" data-book-rename="${pg.o.id}">✎ Rename</button>
@@ -631,6 +637,28 @@ function coverPage({ s, me, r }) {
 
 function aboutPage({ s }) {
   return `<article class="bk bk-about"><div class="bk-head"><b>About me</b><span>${esc(s.analysis ? cap(s.analysis.season_detail) : "")}</span></div>${styleReport(s)}</article>`;
+}
+
+// Favourites: single pieces saved anywhere ("♡ Save to My Style"), in folders by what they are.
+let favFolder = "";  // "" = every folder
+function favouritesPage({ fav }) {
+  const chip = (id, label, n) => `<button type="button" class="chip${favFolder === id ? " on" : ""}${n ? "" : " empty"}"
+      data-fav-folder="${id}"${n ? "" : " disabled"}>${esc(label)} <small>${n}</small></button>`;
+  const chips = chip("", "All", fav.total) + fav.folders.map((f) => chip(f.id, f.label, f.count)).join("");
+  const shown = fav.folders.filter((f) => f.count && (!favFolder || f.id === favFolder));
+  const body = shown.map((f) => `<section class="fav-folder" data-folder="${f.id}"><h3>${esc(f.label)} <small>${f.count}</small></h3>
+      <div class="fav-grid">${f.items.map(favCard).join("")}</div></section>`).join("")
+    || `<p class="muted">Nothing saved yet. Tap <strong>♡ Save to My Style</strong> on any piece in Find dupes or the Lookbook and it lands in its folder here.</p>`;
+  return `<article class="bk bk-fav"><div class="bk-head"><b>Favourites</b><span>${fav.total} ${fav.total === 1 ? "piece" : "pieces"}</span></div>
+      <div class="chips fav-chips">${chips}</div>${body}</article>`;
+}
+
+function favCard(p) {
+  const links = p.shop_links ? `<a href="${esc(p.shop_links.shein)}" target="_blank" rel="noopener">SHEIN ↗</a><a href="${esc(p.shop_links.asos)}" target="_blank" rel="noopener">ASOS ↗</a>${p.shop_links.amazon ? `<a href="${esc(p.shop_links.amazon)}" target="_blank" rel="noopener">Amazon ↗</a>` : ""}` : "";
+  return `<figure class="fav-card">${pieceImg(p)}<figcaption><b>${esc(boardLabel(p))}</b><span>$${p.price.toFixed(2)}</span>
+      <span class="fav-links">${links}</span>
+      <button type="button" class="room-add" data-room="${esc(p.id)}">+ fitting room</button>
+      <button type="button" class="linklike" data-fav-remove="${esc(p.id)}">Remove</button></figcaption></figure>`;
 }
 
 function dotsHtml(p) {
@@ -710,6 +738,13 @@ $("#my-outfits").addEventListener("click", async (e) => {
     try { await sharePageImage(o, view); } catch (err) { alert(`Could not make the image: ${err.message}`); }
     img.disabled = false; img.textContent = "⤓ Save as image";
     return;
+  }
+  const ff = e.target.closest("[data-fav-folder]");
+  if (ff) { favFolder = ff.dataset.favFolder; return openPage(book.at); }
+  const rm = e.target.closest("[data-fav-remove]");
+  if (rm) {
+    await api(`/api/users/${userId}/saved/${encodeURIComponent(rm.dataset.favRemove)}`, { method: "DELETE" }).catch(() => {});
+    return loadBook();
   }
   const del = e.target.closest("[data-book-delete]");
   if (del && confirm("Delete this look from your book?")) {

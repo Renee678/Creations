@@ -1,15 +1,16 @@
 import hashlib
+import re
 from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Look, SavedOutfit, TryOn
+from ..models import Look, SavedOutfit, StyleEvent, TryOn
 from ..services.colours import family
 from ..services.body import guide_for
 from ..services.lookbook import latest_analysis
@@ -36,6 +37,57 @@ def save_product(user_id: int, body: SaveIn, request: Request, db: Session = Dep
     record_saved(db, user_id, product, body.style_tags)
     db.commit()
     return {"saved": body.product_id}
+
+
+# ---------- favourites: single saved pieces, in folders by what they are ----------
+
+FOLDERS = [("tops", "Tops"), ("bottoms", "Bottoms"), ("dresses", "Dresses"), ("outerwear", "Outerwear"),
+           ("shoes", "Shoes"), ("bags", "Bags"), ("hats", "Hats"), ("accessories", "Accessories")]
+_FOLDER_OF = {"top": "tops", "bottom": "bottoms", "dress": "dresses", "outerwear": "outerwear",
+              "shoes": "shoes", "bag": "bags", "accessory": "accessories"}
+_HAT = re.compile(r"\b(hats?|caps?|beanies?|berets?|fedoras?|bucket hat|baseball cap|visors?|headwear)\b", re.I)
+
+
+def folder_of(product) -> str:
+    """The Favourites folder a piece goes in: its category, with hats split out of accessories."""
+    folder = _FOLDER_OF.get(product.category, "accessories")
+    if folder == "accessories" and _HAT.search(f"{product.product_type} {product.name}"):
+        return "hats"
+    return folder
+
+
+def _favourite_events(db: Session, user_id: int) -> list[StyleEvent]:
+    events = db.scalars(select(StyleEvent).where(StyleEvent.user_id == user_id, StyleEvent.kind == "saved")
+                        .order_by(StyleEvent.id.desc())).all()
+    return [e for e in events if e.attributes.get("product_id") and not e.attributes.get("from_outfit")]
+
+
+@router.get("/saved")
+def list_favourites(user_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
+    """Saved single pieces, newest first, one folder per kind of piece (empty folders included, count 0)."""
+    get_user_or_404(db, user_id)
+    catalog = request.app.state.runtime.catalog
+    items: dict[str, list] = {f: [] for f, _ in FOLDERS}
+    seen: set[str] = set()
+    for e in _favourite_events(db, user_id):
+        pid = e.attributes["product_id"]
+        product = catalog.products.get(pid)
+        if product is None or pid in seen:
+            continue
+        seen.add(pid)
+        items[folder_of(product)].append(product.to_dict())
+    return {"total": len(seen), "folders": [{"id": f, "label": label, "count": len(items[f]), "items": items[f]}
+                                            for f, label in FOLDERS]}
+
+
+@router.delete("/saved/{product_id}", status_code=204)
+def remove_favourite(user_id: int, product_id: str, db: Session = Depends(get_db)) -> Response:
+    get_user_or_404(db, user_id)
+    for e in _favourite_events(db, user_id):
+        if e.attributes["product_id"] == product_id:
+            db.delete(e)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/style")
@@ -167,8 +219,8 @@ def save_outfit(user_id: int, body: OutfitIn, request: Request, db: Session = De
                          style_id=style, source=body.source, why=(body.why or "").strip() or None,
                          occasion=body.occasion, inspo_look_id=body.inspo_look_id)
     db.add(outfit)
-    for p in products:  # each piece also teaches the style memory, like a single save
-        record_saved(db, user_id, p, [style])
+    for p in products:  # each piece also teaches the style memory, like a single save (but isn't a favourite)
+        record_saved(db, user_id, p, [style], from_outfit=True)
     db.commit()
     return JSONResponse(outfit_out(outfit, catalog), status_code=201)
 

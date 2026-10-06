@@ -26,11 +26,15 @@ def record_look(session: Session, user_id: int, analysis: LookAnalysis) -> None:
         }))
 
 
-def record_saved(session: Session, user_id: int, product, style_tags: list[str]) -> None:
-    session.add(StyleEvent(user_id=user_id, kind="saved", attributes={
+def record_saved(session: Session, user_id: int, product, style_tags: list[str], from_outfit: bool = False) -> None:
+    """A save teaches the style memory. A single piece (not one saved as part of an outfit) is also a favourite."""
+    attributes = {
         "category": product.category, "colour": product.colour.lower(), "product_id": product.id,
         "style_tags": [t for t in style_tags if t in STYLES],
-    }))
+    }
+    if from_outfit:
+        attributes["from_outfit"] = True
+    session.add(StyleEvent(user_id=user_id, kind="saved", attributes=attributes))
 
 
 def style_counts(session: Session, user_id: int) -> dict[str, Counter]:

@@ -141,3 +141,40 @@ def test_shop_photos_are_served_from_our_origin_for_saving_a_page_as_an_image(cl
         assert client.get(f"/api/products/{p.id}/photo").status_code == 404
     finally:
         del runtime.catalog.products[p.id]
+
+
+def _piece(runtime, category, words=None):
+    return next(p for p in runtime.catalog.products.values()
+                if p.category == category and (words is None or any(w in p.name.lower() for w in words)))
+
+
+def test_saved_pieces_land_in_favourite_folders_by_what_they_are(client, runtime, user):
+    """Feedback batch 14 #4: My Style keeps single saved pieces in folders (Tops, Bottoms, ... Hats)."""
+    from lookmate.api.style import FOLDERS, folder_of
+    from lookmate.catalog.service import ProductView
+
+    uid = user["id"]
+    top, shoes = _piece(runtime, "top"), _piece(runtime, "shoes")
+    for p in (top, shoes, top):  # saving twice keeps one card
+        assert client.post(f"/api/users/{uid}/saved", json={"product_id": p.id, "style_tags": ["old_money"]}).status_code == 201
+    bottom, dress = _piece(runtime, "bottom"), _piece(runtime, "dress")
+    client.post(f"/api/users/{uid}/outfits", json={"product_ids": [bottom.id, dress.id]})  # an outfit, not favourites
+
+    fav = client.get(f"/api/users/{uid}/saved").json()
+    folders = {f["id"]: f for f in fav["folders"]}
+    assert [f["id"] for f in fav["folders"]] == [f for f, _ in FOLDERS] and fav["total"] == 2
+    assert [i["id"] for i in folders["tops"]["items"]] == [top.id] and folders["tops"]["count"] == 1
+    assert [i["id"] for i in folders["shoes"]["items"]] == [shoes.id]
+    assert folders["bottoms"]["count"] == 0 and folders["dresses"]["count"] == 0, "outfit pieces stay in the outfit"
+    assert folders["tops"]["items"][0]["shop_links"]["shein"]
+
+    style = client.get(f"/api/users/{uid}/style").json()
+    assert style, "saves still teach the style memory"
+
+    assert client.delete(f"/api/users/{uid}/saved/{top.id}").status_code == 204
+    assert client.get(f"/api/users/{uid}/saved").json()["folders"][0]["count"] == 0
+
+    hat = ProductView("x1", "Wool bucket hat", "Hats", "accessory", "beige", "", "", 12.0)
+    belt = ProductView("x2", "Leather belt", "Belts", "accessory", "black", "", "", 12.0)
+    cardigan = ProductView("x3", "Cropped cardigan", "Cardigans", "top", "cream", "", "", 12.0)
+    assert (folder_of(hat), folder_of(belt), folder_of(cardigan)) == ("hats", "accessories", "tops")

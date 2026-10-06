@@ -226,21 +226,24 @@ def test_a_saved_outfit_becomes_a_look_book_page(page):
     page.wait_for_function("document.querySelector('#lb-sections .save-outfit').textContent.includes('Saved')")
 
     tab(page, "style")
-    look = page.locator("#book-contents [data-book-open='2']")
+    look = page.locator("#book-contents [data-book-open='3']")
     look.wait_for()
     assert page.locator("#book-contents .book-thumb-cover").count() == 1, "page 1 is the cover"
     assert page.locator("#book-contents .book-thumb-about").count() == 1, "page 2 is About me"
+    assert page.locator("#book-contents [data-book-open='2'].book-thumb-favourites").count() == 1, "then Favourites"
     look.click()
     page.locator("#book-page .bk-look").wait_for()
     assert first["title"] in page.locator("#book-page").inner_text(), "the saved outfit's own page"
     assert page.locator("#book-page .bk-it img, #book-page .bk-it .bp-none").count() == len(first["pieces"])
 
     page.locator("[data-book-step='-1']").click()
+    page.locator("#book-page .bk-fav").wait_for()
+    page.locator("[data-book-step='-1']").click()
     page.locator("#book-page .bk-about #style-report").wait_for()
     page.locator("[data-book-step='-1']").click()
     page.locator("#book-page .bk-cover").wait_for()
-    page.keyboard.press("ArrowRight")
-    page.keyboard.press("ArrowRight")
+    for _ in range(3):
+        page.keyboard.press("ArrowRight")
     page.locator("#book-page .bk-look").wait_for()
 
     # Coordinator, 2026-10-05: a page goes out as a 3:4 image for Xiaohongshu.
@@ -253,7 +256,7 @@ def test_a_saved_outfit_becomes_a_look_book_page(page):
 
     with page.expect_response(lambda r: "/outfits/" in r.url and r.request.method == "DELETE"):
         page.locator("[data-book-delete]").click()
-    page.wait_for_function("!document.querySelector('#book-contents [data-book-open=\"2\"]')")
+    page.wait_for_function("!document.querySelector('#book-contents .book-thumb-look')")
     assert not page.errors, page.errors
 
 
@@ -317,4 +320,36 @@ def test_price_range_is_one_slider_filled_only_between_the_thumbs(page):
             fill = b.locator(".pr-fill").bounding_box()
             assert abs(fill["x"] - centre(low)) < 2, f"nothing filled left of the low thumb (at ${low})"
             assert abs(fill["x"] + fill["width"] - centre(high)) < 2, "and the fill ends at the high thumb"
+    assert not page.errors, page.errors
+
+
+def test_a_piece_saved_in_find_dupes_appears_in_its_my_style_folder(page):
+    """Feedback batch 14 #3/#4: "♡ Save to My Style" on a dupe puts it in My Style → Favourites, in its folder."""
+    from lookmate.api.style import FOLDERS, folder_of
+
+    pick = None
+    for shot in outfit_photos():
+        result = find_dupes(page, shot)
+        pick = next((p for s in result["sections"] for p in s["picks"] if p["category"] == "top"), None) \
+            or next((p for s in result["sections"] for p in s["picks"]), None)
+        if pick:
+            break
+    assert pick, "no dupes at all to save"
+    button = page.locator(f"#results button[data-save='{pick['id']}']").first
+    assert button.inner_text().strip() == "♡ Save to My Style"
+    with page.expect_response(lambda r: r.url.endswith("/saved") and r.request.method == "POST"):
+        button.click()
+    assert button.inner_text().strip() == "Saved ♥"
+
+    folder = folder_of(SimpleNamespace(**pick))
+    label = dict(FOLDERS)[folder]
+    tab(page, "style")
+    page.locator("#book-contents .book-thumb-favourites").click()
+    section = page.locator(f"#book-page .fav-folder[data-folder='{folder}']")
+    section.wait_for()
+    assert label in section.locator("h3").inner_text()
+    assert section.locator(f"[data-fav-remove='{pick['id']}']").count() == 1, f"saved piece is not under {label}"
+    with page.expect_response(lambda r: "/saved/" in r.url and r.request.method == "DELETE"):
+        section.locator(f"[data-fav-remove='{pick['id']}']").click()
+    page.wait_for_function(f"!document.querySelector(\"[data-fav-remove='{pick['id']}']\")")
     assert not page.errors, page.errors
