@@ -1,0 +1,7 @@
+image,category,subtype,colour,length,pattern,partial,notes
+example-cardigan-trousers.png,top,cardigan,beige,,no,no,"Synthetic offline example: FakeVision reads this file as a beige cardigan look. Replace with real photos."
+example-cardigan-trousers.png,bottom,trousers,white,,no,no,Synthetic offline example
+example-cardigan-trousers.png,shoes,heels,black,,,,Synthetic offline example
+example-blouse-mini-skirt.png,top,shirt,pink,,no,no,"Synthetic offline example: a blouse counts as subtype shirt"
+example-blouse-mini-skirt.png,bottom,skirt,white,mini,no,no,Synthetic offline example
+example-blouse-mini-skirt.png,bag,,black,,,,"Synthetic offline example: deliberately not in the photo, so it shows up as a miss"

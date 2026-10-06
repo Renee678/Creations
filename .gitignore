@@ -10,3 +10,7 @@ test-results/
 # Your own photos for live end-to-end runs stay on your computer
 tests/e2e/photos/*
 !tests/e2e/photos/README.md
+# Eval photos stay on your computer (screenshots belong to their owners); the two synthetic examples are tracked.
+evals/photos/*
+!evals/photos/example-*.png
+evals/out/

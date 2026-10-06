@@ -128,4 +128,6 @@ the stylist on the live server.
 - **Deterministic where possible.** Prices, fit guidance, ranking and the style profile are rule-based, so
   their behaviour can be tested exactly. The LLM perceives (photos, trends) and, for lookbooks, only
   chooses among candidates the rules already scored, with a rule-based fallback.
-- **TODO(Renee):** results of the image evaluation set (category recall, look-alike relevance) once it has run.
+- **TODO(Renee):** results of the image evaluation set (category recall, attribute accuracy, dupes precision,
+  latency): add photos and labels as in `evals/README.md`, run `python scripts/run_eval.py`, and paste
+  `evals/results.md` here.
