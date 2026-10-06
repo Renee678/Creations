@@ -33,3 +33,17 @@ def test_fit_adjustment_rewards_flattering_cuts_and_penalises_others():
     assert fit_adjustment("pear", "bottom", "High-waisted wide-leg trousers") > 0
     assert fit_adjustment("pear", "bottom", "Low-rise skinny jeans") < 0
     assert fit_adjustment("unsure", "bottom", "Low-rise skinny jeans") == 0
+
+
+def test_the_default_budget_per_item_is_50_and_a_saved_one_is_kept(client):
+    """Renee (2026-10-06): $30 left almost nothing once the price range became a hard filter."""
+    from lookmate.services.ranking import UserContext
+
+    assert UserContext().budget_per_item == 50
+    no_budget = {k: v for k, v in PROFILE.items() if k != "budget_per_item"}
+    uid = client.post("/api/users", json=no_budget).json()["id"]
+    assert client.get(f"/api/users/{uid}").json()["budget_per_item"] == 50
+    lb = client.get(f"/api/users/{uid}/lookbook").json()
+    assert lb["price_range"] == {"low": 0, "high": 75}, "up to 1.5x the $50 default"
+    saved = client.post("/api/users", json=PROFILE).json()
+    assert saved["budget_per_item"] == 30, "a budget the user chose stays theirs"

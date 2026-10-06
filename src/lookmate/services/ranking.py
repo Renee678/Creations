@@ -42,7 +42,7 @@ STYLE_KEYWORDS = {
 @dataclass(frozen=True)
 class UserContext:
     body_shape: str = "unsure"
-    budget_per_item: float = 30.0
+    budget_per_item: float = 50.0
     style_weights: dict[str, float] = field(default_factory=dict)  # label -> 0..1 from profile + memory
 
 

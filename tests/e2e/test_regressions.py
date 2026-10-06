@@ -992,3 +992,14 @@ def test_nothing_outside_the_price_range_is_ever_shown(page):
         page.locator("#lb-sections .outfit-missing").first.wait_for()
         assert page.locator("#lb-sections .outfit-missing").first.inner_text().startswith(f"Nothing in $0–${lb_high} for the ")
     assert not page.errors, page.errors
+
+
+def test_the_profile_form_starts_at_a_50_dollar_budget(browser, base_url):
+    """Renee (2026-10-06): a new shopper's budget per item starts at $50, not $30."""
+    context = browser.new_context(base_url=base_url, service_workers="block")
+    pg = context.new_page()
+    pg.goto("/")
+    field = pg.locator("#profile-form [name=budget_per_item]")
+    field.wait_for()
+    assert field.input_value() == "50"
+    context.close()
