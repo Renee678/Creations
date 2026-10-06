@@ -164,6 +164,7 @@ class ReplicateTryOn:
 
 
 NANO_BANANA = "google/nano-banana"
+NANO_BANANA_PRO = "google/nano-banana-pro"
 NANO_BANANA_PROMPT = """Edit the first image, a photo of a person. Change only their clothes: dress them in {pieces},
 replacing what they are wearing now, and keep each piece's colour, pattern, fabric and cut.
 Everything else stays exactly as in the first photo: the same face, hair, skin tone, head size, height, body
@@ -182,15 +183,21 @@ Do not slim, reshape or beautify the body: no thinner waist, longer legs, smalle
 retouched face. The result must look like this person on an ordinary day, just in basics against a plain wall."""
 
 
-def model_prompt(height_cm: float | None = None, weight_kg: float | None = None) -> str:
-    """The "My model" prompt, with the profile's height and weight as hints for the body's real size."""
+MODEL_FACE_LINE = """Image 2 is a close-up of the same person's face: the face in the result must match it exactly
+(eyes, nose, mouth, face shape, skin tone). Do not beautify or change it."""
+
+
+def model_prompt(height_cm: float | None = None, weight_kg: float | None = None, face: bool = False) -> str:
+    """The "My model" prompt, with the profile's height and weight as hints for the body's real size, and
+    with `face`, a line about the face close-up sent as image 2."""
     hints = []
     if height_cm:
         hints.append(f"{height_cm:g} cm tall")
     if weight_kg:
         hints.append(f"{weight_kg:g} kg")
     size = f"For reference they are {' and '.join(hints)}; draw that build as it is." if hints else ""
-    return "\n".join(line.rstrip() for line in MODEL_PROMPT.format(size=size).splitlines())
+    prompt = "\n".join(line.rstrip() for line in MODEL_PROMPT.format(size=size).splitlines())
+    return f"{prompt}\n{MODEL_FACE_LINE}" if face else prompt
 
 
 FACE_REFERENCE = """Image 2 is a close-up of this same person's face and hair: the face, hairstyle and hair length
@@ -250,11 +257,12 @@ class NanoBananaTryOn(ReplicateTryOn):
         return self.dress_outfit(person, media_type, [garment])
 
     def make_model(self, person: bytes, media_type: str, height_cm: float | None = None,
-                   weight_kg: float | None = None) -> tuple[bytes, str]:
-        """"My model": the same person, standing front-on in plain basics on a grey studio background."""
+                   weight_kg: float | None = None, face: tuple[bytes, str] | None = None) -> tuple[bytes, str]:
+        """"My model": the same person, standing front-on in plain basics on a grey studio background.
+        `face`: an optional close-up of the face the user uploaded, sent as image 2."""
         body = {"input": {
-            "prompt": model_prompt(height_cm, weight_kg),
-            "image_input": [self._file_input(person, media_type)],
+            "prompt": model_prompt(height_cm, weight_kg, face=face is not None),
+            "image_input": [self._file_input(person, media_type)] + ([self._file_input(*face)] if face else []),
             "aspect_ratio": "3:4",  # a standing full-body frame, whatever the upload's crop
             "output_format": "jpg",
         }}
@@ -323,9 +331,32 @@ class FashnTryOn:
         return img.content, img.headers.get("content-type", "image/jpeg").split(";")[0]
 
 
-def make_model_maker(token: str):
-    """Who draws "My model": Nano Banana with a Replicate token, else nobody (the photo is saved as it is)."""
-    return NanoBananaTryOn(token) if token else None
+class ModelMaker:
+    """Draws "My model" with the better model (Nano Banana Pro by default: once per user, so worth its cost),
+    falling back to plain Nano Banana if that call fails."""
+
+    def __init__(self, token: str, model: str = NANO_BANANA_PRO, fallback: str = NANO_BANANA,
+                 http: httpx.Client | None = None):
+        self.primary = NanoBananaTryOn(token, model, http=http)
+        self.fallback = NanoBananaTryOn(token, fallback, http=http) if fallback and fallback != model else None
+        self.name = model
+
+    def make_model(self, person: bytes, media_type: str, height_cm: float | None = None,
+                   weight_kg: float | None = None, face: tuple[bytes, str] | None = None) -> tuple[bytes, str, str]:
+        """(image, media type, the model that drew it)."""
+        try:
+            return (*self.primary.make_model(person, media_type, height_cm, weight_kg, face), self.primary.model)
+        except TryOnError as e:
+            if self.fallback is None:
+                raise
+            log.warning("my model: %s failed (%s); trying %s", self.primary.model, e, self.fallback.model)
+            return (*self.fallback.make_model(person, media_type, height_cm, weight_kg, face), self.fallback.model)
+
+
+def make_model_maker(token: str, model: str = NANO_BANANA_PRO):
+    """Who draws "My model": Nano Banana Pro (falling back to Nano Banana) with a Replicate token, else nobody
+    (the photo is then saved as it is)."""
+    return ModelMaker(token, model) if token else None
 
 
 def make_tryon(token: str, model: str = NANO_BANANA, fashn_key: str = ""):

@@ -75,14 +75,18 @@ def process_model(rt: Runtime, model_id: str) -> str:
         session.commit()
         user = session.get(User, rec.user_id)
         started = time.monotonic()
+        face = {"face": (rec.face_photo, rec.face_media_type or "image/jpeg")} if rec.face_photo else {}
         out = _call_llm(rt, session, rec, job, lambda: rt.model_maker.make_model(
-            rec.photo, rec.media_type, user.height_cm if user else None, user.weight_kg if user else None))
+            rec.photo, rec.media_type, user.height_cm if user else None, user.weight_kg if user else None, **face))
         if out is None:
             return rec.status
-        rec.result_image, rec.result_media_type = out
+        # The model-maker says which model drew it (Pro, or the fallback); a simpler one returns two values.
+        image, media_type, used = (*out, rt.model_maker.name)[:3]
+        rec.result_image, rec.result_media_type = image, media_type
         model_ms = round((time.monotonic() - started) * 1000)
         _finish(session, rec, "done", result={
-            "generated": True, "note": None, "model": rt.model_maker.name, "timings_ms": {"model_ms": model_ms},
+            "generated": True, "note": None, "model": used, "face_photo": bool(face),
+            "timings_ms": {"model_ms": model_ms},
         })
         rt.queue.ack(job)
         log.info("my model %s done in %s ms", model_id, model_ms)
@@ -308,8 +312,10 @@ def _finish(session, rec, status: str, result: dict | None = None, error: str | 
     # Drop the photos as soon as we're done with them.
     if isinstance(rec, Look):
         rec.image = None
-    elif isinstance(rec, (TryOn, BodyModel)):
+    elif isinstance(rec, TryOn):
         rec.photo = None
+    elif isinstance(rec, BodyModel):
+        rec.photo = rec.face_photo = None
     else:
         rec.photos = None
     rec.finished_at = utcnow()

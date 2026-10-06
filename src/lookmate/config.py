@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     replicate_api_token: str = ""
     fashn_api_key: str = ""        # preferred try-on model when set: warm, seconds per garment
     tryon_model: str = "google/nano-banana"  # or "cuuupid/idm-vton" (cheaper, slow cold starts)
+    model_gen_model: str = "google/nano-banana-pro"  # draws "My model" once per user: the best at keeping a face
     daily_tryon_limit: int = 30    # rendered try-ons per UTC day across all users (0 = unlimited)
 
     # Cost guardrails for a public deployment.

@@ -12,7 +12,7 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 | **Personal lookbook** | 1-3 photos of you → colour season, palette, face shape, hair and makeup ideas → complete outfits for this season (or the next) or per occasion (work, weekend, date night, party, vacation), curated by an AI stylist with a one-line "why it works" |
 | **Make it mine** | In the Lookbook, start from a vibe ("quiet luxury autumn") or an inspiration photo: each piece is rebuilt in your colours and budget, shown as "original → your version" with the reason (e.g. camel → charcoal for a cool winter) |
 | **Virtual try-on** | Mix pieces from any lookbook outfit in the fitting room and "Try it on me" renders them on your own full-body photo (Nano Banana on Replicate by default); without a token it shows a collage of you next to the pieces |
-| **My model** | In Profile (or at the first try-on), one full-body photo becomes a standing base figure of you: same face, skin tone, hair and real proportions, in a white tank, denim shorts and sneakers on a grey studio background. One Nano Banana call, told your height and weight and told not to slim or beautify. It is saved on the server, so it works on every device, and every try-on dresses it. Without a Replicate token your photo is saved as it is |
+| **My model** | In Profile (or at the first try-on), one full-body photo becomes a standing base figure of you: same face, skin tone, hair and real proportions, in a white tank, denim shorts and sneakers on a grey studio background. One Nano Banana Pro call (plain Nano Banana if Pro fails), told your height and weight and told not to slim or beautify; an optional face close-up makes the face more like you. It is saved on the server, so it works on every device, and every try-on dresses it. Without a Replicate token your photo is saved as it is |
 | **Outfit boards** | Every lookbook outfit is shown as a flat-lay board (each piece placed and labelled, Xiaohongshu style). Save it, or a mix from the fitting room, to **My outfits** in My Style, filtered by season and style |
 | **Style memory** | Every upload and save updates your style profile, which feeds back into ranking |
 | **Profile & fit** | Height, weight, age, body shape, preferred styles, budget → rule-based fit guidance |
@@ -173,6 +173,7 @@ adds its own `AMAZON_MAX_ITEMS` on top:
 | `AMAZON_MAX_ITEMS` | `40000` | Products from the Amazon source, on top of `CATALOG_SIZE` |
 | `REPLICATE_API_TOKEN` | empty | Rendered try-on and "My model" on Replicate; empty (and no FASHN key) shows a collage preview, and My model keeps the uploaded photo |
 | `TRYON_MODEL` | `google/nano-banana` | Replicate try-on model: Nano Banana (warm, one call per outfit), `google/nano-banana-pro` (better at keeping the face, slower and dearer) or `cuuupid/idm-vton` (cheaper, slow cold starts) |
+| `MODEL_GEN_MODEL` | `google/nano-banana-pro` | Draws "My model" (once per user, so the better model): falls back to `google/nano-banana` if it fails |
 | `FASHN_API_KEY` | empty | Use FASHN's specialist try-on API instead (seconds per garment, about $0.075 an image) |
 | `DAILY_TRYON_LIMIT` | `30` | Global cap on rendered try-ons per UTC day; `0` disables it |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |

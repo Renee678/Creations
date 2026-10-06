@@ -175,6 +175,8 @@ class BodyModel(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     media_type: Mapped[str] = mapped_column(String(30))
     photo: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # the upload, until the job ends
+    face_photo: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # optional face close-up, likewise
+    face_media_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="queued")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -114,7 +114,7 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
         data_dir=data_dir,
         tryon=make_tryon(settings.replicate_api_token, settings.tryon_model, settings.fashn_api_key),
         tryon_queue=JobQueue(client, TRYON_QUEUE),
-        model_maker=make_model_maker(settings.replicate_api_token),
+        model_maker=make_model_maker(settings.replicate_api_token, settings.model_gen_model),
         catalog_version=version,
     )
     rt.catalog_import["pending"] = stale  # configured catalog not in the table yet

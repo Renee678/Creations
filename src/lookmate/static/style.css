@@ -622,3 +622,5 @@ body.room-open { padding-bottom: 110px; }
   .room-actions > button, .room-actions > .room-need { order: 1; width: 100%; text-align: center; }
   .room-actions > button[data-room-clear] { order: 2; }
 }
+.model-face { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; font-size: 13px; }
+.model-face img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; }

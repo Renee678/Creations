@@ -76,7 +76,7 @@ def test_nano_banana_draws_the_model_in_one_call(monkeypatch):
 
 def test_only_a_replicate_token_makes_a_model_maker():
     assert make_model_maker("") is None
-    assert make_model_maker("rep-token").name == "nano-banana"
+    assert make_model_maker("rep-token").name == "google/nano-banana-pro", "Pro draws My model by default"
 
 
 def test_without_a_token_the_photo_is_saved_as_it_is(client, runtime, user):
@@ -192,3 +192,84 @@ def test_a_try_on_on_my_model_is_the_outfit_pages_on_me_photo(client, runtime, u
                                                                    "style_id": "old_money", "source": "lookbook"}).json()
     page = client.get(f"/api/users/{user['id']}/outfits").json()["outfits"][0]
     assert page["id"] == outfit["id"] and page["tryon_image"] == f"/api/tryons/{tryon['id']}/image"
+
+
+def _replicate(handler_for_model):
+    """A Replicate stand-in: `handler_for_model(model, body)` answers each prediction request."""
+    sent = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path.endswith("/predictions"):
+            model = req.url.path.removeprefix("/v1/models/").removesuffix("/predictions")
+            body = json.loads(req.content)["input"]
+            sent.append((model, body))
+            return handler_for_model(model, body)
+        return httpx.Response(200, content=b"JPG", headers={"content-type": "image/jpeg"})
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), sent
+
+
+def _done(model, body):
+    return httpx.Response(201, json={"id": "m", "status": "succeeded", "output": "https://replicate.delivery/m.jpg",
+                                     "urls": {"get": "", "cancel": ""}})
+
+
+def test_my_model_is_drawn_by_nano_banana_pro_and_falls_back_on_error(monkeypatch):
+    from lookmate.tryon.client import ModelMaker
+
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    http, sent = _replicate(_done)
+    assert ModelMaker("t", http=http).make_model(b"me", "image/jpeg", 165, 55) == (b"JPG", "image/jpeg",
+                                                                                  "google/nano-banana-pro")
+    assert [m for m, _ in sent] == ["google/nano-banana-pro"]
+
+    http, sent = _replicate(lambda model, body: httpx.Response(422, json={"detail": "bad"}) if model.endswith("pro")
+                            else _done(model, body))
+    out = ModelMaker("t", http=http).make_model(b"me", "image/jpeg", 165, 55)
+    assert out[2] == "google/nano-banana" and [m for m, _ in sent] == ["google/nano-banana-pro", "google/nano-banana"]
+
+    http, _ = _replicate(lambda model, body: httpx.Response(422, json={}))
+    with pytest.raises(TryOnError):
+        ModelMaker("t", http=http).make_model(b"me", "image/jpeg")
+
+
+def test_the_face_close_up_goes_in_only_when_uploaded(monkeypatch):
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    http, sent = _replicate(_done)
+    nano = NanoBananaTryOn("t", "google/nano-banana-pro", http=http)
+    nano.make_model(b"me", "image/jpeg", 165, 55, face=(b"face", "image/png"))
+    nano.make_model(b"me", "image/jpeg", 165, 55)
+    (_, with_face), (_, without) = sent
+    assert len(with_face["image_input"]) == 2 and with_face["image_input"][1].startswith("data:image/png")
+    assert "Image 2 is a close-up of the same person's face" in with_face["prompt"]
+    assert "Do not beautify or change it." in with_face["prompt"]
+    assert len(without["image_input"]) == 1 and "Image 2" not in without["prompt"]
+
+
+def test_both_uploads_go_to_the_model_maker_and_are_deleted_after(client, runtime, user, monkeypatch):
+    from lookmate.db import SessionLocal
+    from lookmate.models import BodyModel
+
+    faces = []
+
+    class WithFace(FakeModelMaker):
+        def make_model(self, person, media_type, height_cm=None, weight_kg=None, face=None):
+            faces.append(face)
+            return b"MODEL:" + person, "image/jpeg", "google/nano-banana-pro"
+
+    monkeypatch.setattr(runtime, "model_maker", WithFace())
+    res = client.post(f"/api/users/{user['id']}/model", data={"original": "false"},
+                      files={"photo": ("me.jpg", PHOTO, "image/jpeg"), "face": ("face.png", b"\x89PNGface", "image/png")})
+    mid = res.json()["id"]
+    run_next_job(runtime)
+    assert faces == [(b"\x89PNGface", "image/png")]
+    with SessionLocal() as s:
+        rec = s.get(BodyModel, mid)
+        assert rec.photo is None and rec.face_photo is None, "neither upload is kept"
+        assert rec.result["model"] == "google/nano-banana-pro" and rec.result["face_photo"] is True
+
+
+def test_without_a_face_upload_the_model_maker_is_called_as_before(client, runtime, user, maker):
+    mid = create(client, user["id"]).json()["id"]  # FakeModelMaker takes no face argument
+    assert run_next_job(runtime) == "done"
+    assert client.get(f"/api/body-models/{mid}").json()["generated"] is True

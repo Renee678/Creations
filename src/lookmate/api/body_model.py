@@ -48,20 +48,19 @@ async def create_model(
     user_id: int,
     request: Request,
     photo: UploadFile = File(...),
+    face: UploadFile | None = File(None),
     original: bool = Form(False),
     x_access_code: str = Header(default=""),
     db: Session = Depends(get_db),
 ):
-    """Start a model from one full-body photo. `original=true` keeps the photo as it is instead."""
+    """Start a model from one full-body photo (and optionally a face close-up, for a closer likeness).
+    `original=true` keeps the photo as it is instead."""
     settings = get_settings()
     rt = request.app.state.runtime
     require_access_code(x_access_code)
     get_user_or_404(db, user_id)
-    if photo.content_type not in ALLOWED_MEDIA_TYPES - {"image/gif"}:
-        raise HTTPException(415, "use a JPEG, PNG or WebP photo")
-    data = await photo.read(settings.max_upload_bytes + 1)
-    if not data or len(data) > settings.max_upload_bytes:
-        raise HTTPException(413 if data else 400, "use a photo under 8 MB")
+    data = await _read_photo(photo, settings.max_upload_bytes)
+    face_data = await _read_photo(face, settings.max_upload_bytes) if face is not None and face.filename else None
 
     # Drafts nobody saved go; the saved model stays until a new one is saved over it.
     db.execute(delete(BodyModel).where(BodyModel.user_id == user_id, BodyModel.saved.is_(False),
@@ -78,10 +77,21 @@ async def create_model(
     if not take_tryon_quota(rt.redis, settings.daily_tryon_limit):
         raise HTTPException(429, "Today's try-on quota is used up. Please come back tomorrow.")
     rec.photo = data
+    if face_data:  # optional: a clear close-up of the face, dropped with the photo when the job ends
+        rec.face_photo, rec.face_media_type = face_data, face.content_type
     db.add(rec)
     db.commit()
     rt.tryon_queue.enqueue(model_job(rec.id))
     return JSONResponse(model_out(rec), status_code=202)
+
+
+async def _read_photo(upload: UploadFile, limit: int) -> bytes:
+    if upload.content_type not in ALLOWED_MEDIA_TYPES - {"image/gif"}:
+        raise HTTPException(415, "use a JPEG, PNG or WebP photo")
+    data = await upload.read(limit + 1)
+    if not data or len(data) > limit:
+        raise HTTPException(413 if data else 400, "use a photo under 8 MB")
+    return data
 
 
 @router.get("/api/users/{user_id}/model")

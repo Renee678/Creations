@@ -437,11 +437,23 @@ def test_my_model_is_made_in_profile_and_dresses_every_try_on(page):
     tab(page, "profile")
     box = page.locator("#my-model")
     assert box.is_visible() and box.locator("[data-model-create]").count() == 0, "nothing to create before a photo"
+    # Feedback #37: an optional face close-up makes the face more like her; it goes with the full-body photo.
+    face = box.locator(".model-face")
+    assert "A clear photo of your face" in face.inner_text() and "optional" in face.inner_text()
+    with page.expect_file_chooser() as fc:
+        face.locator("[data-model-face-pick]").click()
+    fc.value.set_files(photo("selfie", RED))
+    face.locator("img").wait_for()
     with page.expect_file_chooser() as fc:
         box.locator("[data-model-pick]").click()
     fc.value.set_files(photo("fullbody", BLUE))
+    sent = []
+    page.route("**/api/users/*/model", lambda route: (sent.append(route.request.post_data_buffer or b""),
+                                                      route.continue_()))
     box.locator("[data-model-create]").click()
     box.locator(".model-shot img").wait_for()
+    page.unroute("**/api/users/*/model")
+    assert b'name="face"' in sent[0] and b'name="photo"' in sent[0], "both photos are sent"
     assert "REPLICATE_API_TOKEN" in box.locator(".model-note").inner_text(), "the fallback says why"
     assert box.locator("[data-model-original]").count() == 0, "a saved-as-is photo has no 'use original'"
     with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):

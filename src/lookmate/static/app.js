@@ -90,6 +90,7 @@ $("#profile-form").addEventListener("submit", async (e) => {
 let myModel = null;       // the saved model: { id, image_url, generated, note }
 let modelDraft = null;    // a model being made, or made and not saved yet
 let modelFile = null;     // the photo it was made from, for "Try again" and "Use my original photo instead"
+let modelFace = null;     // optional close-up of the face, for a closer likeness
 let modelErr = "";
 let modelOnboarding = false;  // just signed up: offered as a step that can be skipped
 let modelForTryOn = null;     // the try-on waiting for a model (set when the fitting room offers the step)
@@ -127,8 +128,14 @@ function modelHtml(where) {
       <button type="button" class="linklike" data-model-delete>Delete my model</button></div>`;
   }
   const preview = modelFile ? `<figure class="model-shot"><img src="${URL.createObjectURL(modelFile)}" alt="Your photo"></figure>` : "";
+  const face = `<div class="model-face">
+      ${modelFace ? `<img src="${URL.createObjectURL(modelFace)}" alt="Your face">` : ""}
+      <div><b>A clear photo of your face</b> <span class="muted small">(optional, makes the face more like you)</span><br>
+      <button type="button" class="linklike" data-model-face-pick>${modelFace ? "Choose another" : "Add a face photo"}</button>
+      ${modelFace ? ` · <button type="button" class="linklike" data-model-face-clear>remove</button>` : ""}</div></div>`;
   return `${preview}${modelErr ? `<p class="status error">${esc(modelErr)}</p>` : ""}
-    <p class="muted small">Standing, facing the camera, head to toe. Your photo is deleted once the model is made.</p>
+    <p class="muted small">Standing, facing the camera, head to toe. Your photos are deleted once the model is made.</p>
+    ${face}
     <div class="model-actions"><button type="button" class="gel${modelFile ? "" : " primary"}" data-model-pick>${modelFile ? "Choose another photo" : "Choose a full-body photo"}</button>
     ${modelFile ? `<button type="button" class="gel primary" data-model-create>Create my model</button>` : ""} ${skip}</div>`;
 }
@@ -145,6 +152,7 @@ async function createModel(original = false) {
   renderModel();
   const form = new FormData();
   form.append("photo", modelFile, "me.jpg");
+  if (modelFace && !original) form.append("face", modelFace, "face.jpg");
   form.append("original", original ? "true" : "false");
   try {
     modelDraft = await api(`/api/users/${userId}/model`, { method: "POST", body: form, headers: { "X-Access-Code": accessCode() } });
@@ -158,10 +166,12 @@ async function createModel(original = false) {
 }
 
 async function onModelClick(e) {
-  const b = e.target.closest("[data-model-pick], [data-model-create], [data-model-original], [data-model-save], [data-model-delete], [data-model-skip]");
+  const b = e.target.closest("[data-model-pick], [data-model-face-pick], [data-model-face-clear], [data-model-create], [data-model-original], [data-model-save], [data-model-delete], [data-model-skip]");
   if (!b) return;
   const d = b.dataset;
   if ("modelPick" in d) return $("#model-file").click();
+  if ("modelFacePick" in d) return $("#model-face-file").click();
+  if ("modelFaceClear" in d) { modelFace = null; return renderModel(); }
   if ("modelCreate" in d) return createModel(false);
   if ("modelOriginal" in d) return createModel(true);
   if ("modelDelete" in d) {
@@ -172,7 +182,7 @@ async function onModelClick(e) {
   if ("modelSave" in d) {
     try { myModel = await api(`/api/body-models/${modelDraft.id}/save`, { method: "POST" }); }
     catch (err) { modelErr = err.message; return renderModel(); }
-    modelDraft = null; modelFile = null;
+    modelDraft = null; modelFile = null; modelFace = null;
     renderModel(); renderRoom();
   }
   // Saved or skipped, carry on where the step was offered: the app after sign-up, or the try-on.
@@ -185,6 +195,14 @@ async function onModelClick(e) {
   }
 }
 document.addEventListener("click", onModelClick);
+
+$("#model-face-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  modelFace = await shrinkPhoto(file, 1024);
+  renderModel();
+});
 
 $("#model-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
