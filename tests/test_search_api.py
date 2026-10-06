@@ -157,7 +157,8 @@ def test_outfits_show_as_boards_and_can_be_saved_to_my_style(client):
     assert 'id="my-outfits"' in html and 'id="mo-seasons"' in html and 'id="mo-styles"' in html
     app_js = client.get("/static/app.js").text
     card = app_js.split("function outfitCard")[1].split("\n}\n")[0]
-    assert "pieceRowHtml(o.pieces)" in card and "saveButton(" in card, "a lookbook outfit is a row of pieces you can save"
+    assert "productCard(p" in card and "saveButton(" in card, "a lookbook outfit is a row of shop cards you can save"
+    assert "pieceRowHtml" not in card and "<details" not in card, "each piece shows once"
     assert 'source: "fitting_room"' in app_js, "a mix from the fitting room can be saved too"
     assert "loadBook()" in app_js and "♡ Save to My Style" in app_js
 

@@ -649,10 +649,12 @@ function flatLayHtml(pieces, { book = false } = {}) {
 
 // Lookbook tab (Renee, feedback #36): an outfit's pieces in one plain row, outer layer first, accessories last.
 const ROW_ORDER = ["outerwear", "top", "dress", "bottom", "shoes", "bag", "accessory"];
-function pieceRowHtml(pieces) {
+const inRowOrder = (pieces) => {
   const rank = (p) => (ROW_ORDER.indexOf(p.category) + 1 || ROW_ORDER.length + 1);
-  const sorted = [...pieces].sort((a, b) => rank(a) - rank(b));
-  return `<div class="piece-row">${sorted.map((p) => `<figure class="piece-cell piece-${esc(p.category)}">
+  return [...pieces].sort((a, b) => rank(a) - rank(b));
+};
+function pieceRowHtml(pieces) {
+  return `<div class="piece-row">${inRowOrder(pieces).map((p) => `<figure class="piece-cell piece-${esc(p.category)}">
       <div class="piece-img">${pieceImg(p)}</div>
       <figcaption><span class="piece-name">${esc(boardLabel(p))}</span>${priceLink(p)}</figcaption></figure>`).join("")}</div>`;
 }
@@ -695,7 +697,8 @@ document.addEventListener("click", (e) => {
 function outfitCard(o, section) {
   o.pieces.forEach((p) => lbProducts.set(p.id, p));
   const trend = o.trend ? `<span class="tag">On trend: ${esc(o.trend)}</span>` : "";
-  // Try-on happens in one place, the fitting room; an outfit card just fills it.
+  // Try-on happens in one place, the fitting room; an outfit card just fills it. Each piece shows once, as its
+  // shop card (price, links, + fitting room), outer layer first (Renee, feedback #39).
   const ids = o.pieces.map((p) => p.id).join(",");
   const season = SEASON_NAMES[section && section.id] ? section.id : null;
   const occasion = section && OCCASION_NAMES[section.id] ? section.id : null;
@@ -704,9 +707,7 @@ function outfitCard(o, section) {
   return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>
       <span class="outfit-actions">${save}<button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
     ${o.why ? `<p class="outfit-why">✦ ${esc(o.why)}</p>` : ""}
-    ${pieceRowHtml(o.pieces)}
-    <details class="shop-pieces"><summary>Shop each piece (${o.pieces.length})</summary>
-      <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></details></div>`;
+    <div class="grid outfit-pieces">${inRowOrder(o.pieces).map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></div>`;
 }
 
 // ---------- My Look Book (My style): a cover, About me, then one page per saved outfit ----------

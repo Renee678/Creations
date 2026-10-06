@@ -518,27 +518,39 @@ def test_skipped_at_sign_up_my_model_is_offered_in_the_fitting_room(page):
 
 
 def test_lookbook_pieces_link_to_shops_and_outfits_shelve_by_season(page):
-    """Feedback #34/#36: a Lookbook outfit is one row of pieces, outer layer first, each with a "$54.50 · ASOS ↗"
-    shop link (no board); My Look Book → Outfits files saved looks under season shelves, empty seasons left out."""
+    """Feedback #34/#36/#39: a Lookbook outfit shows each piece once, as its shop card (price, shop links,
+    + fitting room) in one row, outer layer first, right under the title with Save and + whole outfit (no board,
+    no second "Shop each piece" list). My Look Book → Outfits files saved looks under season shelves."""
     tab(page, "lookbook")
     with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok) as resp:
         page.locator("[data-lb-browse]").click()
     first = next(o for s in resp.value.json()["sections"] for o in s["outfits"])
     card = page.locator("#lb-sections .outfit").first
     card.wait_for()
-    assert card.locator(".board, .flatlay").count() == 0, "no board or collage on the Lookbook tab"
-    cells = card.locator(".piece-row .piece-cell")
+    assert card.locator(".board, .flatlay, .piece-row, details").count() == 0, "each piece shows once"
+    cells = card.locator(".outfit-pieces .card")
     assert cells.count() == len(first["pieces"])
+    for p in first["pieces"]:
+        assert card.locator(f'[data-room="{p["id"]}"]').count() == 1, "one + fitting room per piece"
+    assert card.locator(".item-head [data-room-all]").count() == 1 and card.locator(".item-head .save-outfit").count() == 1
     boxes = [cells.nth(i).bounding_box() for i in range(cells.count())]
-    assert len({round(b["y"]) for b in boxes}) == 1, "one row"
-    assert len({round(b["width"]) for b in boxes}) == 1, "equal-size cards"
+    ys = [b["y"] for b in boxes]
+    assert max(ys) - min(ys) < 20, "one row (the cards are tilted a little, scrapbook style)"
     assert [b["x"] for b in boxes] == sorted(b["x"] for b in boxes)
+    assert boxes[0]["y"] < card.locator(".item-head").bounding_box()["y"] + 200, "right under the title"
     order = ["outerwear", "top", "dress", "bottom", "shoes", "bag", "accessory"]
     shown = sorted(first["pieces"], key=lambda p: order.index(p["category"]) if p["category"] in order else 99)
     for i, p in enumerate(shown):
-        link = cells.nth(i).locator("a.shop-link")
-        assert re.fullmatch(rf"\${p['price']:.2f} · (ASOS|SHEIN|Amazon) ↗", link.inner_text().strip()), link.inner_text()
-        assert link.get_attribute("href").startswith("https://") and link.get_attribute("target") == "_blank"
+        cell = cells.nth(i)
+        assert cell.locator(".price").inner_text().strip() == f"${p['price']:.2f}"
+        links = cell.locator(".shop a")
+        assert links.count() >= 2 and all(a.get_attribute("href").startswith("https://") for a in links.all())
+        assert links.first.get_attribute("target") == "_blank"
+
+    # A single piece goes into the fitting room on its own.
+    cells.nth(0).locator("[data-room]").click()
+    page.locator("#room .room-piece").first.wait_for()
+    assert page.locator("#room .room-piece").count() == 1
 
     saved = []
     for _ in range(2):
