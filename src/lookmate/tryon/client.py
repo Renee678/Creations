@@ -364,8 +364,12 @@ def make_model_maker(token: str, model: str = NANO_BANANA_PRO):
 
 
 def make_tryon(token: str, model: str = NANO_BANANA, fashn_key: str = ""):
+    """FASHN whenever FASHN_API_KEY is set (TRYON_MODEL=fashn says the same); else the Replicate TRYON_MODEL."""
     if fashn_key:
         return FashnTryOn(fashn_key)
+    if model.lower() == "fashn":
+        log.warning("TRYON_MODEL=fashn needs FASHN_API_KEY in .env; using %s instead", NANO_BANANA)
+        model = NANO_BANANA
     if not token:
         return PreviewTryOn()
     return NanoBananaTryOn(token, model) if model.startswith(NANO_BANANA) else ReplicateTryOn(token, model)

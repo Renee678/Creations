@@ -1,7 +1,8 @@
-import time
 """Virtual try-on: request -> queue -> worker -> image, with the collage preview when no model is set."""
 
+import base64
 import json
+import time
 from dataclasses import replace
 
 import httpx
@@ -628,3 +629,42 @@ def test_fitting_room_pieces_are_prefetched_and_the_stage_is_shown(client, runti
         s.commit()
     runtime.redis.set(TRYON_STAGE.format(tid), "fetching")
     assert client.get(f"/api/tryons/{tid}").json()["stage"] == "fetching"
+
+
+def test_fashn_dresses_my_model_bottom_then_top(client, runtime, user, monkeypatch):
+    """Feedback #38: with FASHN_API_KEY (or TRYON_MODEL=fashn plus the key) a try-on uses the saved My model as
+    the person and dresses one garment per call, bottom first, each on the picture the last call returned."""
+    from lookmate import worker
+    from tests.test_body_model import create
+
+    assert make_tryon("", "fashn", "fa-key").name == "fashn"
+    assert make_tryon("rep-token", "FASHN").name == "nano-banana", "no FASHN key: the Replicate default"
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    runs, outputs = [], iter([b"after-bottom", b"after-top"])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/v1/run":
+            runs.append(json.loads(req.content)["inputs"])
+            return httpx.Response(200, json={"id": f"f{len(runs)}", "error": None})
+        if req.url.path.startswith("/v1/status/"):
+            return httpx.Response(200, json={"status": "completed", "output": [f"https://cdn.fashn.ai/{req.url.path[-2:]}.jpg"]})
+        return httpx.Response(200, content=next(outputs), headers={"content-type": "image/jpeg"})
+
+    monkeypatch.setattr(runtime, "tryon", FashnTryOn("fa-key", http=httpx.Client(transport=httpx.MockTransport(handler))))
+    monkeypatch.setattr(worker, "garment_for", lambda p, data_dir: Garment(
+        f"photo:{p.category}".encode(), "image/jpeg", {"top": "upper_body", "bottom": "lower_body"}[p.category], p.name))
+    my_model = b"\xff\xd8\xff\xe0my-saved-model"
+    monkeypatch.setattr(runtime, "model_maker", None)  # keeps the uploaded picture as My model
+    saved = create(client, user["id"], photo=my_model).json()
+    client.post(f"/api/body-models/{saved['id']}/save")
+
+    ids = pick(runtime, "top", "bottom")
+    tid = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(ids)}).json()["id"]
+    assert run_next_job(runtime) == "done"
+    assert [r["category"] for r in runs] == ["bottoms", "tops"], "bottom first, then the top"
+    model_images = [base64.b64decode(r["model_image"].split(",", 1)[1]) for r in runs]
+    assert model_images == [my_model, b"after-bottom"], "My model, then the picture with the bottom on"
+    assert [base64.b64decode(r["garment_image"].split(",", 1)[1]) for r in runs] == [b"photo:bottom", b"photo:top"]
+    out = client.get(f"/api/tryons/{tid}").json()
+    assert out["result"]["model"] == "fashn" and out["result"]["rendered_ids"] == [ids[1], ids[0]]
+    assert client.get(out["image_url"]).content == b"after-top"

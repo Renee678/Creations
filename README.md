@@ -174,7 +174,7 @@ adds its own `AMAZON_MAX_ITEMS` on top:
 | `REPLICATE_API_TOKEN` | empty | Rendered try-on and "My model" on Replicate; empty (and no FASHN key) shows a collage preview, and My model keeps the uploaded photo |
 | `TRYON_MODEL` | `google/nano-banana` | Replicate try-on model: Nano Banana (warm, one call per outfit), `google/nano-banana-pro` (better at keeping the face, slower and dearer) or `cuuupid/idm-vton` (cheaper, slow cold starts) |
 | `MODEL_GEN_MODEL` | `google/nano-banana-pro` | Draws "My model" (once per user, so the better model): falls back to `google/nano-banana` if it fails |
-| `FASHN_API_KEY` | empty | Use FASHN's specialist try-on API instead (seconds per garment, about $0.075 an image) |
+| `FASHN_API_KEY` | empty | Use FASHN's specialist try-on API instead (seconds per garment, about $0.075 an image). It dresses My model one garment at a time, bottom first; `TRYON_MODEL=fashn` means the same and needs this key. My model itself is still drawn on Replicate |
 | `DAILY_TRYON_LIMIT` | `30` | Global cap on rendered try-ons per UTC day; `0` disables it |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
 | `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |
