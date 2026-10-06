@@ -38,7 +38,12 @@ PATTERNED = re.compile(r"\b(print|printed|prints|graphic|slogan|logo|character|d
                        r"houndstooth|argyle|fair isle|patterned|pattern)\b")
 # Descriptions say "spot clean" and "adds character": only unambiguous print words count there.
 LOUD_IN_DESCRIPTION = re.compile(r"\b(printed|all-over print|graphic|slogan|floral|striped|leopard|animal print|disney|"
-                                 r"mickey|minnie|tie[- ]dye|camo|paisley|plaid|tartan|gingham|polka dot)\b")
+                                 r"mickey|minnie|tie[- ]dye|camo|paisley|plaid|tartan|gingham|polka dot|"
+                                 r"letters? print|letter printing|text print|word print|lettering)\b")
+# Sleeve length, when both sides state one: a short-sleeve knit never gets a long-sleeve sweatshirt.
+SLEEVES = [("sleeveless", re.compile(r"\b(sleeveless|strapless)\b")),
+           ("short", re.compile(r"\b(short|cap|half|elbow)[- ]sleeved?s?\b|\bshort sleeves?\b")),
+           ("long", re.compile(r"\b(long|full)[- ]sleeved?s?\b|\blong sleeves?\b"))]
 
 LENGTHS = [("mini", ("mini", "micro")), ("midi", ("midi", "knee length", "knee-length", "calf")),
            ("maxi", ("maxi", "floor length", "floor-length", "full length", "ankle length", "long skirt", "long dress"))]
@@ -86,6 +91,11 @@ def _whole_word(text: str, table) -> str | None:
         if any(re.search(rf"\b{re.escape(w)}\b", t) for w in words):
             return name
     return None
+
+
+def sleeve(text: str) -> str | None:
+    t = text.lower()
+    return next((name for name, pattern in SLEEVES if pattern.search(t)), None)
 
 
 def leg(text: str) -> str | None:
@@ -157,6 +167,7 @@ class Target:
         self.length = length(text) if self.subtype in LENGTH_SUBTYPES else None
         self.cropped = bool(CROPPED.search(text.lower())) if self.subtype in ("trousers", "jeans") else None
         self.leg = leg(text) if self.subtype in LEG_SUBTYPES else None
+        self.sleeve = sleeve(text) if category in ("top", "dress", "outerwear") else None
         self.colour = colour_family(colour, name)
         self.shade = shade(f"{colour} {name}") if self.colour else None
         self.patterned = bool(PATTERNED.search(text.lower()))
@@ -173,13 +184,15 @@ class Target:
             return False  # a maxi skirt wants a maxi skirt, not a midi or one of unknown length
         if self.cropped is not None and bool(CROPPED.search(text.lower())) != self.cropped:
             return False  # cropped trousers for cropped, full length (stated or not) for full length
+        if self.sleeve and sleeve(f"{text} {product.description[:600]}") not in (None, self.sleeve):
+            return False  # short sleeves want short sleeves; a candidate that doesn't say isn't ruled out
         if self.leg and leg(text) != self.leg:
             return False  # wide-leg trousers want wide or straight legs, stated, never skinny or pencil
         if self.colour and not same_colour(self.colour, colour_family(product.colour, product.name)):
             return False  # a white skirt wants a white skirt
         if not self.same_shade(product):
             return False  # light blue wants light blue, not navy-dark denim
-        patterned = PATTERNED.search(text.lower()) or LOUD_IN_DESCRIPTION.search(product.description[:300].lower())
+        patterned = PATTERNED.search(text.lower()) or LOUD_IN_DESCRIPTION.search(product.description[:600].lower())
         if bool(patterned) != self.patterned:
             return False  # a plain top never gets a Mickey Mouse sweatshirt, and a floral one wants a print
         return True

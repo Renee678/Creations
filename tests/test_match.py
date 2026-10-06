@@ -197,3 +197,22 @@ def test_same_colour_only_when_the_shade_agrees_too():
     assert light.colour_score(_product("a", "Light blue shirt", "Light Blue", "top", "Shirts")) == 1.0
     assert light.colour_score(_product("b", "Blue shirt", "Blue", "top", "Shirts")) == 0.5
     assert Target("top", "lightweight shirt", "blue").shade is None, "lightweight is not light"
+
+
+def test_a_plain_short_sleeve_knit_never_gets_a_long_sleeve_slogan_sweatshirt():
+    """Renee (2026-10-06): a heather grey short-sleeve boat-neck knit got Amazon's "Real knit grey", a long-sleeve
+    sweatshirt with a big "CREEPIN' IT REAL" slogan, said only in its description."""
+    from lookmate.services.match import sleeve
+
+    target = Target("top", "short-sleeve boat-neck knit sweater", "heather grey", ["boat neck", "short sleeves"])
+    assert target.sleeve == "short" and not target.patterned
+    slogan = ProductView("a", "Real knit grey", "Sweaters", "top", "Grey",
+                         "Long sleeve crew neck pullover with CREEPIN' IT REAL letter print on the front.", "", 80.0)
+    assert not target.check(slogan)
+    plain_long = ProductView("b", "Long sleeve knit jumper", "Jumpers", "top", "Grey", "", "", 30.0)
+    assert not target.check(plain_long), "long sleeves for short"
+    assert target.check(ProductView("c", "Short sleeve knit jumper", "Jumpers", "top", "Grey", "", "", 30.0))
+    assert target.check(ProductView("d", "Boat neck knit jumper", "Jumpers", "top", "Grey", "", "", 30.0)), \
+        "a candidate that doesn't state its sleeves isn't ruled out"
+    assert [sleeve(t) for t in ("Sleeveless top", "cap sleeve tee", "long-sleeved shirt", "crew neck")] == \
+        ["sleeveless", "short", "long", None]
