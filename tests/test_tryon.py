@@ -267,7 +267,7 @@ def test_a_shop_photo_is_read_by_its_bytes_not_its_header(tmp_path, caplog):
     assert fetch_shop_photo("https://cdn/c", tmp_path, serve(b"<html>blocked</html>", "text/html"))[0] is None
     refused = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(403)))
     assert fetch_shop_photo("https://cdn/d.jpg", tmp_path, refused)[0] is None
-    assert "shop photo refused (403)" in caplog.text, "the server log says why a photo didn't load"
+    assert "shop photo not loaded (httpx refused (403))" in caplog.text, "the server log says why a photo didn't load"
 
 
 def test_a_photo_prefetched_while_the_try_on_waited_is_used(client, runtime, user, monkeypatch, tmp_path):
@@ -688,7 +688,7 @@ def test_a_refused_shop_photo_is_retried_over_http2_only_when_switched_on(monkey
     monkeypatch.setattr(get_settings(), "shop_fetch_http2", True)
     with caplog.at_level(logging.WARNING, logger="lookmate.tryon.garments"):
         assert garments.fetch_shop_photo(url, tmp_path, h1) == (b"\xff\xd8\xffjpg", "image/jpeg")
-    assert tried == ["h1", "h1", "h2"] and "HTTP/2 retry loaded it" in caplog.text
+    assert tried == ["h1", "h1", "h2"] and "loaded via httpx-http2 after httpx refused (403)" in caplog.text
     assert garments.cached_photo(url, tmp_path)[0] == b"\xff\xd8\xffjpg", "cached for the try-on"
 
 
@@ -696,3 +696,73 @@ def test_the_http2_client_can_be_built():
     from lookmate.tryon.garments import _http2_client
 
     assert _http2_client() is _http2_client()  # h2 is installed with httpx[http2]
+
+
+class FakeChrome:
+    """Stands in for curl_cffi.requests: answers as the CDN would answer Chrome."""
+
+    def __init__(self, status=200, content=b"\xff\xd8\xffchrome", error=None):
+        self.status, self.content, self.error, self.calls = status, content, error, []
+
+    def get(self, url, **kw):
+        self.calls.append(kw)
+        if self.error:
+            raise self.error
+        return type("R", (), {"status_code": self.status, "content": self.content,
+                              "headers": {"content-type": "image/jpeg"}})()
+
+
+def test_a_shop_photo_the_cdn_refuses_is_fetched_as_chrome(monkeypatch, tmp_path, caplog):
+    """Feedback #38: Akamai resets httpx (HTTP/2 INTERNAL_ERROR) and tarpits HTTP/1.1. When curl_cffi is installed
+    (the Docker image), a failed fetch is retried with Chrome's fingerprint, within a hard timeout."""
+    import logging
+
+    from lookmate.tryon import garments
+
+    url = "https://images.asos-media.com/products/chrome/1"
+    reads = []
+    h1 = httpx.Client(transport=httpx.MockTransport(
+        lambda req: (reads.append(req.extensions["timeout"]["read"]), httpx.Response(403))[1]))
+    chrome = FakeChrome()
+    monkeypatch.setattr(garments, "_impersonator", lambda: chrome)
+    with caplog.at_level(logging.INFO, logger="lookmate.tryon.garments"):
+        assert garments.fetch_shop_photo(url, tmp_path, h1) == (b"\xff\xd8\xffchrome", "image/jpeg")
+    assert chrome.calls[0]["impersonate"] == "chrome" and chrome.calls[0]["timeout"] <= 8
+    assert reads == [garments.HTTPX_READ_WITH_RETRY_S], "a tarpit can't hold the first try past the budget"
+    assert "shop photo loaded via curl_cffi after httpx refused (403)" in caplog.text, "the log says which path won"
+    assert garments.cached_photo(url, tmp_path)[0] == b"\xff\xd8\xffchrome"
+
+    caplog.clear()
+    monkeypatch.setattr(garments, "_impersonator", lambda: FakeChrome(error=TimeoutError("tarpit")))
+    with caplog.at_level(logging.INFO, logger="lookmate.tryon.garments"):
+        assert garments.fetch_shop_photo(url + "x", tmp_path, h1) == (None, "image/jpeg")
+    assert "httpx refused (403); curl_cffi not loaded (TimeoutError)" in caplog.text
+    monkeypatch.setattr(garments, "_impersonator", lambda: FakeChrome(status=403))
+    assert garments.fetch_shop_photo(url + "y", tmp_path, h1) == (None, "image/jpeg")
+
+    ok = httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(200, content=b"\xff\xd8\xffplain")))
+    with caplog.at_level(logging.INFO, logger="lookmate.tryon.garments"):
+        garments.fetch_shop_photo(url + "z", tmp_path, ok)
+    assert "shop photo loaded via httpx:" in caplog.text
+
+
+def test_impersonation_is_used_only_when_installed_and_switched_on(monkeypatch):
+    import builtins
+    import sys
+
+    from lookmate.config import get_settings
+    from lookmate.tryon.garments import _impersonator
+
+    assert _impersonator() is None, "tests switch it off (SHOP_FETCH_IMPERSONATE=false)"
+    monkeypatch.setattr(get_settings(), "shop_fetch_impersonate", True)
+    real_import = builtins.__import__
+
+    def no_curl_cffi(name, *a, **k):
+        if name.startswith("curl_cffi"):
+            raise ImportError(name)
+        return real_import(name, *a, **k)
+
+    monkeypatch.delitem(sys.modules, "curl_cffi", raising=False)
+    monkeypatch.delitem(sys.modules, "curl_cffi.requests", raising=False)
+    monkeypatch.setattr(builtins, "__import__", no_curl_cffi)
+    assert _impersonator() is None, "not installed: the plain fetch only, nothing breaks"

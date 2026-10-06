@@ -81,20 +81,33 @@ def fetch_shop_photo(url: str, data_dir: Path | None, http: httpx.Client | None 
     if hit is not None:
         return hit
     path = _cached(data_dir, url)
-    r, why = _get(http or httpx, url, read_s)
-    if r is None and _http2_retry_on():
-        # Behind Akamai, a CDN can refuse a client by its fingerprint: httpx on HTTP/1.1 doesn't look like Chrome.
-        r, why2 = _get(_http2_client(), url, read_s)
-        log.warning("shop photo HTTP/2 retry %s: %s", "loaded it" if r is not None else f"failed too ({why2})", url)
-    if r is None:
-        log.warning("shop photo %s: %s", why, url)
+    chrome = _impersonator()
+    # A CDN that tarpits plain clients holds the first try for its whole read timeout, so keep it short
+    # when the Chrome-like retry is there to follow (both fit in the worker's garment budget).
+    got, why = _get(http or httpx, url, min(read_s, HTTPX_READ_WITH_RETRY_S) if chrome else read_s)
+    via, tried = "httpx", [f"httpx {why}"]
+    if got is None and _http2_retry_on():
+        got, why = _get(_http2_client(), url, read_s)
+        via = "httpx-http2"
+        tried.append(f"HTTP/2 {why}")
+    if got is None and chrome is not None:
+        # Behind Akamai, a CDN can refuse a client by its TLS/HTTP2 fingerprint; curl_cffi presents Chrome's.
+        got, why = _get_as_chrome(chrome, url)
+        via = "curl_cffi"
+        tried.append(f"curl_cffi {why}")
+    if got is None:
+        log.warning("shop photo not loaded (%s): %s", "; ".join(tried), url)
         return None, "image/jpeg"
-    data = r.content
+    if len(tried) > 1:
+        log.warning("shop photo loaded via %s after %s: %s", via, "; ".join(tried[:-1]), url)
+    else:
+        log.info("shop photo loaded via %s: %s", via, url)
+    data, content_type = got
     media_type = sniff(data)
     if media_type is None:
         data = _as_jpeg(data)
         if data is None:
-            log.warning("shop photo in an unreadable format (%s): %s", r.headers.get("content-type", "?"), url)
+            log.warning("shop photo in an unreadable format (%s): %s", content_type or "?", url)
             return None, "image/jpeg"
         media_type = "image/jpeg"
     if path is not None:
@@ -102,16 +115,45 @@ def fetch_shop_photo(url: str, data_dir: Path | None, http: httpx.Client | None 
     return data, media_type
 
 
-def _get(client, url: str, read_s: float) -> tuple[httpx.Response | None, str]:
-    """(response, "") or (None, why it failed: "refused (403)", "not loaded (ReadTimeout)", ...)."""
+def _get(client, url: str, read_s: float) -> tuple[tuple[bytes, str] | None, str]:
+    """((bytes, content type), "") or (None, why it failed: "refused (403)", "not loaded (ReadTimeout)", ...)."""
     try:
         r = client.get(url, follow_redirects=True, timeout=httpx.Timeout(5, read=read_s), headers=BROWSER_HEADERS)
         r.raise_for_status()
-        return r, ""
+        return (r.content, r.headers.get("content-type", "")), ""
     except httpx.HTTPStatusError as e:
         return None, f"refused ({e.response.status_code})"
     except httpx.HTTPError as e:
         return None, f"not loaded ({type(e).__name__})"
+
+
+HTTPX_READ_WITH_RETRY_S = 4.0
+IMPERSONATE_TIMEOUT_S = 8.0
+
+
+def _impersonator():
+    """curl_cffi's requests module when it's installed (the Docker image has it) and SHOP_FETCH_IMPERSONATE is on."""
+    from ..config import get_settings
+
+    if not get_settings().shop_fetch_impersonate:
+        return None
+    try:
+        from curl_cffi import requests as chrome
+    except ImportError:  # optional: `pip install ".[fetch]"`; tests and run_local work without it
+        return None
+    return chrome
+
+
+def _get_as_chrome(chrome, url: str) -> tuple[tuple[bytes, str] | None, str]:
+    """The photo fetched with Chrome's TLS and HTTP/2 fingerprint (curl_cffi impersonate="chrome")."""
+    try:
+        r = chrome.get(url, impersonate="chrome", timeout=IMPERSONATE_TIMEOUT_S, allow_redirects=True,
+                       headers={"Accept": BROWSER_HEADERS["Accept"], "Referer": BROWSER_HEADERS["Referer"]})
+    except Exception as e:  # curl_cffi raises its own error types (timeouts, resets)
+        return None, f"not loaded ({type(e).__name__})"
+    if r.status_code >= 400:
+        return None, f"refused ({r.status_code})"
+    return (r.content, r.headers.get("content-type", "")), ""
 
 
 def _http2_retry_on() -> bool:

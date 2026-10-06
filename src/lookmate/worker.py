@@ -31,7 +31,7 @@ log = logging.getLogger("lookmate.worker")
 MAX_ATTEMPTS = 3
 BACKOFF_BASE_S = 2.0
 CATALOG_CHECK_EVERY_S = 15.0
-GARMENT_BUDGET_S = 12.0  # all garment photos, fetched together; a cache hit is instant
+GARMENT_BUDGET_S = 15.0  # all garment photos, fetched together (a plain try, then as Chrome); a cache hit is instant
 TREND_CHECK_EVERY_S = 600
 
 

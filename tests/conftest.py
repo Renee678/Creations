@@ -6,6 +6,7 @@ os.environ.update({
     "EMBEDDER": "hash",
     "CATALOG_SOURCE": "seed",
     "ANTHROPIC_API_KEY": "",
+    "SHOP_FETCH_IMPERSONATE": "false",  # never reach a real CDN, even where curl_cffi is installed
 })
 
 import pytest  # noqa: E402
