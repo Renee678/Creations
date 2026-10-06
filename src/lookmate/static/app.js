@@ -731,6 +731,7 @@ async function loadBook() {
     api(`/api/users/${userId}/outfits?${q}`), api(`/api/users/${userId}/saved`)]);
   const chip = (attr, id, label, on) => `<button type="button" class="chip ${on ? "on" : ""}" data-${attr}="${esc(id)}">${esc(label)}</button>`;
   $("#mo-seasons").innerHTML = r.total ? chip("mo-season", "", "All seasons", !moSeason) + r.seasons.map((x) => chip("mo-season", x, SEASON_NAMES[x], moSeason === x)).join("") : "";
+  $(".mo-filters").hidden = !r.total;
   $("#mo-styles").innerHTML = r.total ? chip("mo-style", "", "All styles", !moStyle) + r.styles.map((x) => chip("mo-style", x.id, x.label, moStyle === x.id)).join("") : "";
   r.outfits.forEach((o) => o.pieces.forEach((p) => lbProducts.set(p.id, p)));
   fav.folders.forEach((f) => f.items.forEach((p) => lbProducts.set(p.id, p)));

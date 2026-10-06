@@ -874,3 +874,29 @@ def test_trying_the_same_outfit_again_draws_a_new_picture(page):
         page.locator("#tryon-room .tryon-shot:not(.rendering)").first.wait_for()
     assert ids[0] != ids[1]
     assert page.errors == []
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_look_book_outfit_filters_start_at_the_left_edge(page, width):
+    """Renee (2026-10-06): the Season and Style chips in My Look Book → Outfits were centred. Each is a row with
+    its label in front, starting at the same left edge as the season heading and the cards, on phones too."""
+    page.set_viewport_size({"width": width, "height": 900})
+    tab(page, "lookbook")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok):
+        page.locator("[data-lb-browse]").click()
+    with page.expect_response(lambda r: r.url.endswith("/outfits") and r.request.method == "POST"):
+        page.locator("#lb-sections .save-outfit").first.click()
+    tab(page, "style")
+    page.locator("#book-tabs button", has_text="Outfits").click()
+    heading = page.locator("#book-contents .book-shelf h3").first
+    heading.wait_for()
+    left = heading.bounding_box()["x"]
+    rows = page.locator("#book-outfits .mo-filters .trend-filter")
+    assert [r.locator(".sr-label").inner_text().strip().lower() for r in rows.all()] == ["season", "style"]
+    labels = [r.locator(".sr-label").bounding_box()["x"] for r in rows.all()]
+    chips = [r.locator(".chip").first.bounding_box()["x"] for r in rows.all()]
+    assert all(abs(x - left) < 2 for x in labels), (labels, left)
+    assert abs(chips[0] - chips[1]) < 2, "both chip rows start at the same x"
+    assert chips[0] - left < 80, "chips sit right after the label, not centred"
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert not page.errors, page.errors

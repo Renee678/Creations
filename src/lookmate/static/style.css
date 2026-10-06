@@ -400,7 +400,9 @@ body.room-open { padding-bottom: 110px; }
 .shop-pieces summary { cursor: pointer; color: var(--gel-deep); font-size: 13px; margin: 2px 0 8px; }
 .my-outfits { margin-top: 34px; }
 .my-outfits h2 { font: 600 24px/1.2 var(--f-display); }
-.my-outfits .trend-filter { margin: 8px 0 14px; display: flex; flex-direction: column; gap: 8px; }
+.mo-filters { margin: 8px 0 14px; }
+.mo-filters[hidden] { display: none; }
+.mo-filters .trend-filter { align-items: baseline; }
 @media (max-width: 600px) {
   .board { gap: 6px 10px; padding: 14px 10px; }
   .bp img { max-height: 140px; }
