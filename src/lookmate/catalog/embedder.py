@@ -8,6 +8,7 @@ from typing import Protocol
 import numpy as np
 
 _TOKEN = re.compile(r"[a-z]+")
+EMBED_BATCH = 16
 _STOP = {"a", "an", "and", "the", "with", "in", "of", "for", "to", "on", "at", "is", "by", "or", "from"}
 
 
@@ -69,7 +70,9 @@ class BgeEmbedder:
         self._model = TextEmbedding(self.model_name)
 
     def embed_documents(self, texts: list[str]) -> np.ndarray:
-        return _normalise(np.array(list(self._model.embed(texts)), dtype=np.float32))
+        # Small batches: fastembed's default of 256 pads every text to the longest in the batch and peaked
+        # at ~3 GB on the 4 GB server. 16 at a time costs a little speed and a fraction of the memory.
+        return _normalise(np.array(list(self._model.embed(texts, batch_size=EMBED_BATCH)), dtype=np.float32))
 
     def embed_query(self, text: str) -> np.ndarray:
         return _normalise(np.array(list(self._model.query_embed(text)), dtype=np.float32))[0]

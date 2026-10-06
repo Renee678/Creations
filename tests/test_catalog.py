@@ -387,3 +387,64 @@ def test_a_catalog_import_runs_behind_a_site_that_already_serves(tmp_path, monke
 def test_health_reports_a_background_catalog_import(client):
     body = client.get("/healthz").json()
     assert body["status"] == "ok" and body["catalog"]["products"] > 0 and body["catalog"]["running"] is False
+
+
+def test_on_the_server_a_separate_importer_process_imports_and_the_api_only_serves(tmp_path, monkeypatch, fake_redis):
+    """2026-10-06: the in-process bge import peaked at ~3 GB and the 4 GB server killed the API in a loop.
+
+    With CATALOG_IMPORT=external the API never imports (seed on a new database), the one-off importer
+    stores the catalog, and the API and worker swap it in when the importer announces it.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from lookmate import catalog_import
+    from lookmate import runtime as rtmod
+    from lookmate.catalog import importer
+    from lookmate.config import Settings
+
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    for mod in (rtmod, catalog_import):
+        monkeypatch.setattr(mod, "engine", eng)
+        monkeypatch.setattr(mod, "SessionLocal", sessionmaker(eng))
+    _asos_csv(tmp_path / "asos.csv")
+    downloads = []
+    monkeypatch.setattr(importer, "download_asos", lambda cache: (downloads.append(1), tmp_path / "asos.csv")[1])
+    settings = Settings(catalog_source="asos", embedder="hash", catalog_import="external", catalog_size=50,
+                        data_dir=str(Path(__file__).resolve().parents[1] / "data"))
+
+    api = rtmod.build_runtime(settings, redis_client=fake_redis)
+    assert not downloads and not api.catalog_import["running"], "the API never imports"
+    assert api.catalog_import["pending"] and all(i.startswith("seed-") for i in api.catalog.products)
+
+    assert catalog_import.run(settings, fake_redis) is True
+    assert rtmod.reload_catalog_if_changed(api) and not api.catalog_import["pending"]
+    assert all(i.startswith("asos-") for i in api.catalog.products)
+    assert catalog_import.run(settings, fake_redis) is False and len(downloads) == 1, "current: exits at once"
+
+
+def test_bge_embeds_in_small_batches_to_bound_memory(monkeypatch):
+    from lookmate.catalog import embedder as emb
+
+    seen = {}
+
+    class Model:
+        def embed(self, texts, batch_size=256):
+            seen["batch"] = batch_size
+            return [[1.0, 0.0] for _ in texts]
+
+    e = emb.BgeEmbedder.__new__(emb.BgeEmbedder)
+    e._model = Model()
+    assert e.embed_documents(["a", "b"]).shape == (2, 2) and seen["batch"] == emb.EMBED_BATCH <= 32
+
+
+def test_the_compose_importer_runs_apart_from_the_api_with_a_memory_cap():
+    import yaml
+
+    services = yaml.safe_load((Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text())["services"]
+    assert services["importer"]["command"] == ["python", "-m", "lookmate.catalog_import"]
+    assert services["importer"]["mem_limit"] and services["importer"]["restart"].startswith("on-failure")
+    for name in ("api", "worker"):
+        assert services[name]["environment"]["CATALOG_IMPORT"] == "external"
+    deploy = (Path(__file__).resolve().parents[1] / "scripts" / "deploy.sh").read_text()
+    assert "CATALOG_SOURCE=asos,polyvore$/" not in deploy, "a CATALOG_SOURCE Renee set in .env is kept"

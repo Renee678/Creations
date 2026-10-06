@@ -21,6 +21,10 @@ class Settings(BaseSettings):
 
     # No-Docker local mode: run the worker as a thread inside the API process.
     inline_worker: bool = False
+    # "background": the API imports a new catalog on a thread (one-process local mode).
+    # "external": a separate one-off process does it (`python -m lookmate.catalog_import`, the compose
+    # importer service), so a memory-hungry import can never take the API down with it.
+    catalog_import: str = "background"
 
     max_upload_bytes: int = 8 * 1024 * 1024
 

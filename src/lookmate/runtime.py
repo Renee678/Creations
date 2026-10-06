@@ -115,7 +115,11 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
         tryon_queue=JobQueue(client, TRYON_QUEUE),
         catalog_version=version,
     )
-    if stale:
+    rt.catalog_import["pending"] = stale  # configured catalog not in the table yet
+    if stale and settings.catalog_import == "external":
+        log.info("catalog %s is not imported yet; serving %d products until the importer finishes",
+                 settings.catalog_source, len(catalog.index))
+    elif stale:
         rt.catalog_import["running"] = True
         threading.Thread(target=import_in_background, args=(rt, settings, embedder), daemon=True,
                          name="catalog-import").start()
@@ -143,12 +147,22 @@ def import_in_background(rt: Runtime, settings: Settings, embedder) -> None:
         version = str(time.time()).encode()
         rt.redis.set(CATALOG_VERSION, version)
         rt.catalog, rt.catalog_version = catalog, version
+        rt.catalog_import["pending"] = False
         log.info("catalog import done: %d products in %.0f s", len(rt.catalog.index), time.monotonic() - started)
     except Exception as e:
         rt.catalog_import["error"] = str(e)[:200]
         log.exception("background catalog import failed; still serving the previous catalog")
     finally:
         rt.catalog_import["running"] = False
+
+
+def watch_catalog(rt: Runtime, stop: threading.Event, every_s: float = 15.0) -> None:
+    """API side, with an external importer: swap in the new catalog as soon as the importer has stored it."""
+    while not stop.wait(every_s):
+        try:
+            reload_catalog_if_changed(rt)
+        except Exception:
+            log.exception("catalog reload check failed")
 
 
 def reload_catalog_if_changed(rt: Runtime) -> bool:
@@ -159,5 +173,6 @@ def reload_catalog_if_changed(rt: Runtime) -> bool:
     with SessionLocal() as session:
         rt.catalog = Catalog.load(session, rt.catalog.embedder)
     rt.catalog_version = version
+    rt.catalog_import["pending"] = False
     log.info("catalog reloaded: %d products", len(rt.catalog.index))
     return True

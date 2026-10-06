@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .api import analysis, looks, profiles, style, trends, tryon
 from .catalog.importer import IMAGE_ROUTE
 from .config import get_settings
-from .runtime import Runtime, build_runtime
+from .runtime import Runtime, build_runtime, watch_catalog
 from .services.vocab import BODY_SHAPES, STYLES
 from .worker import run_forever
 
@@ -27,6 +27,8 @@ async def lifespan(app: FastAPI):
     stop = threading.Event()
     if settings.inline_worker:
         threading.Thread(target=run_forever, args=(app.state.runtime, stop), daemon=True, name="worker").start()
+    elif settings.catalog_import == "external":
+        threading.Thread(target=watch_catalog, args=(app.state.runtime, stop), daemon=True, name="catalog-watch").start()
     yield
     stop.set()
 
