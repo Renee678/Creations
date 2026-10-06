@@ -277,7 +277,10 @@ def test_find_dupes_waits_for_the_button_and_clears_old_results(page):
     posts, fetches = [], []
     page.on("request", lambda r: posts.append(r.url) if r.method == "POST" and r.url.endswith("/api/looks") else None)
     page.on("request", lambda r: fetches.append(r.url) if re.search(r"/api/looks/\d+", r.url) else None)
-    first, second = outfit_photos()[:2]
+    shots = outfit_photos()
+    first = shots[0]
+    # Live runs have one real photo: pick it again under another name, which is still a new pick.
+    second = shots[1] if len(shots) > 1 else {**first, "name": f"again-{first['name']}"}
 
     page.locator("#file").set_input_files(first)
     page.locator("#find-btn").wait_for()
