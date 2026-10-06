@@ -654,7 +654,8 @@ def test_a_piece_without_a_photo_stops_the_try_on_and_the_face_note_needs_the_pa
     assert page.locator("#tryon-room .tryon-shot:not(.rendering) img").count() == 0, "no picture"
 
     error.locator("[data-tryon-retry]").click()
-    note = page.locator("#tryon-room .tryon-board + p")
+    # Wait for the finished picture's note, not the "Usually ready in under a minute" one while it renders.
+    note = page.locator("#tryon-room .tryon-board + p", has_text="Rendered")
     note.wait_for()
     assert "Face kept from My model." in note.inner_text()
     page.locator("#room [data-room-try]").click()
