@@ -12,6 +12,11 @@ os.environ.update({
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from lookmate.config import Settings  # noqa: E402
+
+# Never read a developer's .env: its ACCESS_CODE, keys and limits would change what the tests see.
+Settings.model_config["env_file"] = None
+
 
 import fakeredis  # noqa: E402
 import redis  # noqa: E402
