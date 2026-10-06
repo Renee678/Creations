@@ -338,7 +338,7 @@ setupPriceRange("find", () => priceRange.find || showFindDefaultRange());  // ap
 // Before the first search, show the range the server will use: up to 1.5x the per-item budget.
 function showFindDefaultRange() {
   api(`/api/users/${userId}`).then((me) => priceRange.find
-    || showPriceRange("find", { low: 0, high: Math.min(300, Math.round((me.budget_per_item || 30) * 1.5 / 5) * 5) })).catch(() => {});
+    || showPriceRange("find", { low: 0, high: Math.min(300, Math.round((me.budget_per_item || 50) * 1.5 / 5) * 5) })).catch(() => {});
 }
 
 async function refreshLook() {

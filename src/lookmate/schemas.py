@@ -10,7 +10,7 @@ class ProfileIn(BaseModel):
     age: int = Field(ge=13, le=100)
     body_shape: str = "unsure"
     preferred_styles: list[str] = Field(default_factory=list, max_length=6)
-    budget_per_item: float = Field(default=30, ge=5, le=1000)
+    budget_per_item: float = Field(default=50, ge=5, le=1000)
 
     @field_validator("body_shape")
     @classmethod
