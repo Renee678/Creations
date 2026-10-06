@@ -786,7 +786,7 @@ def test_no_photo_of_the_person_is_marked_unusable_in_the_lookbook(page):
 
 
 def test_my_photo_as_it_is_and_the_try_on_says_who_drew_it_and_what_it_left_out(page):
-    """Feedback #41: Profile offers "Use my photo as it is" next to "Create my model" (the face stays exactly
+    """Feedback #41: Profile offers "Keep my photo" next to the studio version (the face stays exactly
     hers); a try-on names the model that drew it and the pieces it didn't draw. The try-on is stubbed."""
     if LIVE_URL:
         pytest.skip("creates a model on the server; offline only")
@@ -795,9 +795,27 @@ def test_my_photo_as_it_is_and_the_try_on_says_who_drew_it_and_what_it_left_out(
     with page.expect_file_chooser() as fc:
         box.locator("[data-model-pick]").click()
     fc.value.set_files(photo("fullbody", BLUE))
-    as_is = box.locator("[data-model-original]", has_text="Use my photo as it is")
+    as_is = box.locator("[data-model-original]", has_text="Use this photo")
     as_is.wait_for()
-    assert as_is.is_visible() and box.locator("[data-model-create]").is_visible(), "both choices, side by side"
+    # Renee (2026-10-06): two equal choice cards, each saying what it does, instead of a row of four buttons.
+    cards = box.locator(".model-choice")
+    assert cards.count() == 2
+    studio, keep = cards.nth(0), cards.nth(1)
+    assert "Studio version" in studio.inner_text() and "recommended" in studio.inner_text()
+    assert "face can differ" in studio.inner_text() and studio.locator("[data-model-create]").inner_text() == "Create my model"
+    assert "Keep my photo" in keep.inner_text() and "exactly yours" in keep.inner_text()
+    assert keep.locator("[data-model-original]").count() == 1
+    a, b = studio.bounding_box(), keep.bounding_box()
+    assert abs(a["y"] - b["y"]) < 2 and abs(a["width"] - b["width"]) < 2 and b["x"] > a["x"], "side by side, equal"
+    links = box.locator(".model-links")
+    assert links.locator("[data-model-pick]").inner_text() == "Choose another photo"
+    assert links.locator("[data-model-skip]").count() == box.locator("[data-model-skip]").count(), "skip is a small link"
+    assert links.bounding_box()["y"] > a["y"] + a["height"], "links below the cards"
+    page.set_viewport_size({"width": 390, "height": 844})
+    a, b = studio.bounding_box(), keep.bounding_box()
+    assert b["y"] >= a["y"] + a["height"] and page.evaluate("document.documentElement.scrollWidth <= innerWidth"), \
+        "stacked on phones"
+    page.set_viewport_size({"width": 1280, "height": 900})
     sent = []
     page.route("**/api/users/*/model", lambda route: (sent.append(route.request.post_data_buffer or b""),
                                                       route.continue_()))

@@ -136,9 +136,20 @@ function modelHtml(where) {
   return `${preview}${modelErr ? `<p class="status error">${esc(modelErr)}</p>` : ""}
     <p class="muted small">Standing, facing the camera, head to toe. Your photos are deleted once the model is made.</p>
     ${face}
-    <div class="model-actions"><button type="button" class="gel${modelFile ? "" : " primary"}" data-model-pick>${modelFile ? "Choose another photo" : "Choose a full-body photo"}</button>
-    ${modelFile ? `<button type="button" class="gel primary" data-model-create>Create my model</button>
-      <button type="button" class="gel" data-model-original title="Your own photo, face exactly as it is: the try-on swaps the clothes">Use my photo as it is</button>` : ""} ${skip}</div>`;
+    ${modelFile ? modelChoices(skip) : `<div class="model-actions"><button type="button" class="gel primary" data-model-pick>Choose a full-body photo</button> ${skip}</div>`}`;
+}
+
+/** Two ways to turn the chosen photo into My model, side by side (stacked on phones), so the trade-off is plain. */
+function modelChoices(skip) {
+  return `<div class="model-choices">
+      <div class="model-choice"><h3>Studio version <span class="muted small">(recommended)</span></h3>
+        <p class="muted small">AI redraws you standing front-on in plain basics on a grey background. Best try-ons; the face can differ a little.</p>
+        <button type="button" class="gel primary" data-model-create>Create my model</button></div>
+      <div class="model-choice"><h3>Keep my photo</h3>
+        <p class="muted small">Uses this photo unchanged, so the face is exactly yours. Try-ons work best if you're standing straight, facing the camera, on a plain background.</p>
+        <button type="button" class="gel" data-model-original>Use this photo</button></div>
+    </div>
+    <p class="model-links small"><button type="button" class="linklike" data-model-pick>Choose another photo</button>${skip ? ` · ${skip}` : ""}</p>`;
 }
 
 function renderModel() {
