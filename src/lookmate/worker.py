@@ -15,7 +15,7 @@ from dataclasses import replace
 from .config import get_settings
 from .db import SessionLocal
 from .llm.client import LLMError
-from .models import Look, PersonalAnalysis, TryOn, User, utcnow
+from .models import BodyModel, Look, PersonalAnalysis, TryOn, User, utcnow
 from .runtime import Runtime, build_runtime, reload_catalog_if_changed
 from .services.dupes import find_dupes
 from .services.style_memory import record_look, user_context
@@ -35,6 +35,8 @@ TREND_CHECK_EVERY_S = 600
 
 ANALYSIS_PREFIX = "analysis:"
 TRYON_PREFIX = "tryon:"
+MODEL_PREFIX = "model:"
+NO_MODEL_NOTE = "Saved your photo as it is: drawing a studio model needs a REPLICATE_API_TOKEN."
 
 
 def analysis_job(analysis_id: int) -> str:
@@ -44,6 +46,45 @@ def analysis_job(analysis_id: int) -> str:
 
 def tryon_job(tryon_id: str) -> str:
     return f"{TRYON_PREFIX}{tryon_id}"
+
+
+def model_job(model_id: str) -> str:
+    return f"{MODEL_PREFIX}{model_id}"
+
+
+def process_model(rt: Runtime, model_id: str) -> str:
+    """Draw "My model" from the uploaded full-body photo: one Nano Banana call."""
+    job = model_job(model_id)
+    with SessionLocal() as session:
+        rec = session.get(BodyModel, model_id)
+        if rec is None:
+            rt.queue.ack(job)
+            return "missing"
+        if rec.status in ("done", "failed"):  # duplicate delivery: already handled
+            rt.queue.ack(job)
+            return rec.status
+        if rt.model_maker is None:  # the token went away after this was queued
+            rec.result_image, rec.result_media_type = rec.photo, rec.media_type
+            _finish(session, rec, "done", result={"generated": False, "note": NO_MODEL_NOTE, "timings_ms": {}})
+            rt.queue.ack(job)
+            return "done"
+
+        rec.status, rec.attempts = "processing", rec.attempts + 1
+        session.commit()
+        user = session.get(User, rec.user_id)
+        started = time.monotonic()
+        out = _call_llm(rt, session, rec, job, lambda: rt.model_maker.make_model(
+            rec.photo, rec.media_type, user.height_cm if user else None, user.weight_kg if user else None))
+        if out is None:
+            return rec.status
+        rec.result_image, rec.result_media_type = out
+        model_ms = round((time.monotonic() - started) * 1000)
+        _finish(session, rec, "done", result={
+            "generated": True, "note": None, "model": rt.model_maker.name, "timings_ms": {"model_ms": model_ms},
+        })
+        rt.queue.ack(job)
+        log.info("my model %s done in %s ms", model_id, model_ms)
+        return "done"
 
 
 def process_look(rt: Runtime, look_id: int) -> str:
@@ -235,7 +276,7 @@ def _finish(session, rec, status: str, result: dict | None = None, error: str | 
     # Drop the photos as soon as we're done with them.
     if isinstance(rec, Look):
         rec.image = None
-    elif isinstance(rec, TryOn):
+    elif isinstance(rec, (TryOn, BodyModel)):
         rec.photo = None
     else:
         rec.photos = None
@@ -244,6 +285,8 @@ def _finish(session, rec, status: str, result: dict | None = None, error: str | 
 
 
 def process_job(rt: Runtime, job: str) -> str:
+    if job.startswith(MODEL_PREFIX):
+        return process_model(rt, job.removeprefix(MODEL_PREFIX))
     if job.startswith(TRYON_PREFIX):
         return process_tryon(rt, job.removeprefix(TRYON_PREFIX))
     if job.startswith(ANALYSIS_PREFIX):
@@ -252,7 +295,9 @@ def process_job(rt: Runtime, job: str) -> str:
 
 
 def _fail_after_crash(job: str) -> None:
-    if job.startswith(TRYON_PREFIX):
+    if job.startswith(MODEL_PREFIX):
+        model, rec_id = BodyModel, job.removeprefix(MODEL_PREFIX)
+    elif job.startswith(TRYON_PREFIX):
         model, rec_id = TryOn, job.removeprefix(TRYON_PREFIX)
     elif job.startswith(ANALYSIS_PREFIX):
         model, rec_id = PersonalAnalysis, int(job.removeprefix(ANALYSIS_PREFIX))
@@ -319,7 +364,7 @@ def _serve(rt: Runtime, stop_event: threading.Event, check_trends: bool, shares:
         job = rt.queue.reserve(timeout_s=1.0)
         if job is None:
             continue
-        if check_trends and job.startswith(TRYON_PREFIX) and rt.tryon_queue is not None:
+        if check_trends and job.startswith((TRYON_PREFIX, MODEL_PREFIX)) and rt.tryon_queue is not None:
             # queued before try-ons had their own queue: hand it over instead of blocking here
             rt.tryon_queue.enqueue(job)
             rt.queue.ack(job)

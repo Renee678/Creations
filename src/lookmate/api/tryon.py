@@ -80,7 +80,7 @@ async def check_tryon_photo(
 async def create_tryon(
     user_id: int,
     request: Request,
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(None),
     product_ids: str = Form(...),
     x_access_code: str = Header(default=""),
     db: Session = Depends(get_db),
@@ -99,13 +99,22 @@ async def create_tryon(
     if not any(rt.catalog.products[i].category in REGIONS for i in ids):
         raise HTTPException(400, "nothing to try on: pick a top, bottom, dress or jacket")
 
-    if photo.content_type not in ALLOWED_MEDIA_TYPES - {"image/gif"}:
-        raise HTTPException(415, "use a JPEG, PNG or WebP photo")
-    data = await photo.read(settings.max_upload_bytes + 1)
-    if len(data) > settings.max_upload_bytes:
-        raise HTTPException(413, "image too large (max 8 MB)")
-    if not data:
-        raise HTTPException(400, "empty image")
+    # "My model" is the person whenever the user has saved one; a photo is only needed without it.
+    from .body_model import saved_model  # imported here: body_model imports this module
+
+    model = saved_model(db, user_id)
+    if model is not None:
+        data, media_type = model.result_image, model.result_media_type or "image/jpeg"
+    elif photo is None:
+        raise HTTPException(400, "add a full-body photo, or create My model in Profile")
+    else:
+        if photo.content_type not in ALLOWED_MEDIA_TYPES - {"image/gif"}:
+            raise HTTPException(415, "use a JPEG, PNG or WebP photo")
+        data, media_type = await photo.read(settings.max_upload_bytes + 1), photo.content_type
+        if len(data) > settings.max_upload_bytes:
+            raise HTTPException(413, "image too large (max 8 MB)")
+        if not data:
+            raise HTTPException(400, "empty image")
 
     # Idempotent: the same photo and outfit return the existing try-on instead of paying again.
     key = hashlib.sha256(hashlib.sha256(data).digest() + ",".join(ids).encode()).hexdigest()
@@ -120,7 +129,7 @@ async def create_tryon(
         raise HTTPException(429, "Today's try-on quota is used up. Please come back tomorrow.")
 
     rec = TryOn(id=secrets.token_hex(16), user_id=user_id, request_sha256=key, product_ids=ids,
-                media_type=photo.content_type, photo=data)
+                media_type=media_type, photo=data)
     db.add(rec)
     db.commit()
     rt.tryon_queue.enqueue(tryon_job(rec.id))

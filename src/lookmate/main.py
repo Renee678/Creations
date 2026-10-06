@@ -8,7 +8,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import analysis, looks, profiles, style, trends, tryon
+from .api import analysis, body_model, looks, profiles, style, trends, tryon
 from .catalog.importer import IMAGE_ROUTE
 from .config import get_settings
 from .runtime import Runtime, build_runtime, watch_catalog
@@ -51,6 +51,7 @@ app.include_router(style.router)
 app.include_router(trends.router)
 app.include_router(analysis.router)
 app.include_router(tryon.router)
+app.include_router(body_model.router)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

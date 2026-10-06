@@ -19,7 +19,7 @@ from .jobqueue import JobQueue
 from .llm.client import VisionLLM, make_vision_llm
 from .models import Trend
 from .services.trends import ClaudeTrendResearcher
-from .tryon.client import make_tryon
+from .tryon.client import make_model_maker, make_tryon
 
 LOOK_QUEUE = "looks"
 TRYON_QUEUE = "tryons"  # its own queue: a slow render never holds up a look or an analysis
@@ -71,6 +71,7 @@ class Runtime:
     data_dir: Path
     tryon: object  # ReplicateTryOn, or PreviewTryOn without a token
     tryon_queue: JobQueue | None = None
+    model_maker: object | None = None  # draws "My model" (Nano Banana); None without a Replicate token
     catalog_import: dict = field(default_factory=lambda: {"running": False})
     catalog_version: bytes | None = None  # CATALOG_VERSION when this process loaded its catalog
 
@@ -113,6 +114,7 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
         data_dir=data_dir,
         tryon=make_tryon(settings.replicate_api_token, settings.tryon_model, settings.fashn_api_key),
         tryon_queue=JobQueue(client, TRYON_QUEUE),
+        model_maker=make_model_maker(settings.replicate_api_token),
         catalog_version=version,
     )
     rt.catalog_import["pending"] = stale  # configured catalog not in the table yet

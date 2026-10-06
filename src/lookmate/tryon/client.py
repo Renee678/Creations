@@ -173,6 +173,26 @@ silhouette wider, taller or slimmer, do not shrink or enlarge their head, and do
 any model in the other images. The result must look like the original photo, only with different clothes."""
 
 
+MODEL_PROMPT = """Turn this photo into a clean full-body base photo of the same person, for a virtual fitting room.
+Keep it the same person: the same face, skin tone, hair, and their real body shape and proportions. {size}
+Pose: facing the camera, standing straight, arms relaxed at the sides, the whole body visible from head to toe.
+Clothes: a plain white tank top, light blue denim shorts and white sneakers, nothing else.
+Background: a plain light-grey studio backdrop with soft, even light, like a shop's try-on base model.
+Do not slim, reshape or beautify the body: no thinner waist, longer legs, smaller arms, smoother skin or
+retouched face. The result must look like this person on an ordinary day, just in basics against a plain wall."""
+
+
+def model_prompt(height_cm: float | None = None, weight_kg: float | None = None) -> str:
+    """The "My model" prompt, with the profile's height and weight as hints for the body's real size."""
+    hints = []
+    if height_cm:
+        hints.append(f"{height_cm:g} cm tall")
+    if weight_kg:
+        hints.append(f"{weight_kg:g} kg")
+    size = f"For reference they are {' and '.join(hints)}; draw that build as it is." if hints else ""
+    return "\n".join(line.rstrip() for line in MODEL_PROMPT.format(size=size).splitlines())
+
+
 def nano_banana_pieces(shown: list[str], described: list[str]) -> str:
     """The outfit part of the prompt: pieces with a photo, then pieces known only by their description."""
     parts = []
@@ -213,6 +233,19 @@ class NanoBananaTryOn(ReplicateTryOn):
 
     def dress(self, person: bytes, media_type: str, garment: Garment) -> tuple[bytes, str]:
         return self.dress_outfit(person, media_type, [garment])
+
+    def make_model(self, person: bytes, media_type: str, height_cm: float | None = None,
+                   weight_kg: float | None = None) -> tuple[bytes, str]:
+        """"My model": the same person, standing front-on in plain basics on a grey studio background."""
+        body = {"input": {
+            "prompt": model_prompt(height_cm, weight_kg),
+            "image_input": [self._file_input(person, media_type)],
+            "aspect_ratio": "3:4",  # a standing full-body frame, whatever the upload's crop
+            "output_format": "jpg",
+        }}
+        pred = self._request("POST", f"{REPLICATE_API}/models/{self.model}/predictions", json=body,
+                             headers={"Prefer": "wait=60"})
+        return self._finish(pred)
 
 
 FASHN_API = "https://api.fashn.ai/v1"
@@ -273,6 +306,11 @@ class FashnTryOn:
         except httpx.HTTPError as e:
             raise TryOnError(f"couldn't download the try-on image: {e}", retryable=True) from e
         return img.content, img.headers.get("content-type", "image/jpeg").split(";")[0]
+
+
+def make_model_maker(token: str):
+    """Who draws "My model": Nano Banana with a Replicate token, else nobody (the photo is saved as it is)."""
+    return NanoBananaTryOn(token) if token else None
 
 
 def make_tryon(token: str, model: str = NANO_BANANA, fashn_key: str = ""):
