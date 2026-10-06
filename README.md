@@ -52,9 +52,14 @@ catalog on the next start.
 ```bash
 make install && make test        # unit + integration tests, offline (SQLite, fakeredis, fake LLM)
 ./scripts/smoke_test.sh          # end-to-end against a running stack, through the gateway
+python scripts/load_test.py --url https://5-161-202-29.sslip.io --clients 20 --seconds 30  # free endpoints only
 ```
 
 CI (GitHub Actions) runs the test suite and boots the full Compose stack for the smoke test on every push.
+
+The load test calls only `/healthz` and the catalog search (embeddings), never Claude or try-on, and prints
+requests/s, p50/p95/p99 latency, errors and 429s as a Markdown table. The gateway allows 20 requests/s per IP
+(burst 40), so from one machine the 429 column shows the rate limiter doing its job.
 
 ## Architecture
 
