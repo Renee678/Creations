@@ -1,6 +1,7 @@
 """Virtual try-on: "try this outfit on me" from the Lookbook."""
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timezone
 
@@ -16,12 +17,13 @@ from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES, LLMError
 from ..models import TryOn
 from ..tryon.client import REGIONS, TRYON_STAGE, tryon_quota_key
-from ..tryon.garments import fetch_shop_photo, prefetch
+from ..tryon.garments import BROWSER_PHOTO_MAX_BYTES, fetch_shop_photo, prefetch, store_browser_photo
 from ..worker import tryon_job
 from .looks import require_access_code
 from .profiles import get_user_or_404
 
 router = APIRouter(tags=["try-on"])
+log = logging.getLogger(__name__)
 
 MAX_PIECES = 6
 
@@ -179,6 +181,38 @@ async def product_photo(product_id: str, request: Request) -> Response:
     if data is None:
         raise HTTPException(404, "the shop photo could not be loaded")
     return Response(data, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.post("/api/products/{product_id}/photo")
+async def upload_product_photo(product_id: str, request: Request, blocked: bool = False,
+                               x_access_code: str = Header(default="")) -> dict:
+    """The shop photo as the shopper's browser loaded it, when the shop's CDN refuses our server.
+
+    The fitting room fetches each piece's photo in the browser and posts the bytes here; they go into the
+    cache the try-on reads, under that piece's photo URL. `blocked=true` (no body) only records that the
+    browser couldn't read it either. An upload never replaces a photo already cached.
+    """
+    rt = request.app.state.runtime
+    require_access_code(x_access_code)
+    product = rt.catalog.products.get(product_id)
+    if product is None or not product.image_url.startswith("https://"):
+        raise HTTPException(404, "no shop photo for this piece")
+    if blocked:
+        log.info("shop photo for %s: browser fetch blocked by CORS: %s", product_id, product.image_url)
+        return {"status": "blocked"}
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > BROWSER_PHOTO_MAX_BYTES:
+        raise HTTPException(413, "photo too large")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > BROWSER_PHOTO_MAX_BYTES:
+            raise HTTPException(413, "photo too large")
+    status = await run_in_threadpool(store_browser_photo, product.image_url, rt.data_dir, bytes(data))
+    log.info("shop photo for %s from the browser: %s", product_id, status)
+    if status == "rejected":
+        raise HTTPException(415, "not a usable product photo")
+    return {"status": status}
 
 
 @router.get("/api/tryons/{tryon_id}/image")

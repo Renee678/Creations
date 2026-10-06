@@ -1304,7 +1304,7 @@ function toggleRoom(id, keep = false) {
   if (room[slot] && room[slot].id === id) { if (!keep) delete room[slot]; }
   else {
     room[slot] = { id: p.id, name: p.name, category: p.category, product_type: p.product_type, image_url: p.image_url, price: p.price };
-    prefetchPhoto(p.id);
+    prefetchPhoto(p);
     // A dress replaces a top and a bottom, and the other way round.
     if (slot === "dress") { delete room.top; delete room.bottom; }
     if (slot === "top" || slot === "bottom") delete room.dress;
@@ -1314,8 +1314,26 @@ function toggleRoom(id, keep = false) {
 }
 
 // Load a piece's shop photo on the server as it enters the fitting room, so the try-on doesn't wait for it.
-function prefetchPhoto(id) {
-  fetch("/api/tryon/prefetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product_ids: [id] }) }).catch(() => {});
+// Some shop CDNs refuse our server but not shoppers, so the browser loads it too and hands the bytes over
+// (the server keeps a photo it already has). Nothing here is awaited: the tray never waits on a photo.
+const BROWSER_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+function prefetchPhoto(p) {
+  fetch("/api/tryon/prefetch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ product_ids: [p.id] }) }).catch(() => {});
+  if (!(p.image_url || "").startsWith("https://")) return;
+  const to = `/api/products/${encodeURIComponent(p.id)}/photo`;
+  const headers = { "X-Access-Code": store.get("accessCode") || "" };  // never a prompt from the tray
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), 20000);
+  fetch(p.image_url, { mode: "cors", credentials: "omit", signal: stop.signal })
+    .then((r) => (r.ok ? r.blob() : null))
+    .then((blob) => {
+      if (blob && blob.size && blob.size <= BROWSER_PHOTO_MAX_BYTES) return fetch(to, { method: "POST", headers, body: blob });
+    })
+    .catch((err) => {
+      // A CORS refusal is a TypeError, with no detail by design; a timeout is an AbortError and isn't logged.
+      if (err instanceof TypeError) fetch(`${to}?blocked=true`, { method: "POST", headers }).catch(() => {});
+    })
+    .finally(() => clearTimeout(timer));
 }
 
 function renderRoom() {

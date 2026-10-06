@@ -2,8 +2,11 @@
 
 Shop photos are cached on disk, so a piece fetched once (or prefetched when it went into the fitting room)
 costs nothing at try-on time. A fetch gets one try within the outfit's budget: a CDN that stalls for longer
-usually stalls for minutes, and the piece is better described in words than waited for. Each failure is logged
-with its reason (refused, timed out, unreadable format), so `docker compose logs worker` shows why.
+usually stalls for minutes. A piece without a photo stops the try-on (it is never drawn from words). Each failure
+is logged with its reason (refused, timed out, unreadable format), so `docker compose logs worker` shows why.
+
+When the shop's CDN refuses the server, the shopper's browser can still load the photo: the fitting room fetches
+it and hands the bytes over (store_browser_photo), into the same cache.
 """
 
 import hashlib
@@ -97,15 +100,52 @@ def fetch_shop_photo(url: str, data_dir: Path | None, http: httpx.Client | None 
             return None, "image/jpeg"
         media_type = "image/jpeg"
     if path is not None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")
-        tmp.write_bytes(media_type.encode() + b"\n" + data)
-        tmp.replace(path)  # atomic: two fetches of the same photo never leave half a file
+        _write(path, media_type, data)
     return data, media_type
 
 
+def _write(path: Path, media_type: str, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")
+    tmp.write_bytes(media_type.encode() + b"\n" + data)
+    tmp.replace(path)  # atomic: two fetches of the same photo never leave half a file
+
+
+BROWSER_PHOTO_MAX_BYTES = 5 * 1024 * 1024
+BROWSER_PHOTO_MIN_PX = 100
+
+
+def store_browser_photo(url: str, data_dir: Path, data: bytes) -> str:
+    """Cache a shop photo the shopper's browser loaded, for the piece whose photo URL is `url`.
+
+    Returns "stored", "kept" (the cache already had it: an upload never replaces a photo) or "rejected"
+    (too big, not a picture, or too small to be a product photo).
+    """
+    path = _cached(data_dir, url)
+    if path.is_file():
+        return "kept"
+    if not data or len(data) > BROWSER_PHOTO_MAX_BYTES:
+        return "rejected"
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as img:
+            if min(img.size) < BROWSER_PHOTO_MIN_PX:
+                return "rejected"
+            img.verify()
+    except Exception:  # Pillow raises many types for unreadable images
+        return "rejected"
+    media_type = sniff(data)
+    if media_type is None:
+        data, media_type = _as_jpeg(data), "image/jpeg"
+        if data is None:
+            return "rejected"
+    _write(path, media_type, data)
+    return "stored"
+
+
 def garment_from_words(product: ProductView) -> Garment:
-    """A piece whose photo didn't arrive in time: the model draws it from its description."""
+    """A piece without its photo (yet): its name and region, and the URL for providers that load it themselves."""
     colour = "" if product.colour.lower() in product.name.lower() else f"{product.colour} "
     url = product.image_url if product.image_url.startswith("https://") else None
     return Garment(None, "image/jpeg", REGIONS.get(product.category, "accessory"),

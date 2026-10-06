@@ -664,6 +664,67 @@ def test_a_piece_without_a_photo_stops_the_try_on_and_the_face_note_needs_the_pa
     assert page.errors == []
 
 
+def test_the_browser_hands_shop_photos_to_the_server_when_a_piece_enters_the_fitting_room(page):
+    """Feedback #38: some shop CDNs refuse our server but not shoppers. Adding a piece to the tray fetches its photo
+    in the browser (CORS) and posts the bytes to the server's cache; a CORS refusal is only reported, and the
+    tray never waits for any of it. The shop CDN is stubbed: one piece allows CORS, the others don't."""
+    if LIVE_URL:
+        pytest.skip("rewrites the catalog photos; offline only")
+    from .conftest import png
+
+    picture = png(GREEN)
+
+    def with_cdn_photos(route):
+        data = route.fetch().json()
+
+        def walk(x):
+            if isinstance(x, dict):
+                if "image_url" in x and "id" in x:
+                    x["image_url"] = f"https://cdn.e2e.test/{x['id']}.png"
+                for v in x.values():
+                    walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(data)
+        route.fulfill(content_type="application/json", body=json.dumps(data))
+
+    allowed = []
+
+    def cdn(route):
+        # Playwright answers a stubbed request's CORS check itself, so a refusal is stubbed as what the page sees
+        # from one: a failed fetch (a TypeError, with no detail).
+        if allowed and route.request.url.endswith(f"/{allowed[0]}.png"):
+            route.fulfill(content_type="image/png", body=picture, headers={"Access-Control-Allow-Origin": "*"})
+        else:
+            route.abort("accessdenied")
+
+    posts = []
+    page.on("request", lambda r: posts.append(r) if re.search(r"/api/products/[^/]+/photo", r.url)
+            and r.method == "POST" else None)
+    page.route("**/lookbook?*", with_cdn_photos)
+    page.route("https://cdn.e2e.test/**", cdn)
+    tab(page, "lookbook")
+    upload_me(page)
+    looks = create_looks(page)
+    pieces = page.evaluate("Array.from(document.querySelectorAll('#lb-sections .outfit')[0]"
+                           ".querySelectorAll('[data-room]')).map((b) => b.dataset.room)")
+    allowed.append(pieces[0])
+    assert looks and len(pieces) > 1
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room .room-piece").first.wait_for()  # the tray is there at once, photos or not
+    deadline = 50
+    while len(posts) < len(pieces) and deadline:
+        page.wait_for_timeout(100)
+        deadline -= 1
+    uploaded = [r for r in posts if "blocked" not in r.url]
+    blocked = [r for r in posts if "blocked=true" in r.url]
+    assert len(uploaded) == 1 and f"/api/products/{pieces[0]}/photo" in uploaded[0].url
+    assert uploaded[0].post_data_buffer == picture, "the photo's own bytes"
+    assert len(blocked) == len(pieces) - 1, "every refused photo is reported, nothing more"
+    assert page.errors == []
+
+
 def test_the_fitting_room_is_a_side_panel_on_wide_screens_and_a_bottom_bar_on_phones(page):
     """Feedback #36: at 1100px and wider the fitting room docks beside the content without covering it."""
     tab(page, "lookbook")
