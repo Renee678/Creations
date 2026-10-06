@@ -471,3 +471,13 @@ def test_deploy_sets_catalog_defaults_by_the_servers_memory(tmp_path, gb, env, e
     subprocess.run(["bash", str(script), str(tmp_path / ".env"), str(tmp_path / "meminfo")], check=True,
                    capture_output=True)
     assert (tmp_path / ".env").read_text() == expected
+
+
+def test_the_gateway_resolves_the_api_at_request_time():
+    """A redeploy recreates the api container with a new IP; a static upstream kept the old one (502s)."""
+    conf = (Path(__file__).resolve().parents[1] / "gateway" / "nginx.conf").read_text()
+    assert "resolver 127.0.0.11 valid=10s" in conf, "Docker's DNS, re-asked every 10 s"
+    assert "upstream app" not in conf and "server api:8000" not in conf
+    assert "set $app http://api:8000;" in conf
+    passes = [line.strip() for line in conf.splitlines() if "proxy_pass" in line]
+    assert passes and all(p == "proxy_pass $app;" for p in passes)
