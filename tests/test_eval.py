@@ -103,3 +103,20 @@ def test_the_bundled_examples_run_offline(runtime):
     assert summary["latency_median_ms"] is not None
     md = to_markdown(results, summary, "fake")
     assert md.startswith("## Image evaluation (2 photos, 6 labelled pieces, perception: fake)")
+
+
+def test_photos_are_sent_as_the_app_sends_them(tmp_path):
+    """The browser shrinks photos to 1024 px JPEG before upload; a raw phone photo can exceed the API's 5 MB."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    from lookmate.eval import load_photo
+
+    big = tmp_path / "phone.png"
+    Image.new("RGB", (3000, 4000), "pink").save(big)
+    data, media_type = load_photo(big)
+    assert media_type == "image/jpeg" and max(Image.open(BytesIO(data)).size) == 1024
+    junk = tmp_path / "junk.webp"
+    junk.write_bytes(b"not an image")
+    assert load_photo(junk) == (b"not an image", "image/webp"), "the model gets to say it can't read it"

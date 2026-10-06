@@ -119,6 +119,30 @@ def dupes_precision(exp: Expected, picks: list) -> tuple[int, int]:
     return sum(target.check(p) for p in shown), len(shown)
 
 
+APP_MAX_SIDE = 1024  # the browser shrinks every photo to this before upload (shrinkPhoto in app.js)
+
+
+def load_photo(path: Path) -> tuple[bytes, str]:
+    """The photo as the app would send it: upright, at most 1024 px on its longest side, JPEG at 85%.
+
+    Phone photos straight off the camera can be over the model API's 5 MB image limit; the app never sends one."""
+    from io import BytesIO
+
+    from PIL import Image, ImageOps
+
+    data = path.read_bytes()
+    try:
+        img = ImageOps.exif_transpose(Image.open(BytesIO(data)))
+        if max(img.size) <= APP_MAX_SIDE and len(data) < 4_000_000:
+            return data, MEDIA_TYPES.get(path.suffix.lower(), "image/jpeg")  # already small: same pixels either way
+        img.thumbnail((APP_MAX_SIDE, APP_MAX_SIDE))
+        out = BytesIO()
+        img.convert("RGB").save(out, "JPEG", quality=85)
+        return out.getvalue(), "image/jpeg"
+    except Exception:  # not an image Pillow reads: send it as it is and let the model say so
+        return data, MEDIA_TYPES.get(path.suffix.lower(), "image/jpeg")
+
+
 def percentile(values: list[float], q: float) -> float | None:
     """Nearest-rank percentile (q in 0..100); None for no values."""
     if not values:
@@ -259,8 +283,7 @@ def run(cases_path: Path, photos_dir: Path, llm, dupes, tryon=None) -> tuple[lis
         if not path.is_file():
             results.append(CaseResult(image, expected, error=f"photo not found: {path}"))
             continue
-        res = evaluate_case(image, expected, path.read_bytes(), MEDIA_TYPES.get(path.suffix.lower(), "image/jpeg"),
-                            llm, dupes)
+        res = evaluate_case(image, expected, *load_photo(path), llm, dupes)
         if tryon is not None and not res.error:
             res.tryon_image = tryon(res)
         results.append(res)
