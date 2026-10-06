@@ -63,3 +63,29 @@ the way the fitting room does, and saves the picture in `evals/out/`. Check each
   near-miss.
 - **Extra items**: detected items with no label (possibly real pieces you didn't label).
 - **Latency**: perception plus search per photo, median and p95.
+
+## Lookbook evaluation ("Create my looks")
+
+The Lookbook starts from a selfie: the AI reads your colour season, then builds outfits in your colours. This
+checks both steps on a folder of selfies of **one person** (you), so it needs no answer file.
+
+1. Put 15–25 selfies in `evals/lookbook-photos/` (git ignores it). Vary the light: indoor, outdoor, day, night,
+   with and without makeup; a few with filters show whether the AI is fooled.
+2. Run it:
+
+```bash
+python scripts/run_lookbook_eval.py                                   # writes evals/lookbook-results.md
+python scripts/run_lookbook_eval.py --season summer --undertone cool  # if you know your colour season
+```
+
+What it measures:
+
+- **Consistency**: the share of photos that get the most common colour season, sub-season and undertone. One
+  person should get the same answer in every photo; a drop shows how much lighting and filters sway it.
+- **Accuracy** (only with `--season` / `--undertone`): the share that matches your known answer.
+- **Outfits**: for each photo, the current season's lookbook is built the way "Create my looks" builds it,
+  stylist included. It reports how many outfits the AI stylist approved, pieces in a colour the analysis said to
+  avoid, and outfits with more than one bright piece (both should be 0%).
+- **Would you wear them?**: a blank column in the per-photo table for your own judgement.
+
+Each photo costs two Claude calls (analysis and stylist).

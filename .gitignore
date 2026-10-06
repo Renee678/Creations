@@ -14,3 +14,4 @@ tests/e2e/photos/*
 evals/photos/*
 !evals/photos/example-*.png
 evals/out/
+evals/lookbook-photos/
