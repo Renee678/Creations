@@ -572,3 +572,15 @@ body.room-open { padding-bottom: 110px; }
 .model-shot img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; }
 .model-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
 .model-note { margin: 4px 0 0; }
+
+/* Flat-lay labels: "$54.50 · ASOS ↗" links to the piece in its shop */
+.shop-link { display: block; font: 400 11px/1.6 Jost, sans-serif; font-style: normal; letter-spacing: .06em; color: #8a8a8a;
+  text-decoration: none; white-space: nowrap; }
+.shop-link:hover, .shop-link:focus-visible { color: #2b2b2b; text-decoration: underline; }
+.flatlay:not(.bk-board) { padding: 22px 18px 18px; }
+.flatlay .bk-it { width: 100%; }
+
+/* My Look Book → Outfits: one shelf per season */
+.book-shelf { margin: 0 0 22px; }
+.book-shelf h3 { font: italic 500 22px/1 "Bodoni Moda", serif; margin: 6px 0 10px; display: flex; align-items: baseline; gap: 8px; }
+.book-shelf h3 small { font: 400 12px Jost, sans-serif; font-style: normal; color: var(--muted); }

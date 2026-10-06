@@ -618,15 +618,22 @@ const lbProducts = new Map();  // every piece on the lookbook page, for the fitt
 const BOARD_AREA = { outerwear: "1 / 1 / 3 / 2", top: "1 / 2 / 2 / 3", bottom: "2 / 2 / 4 / 3", dress: "1 / 2 / 4 / 3",
   shoes: "3 / 1 / 4 / 2", bag: "2 / 3 / 4 / 4", accessory: "1 / 3 / 2 / 4" };
 
-function boardHtml(pieces) {
+/** The white flat lay (Lookbook results and Look Book pages): every piece where it sits on the body, each with an
+ *  italic label, a curved arrow and a small price line that links to the shop. */
+function flatLayHtml(pieces, { book = false } = {}) {
   const cats = new Set(pieces.map((p) => p.category));
   const area = (c) => (c === "shoes" && !cats.has("outerwear") ? "2 / 1 / 4 / 2" : BOARD_AREA[c] || BOARD_AREA.accessory);
   const twoCols = !cats.has("bag") && !cats.has("accessory");  // nothing for the right-hand column
-  return `<div class="board${twoCols ? " board-2" : ""}">${pieces.map((p) => `<figure class="bp bp-${esc(p.category)}" style="grid-area:${area(p.category)}">
-      ${p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'bp-none',textContent:'${esc(p.product_type)}'}))">`
-        : `<span class="bp-none">${esc(p.product_type)}</span>`}
-      <figcaption>${esc(boardLabel(p))}<b>$${p.price.toFixed(2)}</b></figcaption>
-    </figure>`).join("")}</div>`;
+  const items = pieces.map((p) => `<figure class="bk-it bp-${esc(p.category)}" style="grid-area:${area(p.category)}">${pieceImg(p)}
+      <figcaption>${ARROW}<span class="bk-lab">${esc(boardLabel(p))}${priceLink(p)}</span>${book ? dotsHtml(p) : ""}</figcaption></figure>`).join("");
+  return `<div class="board flatlay${book ? " bk-board" : ""}${twoCols ? " board-2" : ""}">${items}</div>`;
+}
+
+/** "$54.50 · ASOS ↗", linking to the piece in its shop (Renee: labels link to the shop). */
+function priceLink(p) {
+  const price = `$${p.price.toFixed(2)}`;
+  return p.shop ? `<a class="shop-link" href="${esc(p.shop.url)}" target="_blank" rel="noopener">${price} · ${esc(p.shop.name)} ↗</a>`
+    : `<small>${price}</small>`;
 }
 
 /** "Brown leather jacket": the colour first, as in a flat-lay caption, unless the name already says it. */
@@ -669,7 +676,7 @@ function outfitCard(o, section) {
   return `<div class="outfit"><div class="item-head"><h3>${esc(o.title)}</h3>${trend}<span class="muted">$${o.total_price.toFixed(2)} total</span>
       <span class="outfit-actions">${save}<button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
     ${o.why ? `<p class="outfit-why">✦ ${esc(o.why)}</p>` : ""}
-    ${boardHtml(o.pieces)}
+    ${flatLayHtml(o.pieces)}
     <details class="shop-pieces"><summary>Shop each piece (${o.pieces.length})</summary>
       <div class="grid">${o.pieces.map((p) => productCard(p, [o.style_id], { room: true })).join("")}</div></details></div>`;
 }
@@ -708,16 +715,23 @@ function pageLabel(pg) {
 
 // The Outfits tab: a grid of the outfit pages (filtered by season and style); a tap opens one.
 function renderContents() {
-  const thumbs = book.pages.map((pg, i) => {
-    if (pg.kind !== "look") return "";
+  const thumb = (pg, i) => {
     const [title, sub] = pageLabel(pg);
-    const img = pg.kind === "look" ? (pg.o.tryon_image || (pg.o.pieces[0] || {}).image_url)
-      : pg.kind === "favourites" ? ((pg.fav.folders.find((f) => f.count) || { items: [{}] }).items[0].image_url || "") : "";
-    return `<button type="button" class="book-thumb book-thumb-${pg.kind}" data-book-open="${i}">
+    const img = pg.o.tryon_image || (pg.o.pieces[0] || {}).image_url;
+    return `<button type="button" class="book-thumb book-thumb-look" data-book-open="${i}">
         ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ""}<b>${esc(title)}</b><small>${esc(sub)}</small></button>`;
+  };
+  // One shelf per season (Renee, feedback #34), newest first within it; seasons with no outfits don't show.
+  const looks = book.pages.map((pg, i) => [pg, i]).filter(([pg]) => pg.kind === "look");
+  const shelves = [...ALL_SEASONS, null].map((season) => {
+    const here = looks.filter(([pg]) => (ALL_SEASONS.includes(pg.o.season) ? pg.o.season : null) === season);
+    if (!here.length) return "";
+    return `<section class="book-shelf" data-shelf="${season || "any"}"><h3>${season ? SEASON_NAMES[season] : "Any season"}
+        <small>${here.length} ${here.length === 1 ? "look" : "looks"}</small></h3>
+      <div class="book-grid">${here.map(([pg, i]) => thumb(pg, i)).join("")}</div></section>`;
   }).join("");
-  const empty = !book.pages.some((pg) => pg.kind === "look") ? `<p class="muted small book-empty">No outfits here yet. Tap <strong>♡ Save to My Style</strong> on a Lookbook outfit, or mix your own in the fitting room.</p>` : "";
-  $("#book-contents").innerHTML = `<div class="book-grid">${thumbs}<button type="button" class="book-thumb book-add" data-goto="lookbook">+ Make a look<br>in Lookbook</button></div>${empty}`;
+  const empty = !looks.length ? `<p class="muted small book-empty">No outfits here yet. Tap <strong>♡ Save to My Style</strong> on a Lookbook outfit, or mix your own in the fitting room.</p>` : "";
+  $("#book-contents").innerHTML = `${shelves}<div class="book-grid"><button type="button" class="book-thumb book-add" data-goto="lookbook">+ Make a look<br>in Lookbook</button></div>${empty}`;
 }
 
 // Tabs instead of "← Contents" and arrows (Renee, 2026-10-06): Cover, About me, Favourites, Outfits · N.
@@ -821,7 +835,8 @@ function dotsHtml(p) {
 const ARROW = `<svg class="bk-arrow" viewBox="0 0 60 40" aria-hidden="true"><path d="M4 6 Q34 2 52 30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M44 28 L52 31 L53 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 function pieceImg(p) {
-  return p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy">` : `<span class="bp-none">${esc(p.product_type)}</span>`;
+  return p.image_url ? `<img src="${esc(p.image_url)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'bp-none',textContent:'${esc(p.product_type)}'}))">`
+    : `<span class="bp-none">${esc(p.product_type)}</span>`;
 }
 
 function lookPage(o) {
@@ -835,7 +850,7 @@ function lookPage(o) {
       <button type="button" class="linklike" data-room-all="${esc(ids)}" data-goto="lookbook">Try it on me</button></footer>`;
   const sub = `${SEASON_NAMES[o.season] || o.season} · ${o.style}`;
   if (view === "me") {
-    const col = (ps) => ps.map((p) => `<div class="bk-pc">${pieceImg(p)}<b>${esc(boardLabel(p))}</b><small>$${p.price.toFixed(2)}</small>${dotsHtml(p)}</div>`).join("");
+    const col = (ps) => ps.map((p) => `<div class="bk-pc">${pieceImg(p)}<b>${esc(boardLabel(p))}</b>${priceLink(p)}${dotsHtml(p)}</div>`).join("");
     const polaroid = o.inspo ? `<figure class="bk-polaroid"><p>${esc(o.inspo.vibe)}</p><figcaption>my inspiration</figcaption></figure>`
       : o.occasion ? `<figure class="bk-polaroid"><p>${esc(cap(o.occasion))}</p><figcaption>${esc(OCCASION_NAMES[o.occasion])}</figcaption></figure>` : "";
     return `<article class="bk bk-look bk-me">${toggle}
@@ -848,16 +863,11 @@ function lookPage(o) {
         <div class="bk-bottom">${o.why ? `<p class="bk-hand">${esc(o.why)}</p>` : "<span></span>"}${polaroid}</div>
         ${foot}</article>`;
   }
-  // Flat lay: every piece where it sits on the body, each with an italic label, an arrow and its price.
-  const cats = new Set(o.pieces.map((p) => p.category));
-  const area = (c) => (c === "shoes" && !cats.has("outerwear") ? "2 / 1 / 4 / 2" : BOARD_AREA[c] || BOARD_AREA.accessory);
-  const twoCols = !cats.has("bag") && !cats.has("accessory");
-  const items = o.pieces.map((p) => `<figure class="bk-it" style="grid-area:${area(p.category)}">${pieceImg(p)}
-      <figcaption>${ARROW}<span class="bk-lab">${esc(boardLabel(p))}<small>$${p.price.toFixed(2)}</small></span>${dotsHtml(p)}</figcaption></figure>`).join("");
+  // Flat lay: the same white page as the Lookbook results.
   return `<article class="bk bk-look bk-flat">${toggle}
       <header><p class="bk-kicker">${esc(sub)}</p><h2 class="bk-flat-title">${esc(o.title)}</h2></header>
       ${o.why ? `<p class="bk-hand bk-flat-why">${esc(o.why)}</p>` : ""}
-      <div class="board bk-board${twoCols ? " board-2" : ""}">${items}</div>
+      ${flatLayHtml(o.pieces, { book: true })}
       ${foot}</article>`;
 }
 
@@ -1431,7 +1441,7 @@ function mineCard(m) {
     <div class="outfit"><div class="item-head"><h3>${esc(m.title)}</h3><span class="muted">$${m.total_price.toFixed(2)} total</span>
       <span class="outfit-actions">${saveButton(`mine:${ids}`, { title: m.title, product_ids: m.pieces.map((x) => x.pick.id), style_id: m.style_id, source: "mine", why: m.why || null, inspo_look_id: Number(lbInspo) || null })}
       <button type="button" class="gel room-all" data-room-all="${esc(ids)}">+ whole outfit to fitting room</button></span></div>
-    ${boardHtml(m.pieces.map((x) => x.pick))}
+    ${flatLayHtml(m.pieces.map((x) => x.pick))}
     ${m.why ? `<p class="outfit-why">✦ ${esc(m.why)}</p>` : `<p class="muted small">Not reviewed by the AI stylist.</p>`}
     <div class="grid mine-grid">${rows}</div></div></div>`;
 }

@@ -503,3 +503,48 @@ def test_skipped_at_sign_up_my_model_is_offered_in_the_fitting_room(page):
     tab(page, "profile")
     page.locator("#my-model [data-model-delete]").wait_for()
     assert page.locator("#my-model .model-shot img").get_attribute("src").startswith("/api/body-models/")
+
+
+def test_flat_lays_link_to_shops_and_outfits_shelve_by_season(page):
+    """Feedback #34: Lookbook results are white flat lays whose labels link to the shop ("$54.50 · ASOS ↗"),
+    and My Look Book → Outfits files saved looks under season shelves, empty seasons left out."""
+    tab(page, "lookbook")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok) as resp:
+        page.locator("[data-lb-browse]").click()
+    first = next(o for s in resp.value.json()["sections"] for o in s["outfits"])
+    card = page.locator("#lb-sections .outfit").first
+    card.wait_for()
+    assert card.locator(".board").count() == 1 and card.locator(".flatlay .bk-it").count() == len(first["pieces"])
+    assert card.locator(".flatlay .bk-arrow").count() == len(first["pieces"]), "a curved arrow per label"
+    links = card.locator(".bk-lab a.shop-link")
+    assert links.count() == len(first["pieces"])
+    for i, p in enumerate(first["pieces"]):
+        link = links.nth(i)
+        assert re.fullmatch(rf"\${p['price']:.2f} · (ASOS|SHEIN|Amazon) ↗", link.inner_text().strip()), link.inner_text()
+        assert link.get_attribute("href").startswith("https://") and link.get_attribute("target") == "_blank"
+
+    saved = []
+    for _ in range(2):
+        saved.append(page.locator("#lb-seasons .chip.on").get_attribute("data-season"))
+        with page.expect_response(lambda r: r.url.endswith("/outfits") and r.request.method == "POST"):
+            page.locator("#lb-sections .save-outfit").first.click()
+        other = next(c for c in page.locator("#lb-seasons .chip").all() if c.get_attribute("data-season") not in saved)
+        with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok):
+            other.click()
+        page.locator("#lb-sections .outfit").first.wait_for()
+
+    tab(page, "style")
+    page.locator("#book-tabs button", has_text="Outfits").click()
+    page.locator("#book-contents .book-shelf").first.wait_for()
+    order = ["spring", "summer", "autumn", "winter"]
+    shelves = page.locator("#book-contents .book-shelf")
+    assert [s.get_attribute("data-shelf") for s in shelves.all()] == sorted(saved, key=order.index), \
+        "one shelf per season with outfits, in season order"
+    for s in shelves.all():
+        assert s.locator(".book-thumb-look").count() == 1
+    assert page.locator("#book-contents .book-add").count() == 1
+
+    # The saved look's flat-lay page has the same shop links.
+    shelves.first.locator(".book-thumb-look").click()
+    page.locator("#book-page .bk-flat .bk-lab a.shop-link").first.wait_for()
+    assert not page.errors, page.errors
