@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     # Virtual try-on (IDM-VTON on Replicate). Empty token: the UI shows a collage preview instead.
     replicate_api_token: str = ""
     fashn_api_key: str = ""        # preferred try-on model when set: warm, seconds per garment
+    fashn_model: str = "tryon-max"  # keeps the face and does shoes; "tryon-v1.6" is cheaper, clothes only
     tryon_model: str = "google/nano-banana"  # or "cuuupid/idm-vton" (cheaper, slow cold starts)
     model_gen_model: str = "google/nano-banana-pro"  # draws "My model" once per user: the best at keeping a face
     shop_fetch_impersonate: bool = True  # retry a refused shop photo as Chrome (curl_cffi, when installed)

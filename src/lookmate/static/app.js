@@ -137,7 +137,8 @@ function modelHtml(where) {
     <p class="muted small">Standing, facing the camera, head to toe. Your photos are deleted once the model is made.</p>
     ${face}
     <div class="model-actions"><button type="button" class="gel${modelFile ? "" : " primary"}" data-model-pick>${modelFile ? "Choose another photo" : "Choose a full-body photo"}</button>
-    ${modelFile ? `<button type="button" class="gel primary" data-model-create>Create my model</button>` : ""} ${skip}</div>`;
+    ${modelFile ? `<button type="button" class="gel primary" data-model-create>Create my model</button>
+      <button type="button" class="gel" data-model-original title="Your own photo, face exactly as it is: the try-on swaps the clothes">Use my photo as it is</button>` : ""} ${skip}</div>`;
 }
 
 function renderModel() {
@@ -1253,14 +1254,20 @@ async function pollTryOn(key, id, started, misses, done) {
   setTimeout(() => pollTryOn(key, id, started, 0, done), 2000);
 }
 
+const TRYON_MODEL_NAMES = { fashn: "FASHN", "nano-banana": "Nano Banana", "idm-vton": "IDM-VTON" };
+
 function renderedHtml(key, t) {
   const pieces = tryonPieces[key] || [];
   const rendered = new Set(t.result.rendered_ids || []);
   // Pieces the model didn't draw (shoes, bags, a second top layer) are pinned beside the photo, scrapbook style.
   const pinned = pieces.filter((p) => !rendered.has(p.id));
-  // Only claim the face when My model's own head really was put back on the picture.
+  // Say which model drew it, name what it left out (Renee, feedback #41), and claim the face only when My
+  // model's own head really was put back on the picture.
+  const by = TRYON_MODEL_NAMES[t.result.model] || t.result.model || "an AI try-on model";
+  const left = pinned.map((p) => (p.product_type || p.category).toLowerCase());
   const note = t.result.rendered
-    ? "Rendered by an AI try-on model. Colours and fit are an impression, not a promise."
+    ? `Rendered by ${esc(by)}. Colours and fit are an impression, not a promise.`
+      + (left.length ? ` Not drawn by this model: ${esc(left.join(", "))}, pinned beside the picture.` : "")
       + (t.result.head_pasted ? " Face kept from My model." : "")
     : "Collage preview: add a FASHN_API_KEY or REPLICATE_API_TOKEN to .env to render the outfit on you.";
   return `<div class="tryon-board">

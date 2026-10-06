@@ -191,7 +191,8 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
         session.commit()
         started = time.monotonic()
         pieces = [rt.catalog.products[i] for i in rec.product_ids if i in rt.catalog.products]
-        steps = plan_steps([{"category": p.category, "product": p} for p in pieces])
+        steps = plan_steps([{"category": p.category, "product": p} for p in pieces],
+                           getattr(rt.tryon, "extra_steps", ()))
 
         meta: dict[str, bool | str] = {}
 
@@ -244,6 +245,19 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
             timings["model_ms"] = timings.get("model_ms", 0) + round((time.monotonic() - t0) * 1000)
             return result
 
+        def keep_head(image: bytes, media_type: str, worn: list[str]) -> tuple[bytes, str]:
+            """Safety net: put My model's own head back when the frames line up and nothing sits on it."""
+            t0 = time.monotonic()
+            pasted, why = (None, "headwear") if worn else paste_head(rec.photo, image)
+            if pasted:
+                image, media_type = pasted
+            else:
+                meta["head_paste_skipped"] = why
+                log.info("try-on %s: head not pasted back (%s%s)", tryon_id, why, f": {', '.join(worn)}" if worn else "")
+            meta["head_pasted"] = pasted is not None
+            timings["paste_ms"] = round((time.monotonic() - t0) * 1000)
+            return image, media_type
+
         def render():
             image, media_type, done = rec.photo, rec.media_type, []
             if rt.tryon.renders and getattr(rt.tryon, "whole_outfit", False):
@@ -258,18 +272,7 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
                 args = (image, media_type, [g for _, g in garments]) + ((face,) if face else ())
                 image, media_type = model(rt.tryon.dress_outfit, *args)
                 if rec.from_model:
-                    # Safety net: put My model's own head back when the frames line up and nothing sits on it.
-                    t0 = time.monotonic()
-                    worn = [p.name for p in pieces if _on_the_head(p)]
-                    pasted, why = (None, "headwear") if worn else paste_head(rec.photo, image)
-                    if pasted:
-                        image, media_type = pasted
-                    else:
-                        meta["head_paste_skipped"] = why
-                        log.info("try-on %s: head not pasted back (%s%s)", tryon_id, why,
-                                 f": {', '.join(worn)}" if worn else "")
-                    meta["head_pasted"] = pasted is not None
-                    timings["paste_ms"] = round((time.monotonic() - t0) * 1000)
+                    image, media_type = keep_head(image, media_type, [p.name for p in pieces if _on_the_head(p)])
                 return image, media_type, [pid for pid, _ in garments]
             if rt.tryon.renders:
                 fetched = fetch([step["product"] for step in steps])
@@ -278,6 +281,8 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
                     done.append(step["product"].id)
                 if not done:
                     raise TryOnError("None of these pieces has a photo the try-on model can use.")
+                if rec.from_model:  # FASHN and IDM-VTON redraw the face too: put My model's own head back
+                    image, media_type = keep_head(image, media_type, [])
             return image, media_type, done
 
         out = _call_llm(rt, session, rec, job, render)

@@ -785,6 +785,46 @@ def test_no_photo_of_the_person_is_marked_unusable_in_the_lookbook(page):
     assert page.errors == []
 
 
+def test_my_photo_as_it_is_and_the_try_on_says_who_drew_it_and_what_it_left_out(page):
+    """Feedback #41: Profile offers "Use my photo as it is" next to "Create my model" (the face stays exactly
+    hers); a try-on names the model that drew it and the pieces it didn't draw. The try-on is stubbed."""
+    if LIVE_URL:
+        pytest.skip("creates a model on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    as_is = box.locator("[data-model-original]", has_text="Use my photo as it is")
+    as_is.wait_for()
+    assert as_is.is_visible() and box.locator("[data-model-create]").is_visible(), "both choices, side by side"
+    sent = []
+    page.route("**/api/users/*/model", lambda route: (sent.append(route.request.post_data_buffer or b""),
+                                                      route.continue_()))
+    as_is.click()
+    box.locator(".model-shot img").wait_for()
+    page.unroute("**/api/users/*/model")
+    assert re.search(rb'name="original"\r\n\r\ntrue', sent[0]), "kept as it is, nothing generated"
+    assert "your own photo" in box.inner_text().lower()
+    with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):
+        box.locator("[data-model-save]").click()
+
+    page.route("**/api/users/*/tryons", lambda route: route.fulfill(
+        status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
+    page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(content_type="application/json", body=json.dumps(
+        {"id": "e2e-stub", "status": "done", "image_url": "/static/logo.svg",
+         "result": {"rendered": True, "rendered_ids": [], "model": "fashn", "head_pasted": False}})))
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room [data-room-try]").click()
+    note = page.locator("#tryon-room .tryon-board + p", has_text="Rendered")
+    note.wait_for()
+    text = note.inner_text()
+    assert "Rendered by FASHN." in text and "Not drawn by this model:" in text and "Face kept" not in text
+    assert page.errors == []
+
+
 def test_the_fitting_room_is_a_side_panel_on_wide_screens_and_a_bottom_bar_on_phones(page):
     """Feedback #36: at 1100px and wider the fitting room docks beside the content without covering it."""
     tab(page, "lookbook")

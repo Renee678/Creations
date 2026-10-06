@@ -8,7 +8,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
-from lookmate.tryon.client import FashnTryOn, Garment, PreviewTryOn, ReplicateTryOn, TryOnError, make_tryon, plan_steps
+from lookmate.tryon.client import REGIONS, FashnTryOn, Garment, PreviewTryOn, ReplicateTryOn, TryOnError, make_tryon, plan_steps
 from lookmate.worker import process_job
 
 PHOTO = b"\xff\xd8\xff\xe0" + b"full-body-photo"
@@ -70,14 +70,16 @@ def test_without_a_model_the_photo_comes_back_for_a_collage(client, runtime, use
 
 
 def test_an_outfit_is_rendered_bottom_first_then_the_upper_piece(client, runtime, user, renderer):
+    """Feedback #41: every clothing layer is put on, the jacket over the top; shoes only where the model can."""
     ids = pick(runtime, "top", "bottom", "outerwear", "shoes")
     tryon_id = request_tryon(client, user["id"], ids).json()["id"]
     assert run_next_job(runtime) == "done"
 
     out = client.get(f"/api/tryons/{tryon_id}").json()
-    assert renderer.calls == ["lower_body", "upper_body"]
-    assert out["result"]["rendered"] is True and out["result"]["rendered_ids"] == [ids[1], ids[2]]
-    assert client.get(out["image_url"]).content == PHOTO + b"|lower_body|upper_body", "each step builds on the last"
+    assert renderer.calls == ["lower_body", "upper_body", "upper_body"]
+    assert out["result"]["rendered"] is True and out["result"]["rendered_ids"] == [ids[1], ids[0], ids[2]]
+    assert client.get(out["image_url"]).content == PHOTO + b"|lower_body|upper_body|upper_body", \
+        "each step builds on the last"
 
 
 def test_the_photo_is_dropped_after_the_job(client, runtime, user, renderer):
@@ -143,8 +145,11 @@ def test_user_can_delete_a_tryon(client, runtime, user):
 
 def test_plan_steps():
     piece = lambda c: {"category": c}  # noqa: E731
-    assert plan_steps([piece("dress"), piece("outerwear"), piece("shoes")]) == [piece("dress")]
-    assert plan_steps([piece("top"), piece("bottom")]) == [piece("bottom"), piece("top")]
+    # Renee's outfit: the jacket used to be dropped when a dress-like piece was in it.
+    assert plan_steps([piece("dress"), piece("outerwear"), piece("shoes")]) == [piece("dress"), piece("outerwear")]
+    assert plan_steps([piece("outerwear"), piece("top"), piece("bottom")]) == [
+        piece("bottom"), piece("top"), piece("outerwear")]
+    assert plan_steps([piece("dress"), piece("shoes"), piece("bag")], ("shoes",)) == [piece("dress"), piece("shoes")]
     assert plan_steps([piece("shoes"), piece("bag")]) == []
     assert PreviewTryOn().dress(b"x", "image/png", None) == (b"x", "image/png")
 
@@ -496,7 +501,7 @@ def fashn_stub(statuses, seen):
 def test_fashn_client_renders_a_garment(monkeypatch):
     monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
     seen = []
-    out = FashnTryOn("key", http=fashn_stub(["in_queue", "processing", "completed"], seen)).dress(
+    out = FashnTryOn("key", "tryon-v1.6", http=fashn_stub(["in_queue", "processing", "completed"], seen)).dress(
         b"person", "image/jpeg", Garment(None, "image/jpeg", "lower_body", "jeans", url="https://img/jeans.jpg"))
     assert out == (b"JPEGDATA", "image/jpeg")
     body = next(s for s in seen if isinstance(s, dict))
@@ -631,20 +636,24 @@ def test_fitting_room_pieces_are_prefetched_and_the_stage_is_shown(client, runti
     assert client.get(f"/api/tryons/{tid}").json()["stage"] == "fetching"
 
 
-def test_fashn_dresses_my_model_bottom_then_top(client, runtime, user, monkeypatch):
-    """Feedback #38: with FASHN_API_KEY (or TRYON_MODEL=fashn plus the key) a try-on uses the saved My model as
-    the person and dresses one garment per call, bottom first, each on the picture the last call returned."""
+def test_fashn_dresses_my_model_layer_by_layer_with_shoes(client, runtime, user, monkeypatch):
+    """Feedback #38/#41: with FASHN_API_KEY a try-on uses the saved My model as the person and dresses one piece
+    per call in wearing order, each on the picture the last call returned: bottom, top, the jacket over it,
+    then shoes (Try-On Max draws shoes). A bag isn't drawn, and the result says which model drew it."""
     from lookmate import worker
     from tests.test_body_model import create
 
     assert make_tryon("", "fashn", "fa-key").name == "fashn"
+    assert make_tryon("", "fashn", "fa-key").model == "tryon-max", "the default keeps the face and does shoes"
+    assert make_tryon("", "", "fa-key", "tryon-v1.6").extra_steps == ()
     assert make_tryon("rep-token", "FASHN").name == "nano-banana", "no FASHN key: the Replicate default"
     monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
-    runs, outputs = [], iter([b"after-bottom", b"after-top"])
+    runs, outputs = [], iter([b"after-bottom", b"after-top", b"after-jacket", b"after-shoes"])
 
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.path == "/v1/run":
-            runs.append(json.loads(req.content)["inputs"])
+            body = json.loads(req.content)
+            runs.append(body["inputs"] | {"model_name": body["model_name"]})
             return httpx.Response(200, json={"id": f"f{len(runs)}", "error": None})
         if req.url.path.startswith("/v1/status/"):
             return httpx.Response(200, json={"status": "completed", "output": [f"https://cdn.fashn.ai/{req.url.path[-2:]}.jpg"]})
@@ -652,22 +661,24 @@ def test_fashn_dresses_my_model_bottom_then_top(client, runtime, user, monkeypat
 
     monkeypatch.setattr(runtime, "tryon", FashnTryOn("fa-key", http=httpx.Client(transport=httpx.MockTransport(handler))))
     monkeypatch.setattr(worker, "garment_for", lambda p, data_dir: Garment(
-        f"photo:{p.category}".encode(), "image/jpeg", {"top": "upper_body", "bottom": "lower_body"}[p.category], p.name))
+        f"photo:{p.category}".encode(), "image/jpeg", REGIONS.get(p.category, "accessory"), p.name))
     my_model = b"\xff\xd8\xff\xe0my-saved-model"
     monkeypatch.setattr(runtime, "model_maker", None)  # keeps the uploaded picture as My model
     saved = create(client, user["id"], photo=my_model).json()
     client.post(f"/api/body-models/{saved['id']}/save")
 
-    ids = pick(runtime, "top", "bottom")
+    ids = pick(runtime, "outerwear", "top", "bottom", "shoes", "bag")
     tid = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(ids)}).json()["id"]
     assert run_next_job(runtime) == "done"
-    assert [r["category"] for r in runs] == ["bottoms", "tops"], "bottom first, then the top"
+    assert {r["model_name"] for r in runs} == {"tryon-max"}
+    pieces = [base64.b64decode(r["product_image"].split(",", 1)[1]) for r in runs]
+    assert pieces == [b"photo:bottom", b"photo:top", b"photo:outerwear", b"photo:shoes"], "wearing order, no bag"
     model_images = [base64.b64decode(r["model_image"].split(",", 1)[1]) for r in runs]
-    assert model_images == [my_model, b"after-bottom"], "My model, then the picture with the bottom on"
-    assert [base64.b64decode(r["garment_image"].split(",", 1)[1]) for r in runs] == [b"photo:bottom", b"photo:top"]
+    assert model_images == [my_model, b"after-bottom", b"after-top", b"after-jacket"]
     out = client.get(f"/api/tryons/{tid}").json()
-    assert out["result"]["model"] == "fashn" and out["result"]["rendered_ids"] == [ids[1], ids[0]]
-    assert client.get(out["image_url"]).content == b"after-top"
+    assert out["result"]["model"] == "fashn" and out["result"]["rendered_ids"] == [ids[2], ids[1], ids[0], ids[3]]
+    assert out["result"]["head_paste_skipped"] == "unreadable", "the paste-back was tried on the FASHN path too"
+    assert client.get(out["image_url"]).content == b"after-shoes"
 
 
 def test_a_refused_shop_photo_is_retried_over_http2_only_when_switched_on(monkeypatch, tmp_path, caplog):

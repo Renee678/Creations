@@ -50,17 +50,15 @@ class Garment:
     url: str | None = None
 
 
-def plan_steps(pieces: list[dict]) -> list[dict]:
-    """Which pieces of an outfit to render, in order. At most two calls per outfit.
+def plan_steps(pieces: list[dict], extras: tuple[str, ...] = ()) -> list[dict]:
+    """Which pieces of an outfit to render, one model call each, in the order they are put on.
 
-    A dress is one step. Otherwise the bottom goes first, then one upper-body piece: the
-    outerwear if there is one (it's what you see), else the top.
+    Every clothing layer: a dress, or the bottom then the top; then the outerwear over it. Then the
+    `extras` the model can also draw (FASHN Try-On Max: shoes). At most four calls per outfit.
     """
     by_cat = {p["category"]: p for p in pieces}
-    if "dress" in by_cat:
-        return [by_cat["dress"]]
-    upper = by_cat.get("outerwear") or by_cat.get("top")
-    return [p for p in (by_cat.get("bottom"), upper) if p]
+    base = ["dress"] if "dress" in by_cat else ["bottom", "top"]
+    return [by_cat[c] for c in (*base, "outerwear", *extras) if c in by_cat]
 
 
 TRYON_STAGE = "tryon:stage:{}"  # what a running try-on is doing now, for the UI
@@ -278,14 +276,24 @@ FASHN_API = "https://api.fashn.ai/v1"
 FASHN_CATEGORIES = {"upper_body": "tops", "lower_body": "bottoms", "dresses": "one-pieces"}
 
 
+FASHN_MAX = "tryon-max"
+
+
 class FashnTryOn:
-    """FASHN's hosted try-on model (https://docs.fashn.ai): no cold starts, seconds per garment."""
+    """FASHN's hosted try-on (https://docs.fashn.ai): no cold starts, one garment per call.
+
+    Try-On Max (the default) keeps the person's identity and also handles shoes; tryon-v1.6 is the
+    cheaper, faster one for clothes only.
+    """
 
     name = "fashn"
     renders = True
     fetches_urls = True  # takes a garment photo by URL and loads it itself
 
-    def __init__(self, api_key: str, timeout_s: float = 90.0, http: httpx.Client | None = None):
+    def __init__(self, api_key: str, model: str = FASHN_MAX, timeout_s: float = 90.0,
+                 http: httpx.Client | None = None):
+        self.model = model
+        self.extra_steps = ("shoes",) if model == FASHN_MAX else ()
         self.timeout_s = timeout_s
         self.http = http or httpx.Client(timeout=httpx.Timeout(30, read=60))
         self.headers = {"Authorization": f"Bearer {api_key}"}
@@ -306,13 +314,15 @@ class FashnTryOn:
         return r.json()
 
     def dress(self, person: bytes, media_type: str, garment: Garment) -> tuple[bytes, str]:
-        body = {"model_name": "tryon-v1.6", "inputs": {
-            "model_image": _data_uri(person, media_type),
-            "garment_image": _data_uri(garment.image, garment.media_type) if garment.image else garment.url,
-            "category": FASHN_CATEGORIES.get(garment.region, "auto"),
-            "mode": "balanced",
-            "output_format": "jpeg",
-        }}
+        product = _data_uri(garment.image, garment.media_type) if garment.image else garment.url
+        if self.model == FASHN_MAX:
+            body = {"model_name": FASHN_MAX, "inputs": {
+                "model_image": _data_uri(person, media_type), "product_image": product,
+                "generation_mode": "balanced", "output_format": "jpeg"}}
+        else:
+            body = {"model_name": self.model, "inputs": {
+                "model_image": _data_uri(person, media_type), "garment_image": product,
+                "category": FASHN_CATEGORIES.get(garment.region, "auto"), "mode": "balanced", "output_format": "jpeg"}}
         run = self._request("POST", f"{FASHN_API}/run", json=body)
         if run.get("error") or not run.get("id"):
             raise TryOnError(f"try-on was not accepted: {run.get('error')}")
@@ -363,10 +373,10 @@ def make_model_maker(token: str, model: str = NANO_BANANA_PRO):
     return ModelMaker(token, model) if token else None
 
 
-def make_tryon(token: str, model: str = NANO_BANANA, fashn_key: str = ""):
+def make_tryon(token: str, model: str = NANO_BANANA, fashn_key: str = "", fashn_model: str = FASHN_MAX):
     """FASHN whenever FASHN_API_KEY is set (TRYON_MODEL=fashn says the same); else the Replicate TRYON_MODEL."""
     if fashn_key:
-        return FashnTryOn(fashn_key)
+        return FashnTryOn(fashn_key, fashn_model or FASHN_MAX)
     if model.lower() == "fashn":
         log.warning("TRYON_MODEL=fashn needs FASHN_API_KEY in .env; using %s instead", NANO_BANANA)
         model = NANO_BANANA

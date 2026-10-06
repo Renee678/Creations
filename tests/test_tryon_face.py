@@ -172,3 +172,20 @@ def test_a_try_on_model_without_face_support_is_called_as_before(client, runtime
     _setup(client, runtime, user, monkeypatch, Plain())
     out = _try_on(client, runtime, user, pick(runtime, "top", "bottom"))
     assert out["status"] == "done" and "face_reference" not in out["result"]
+
+
+def test_a_per_garment_try_on_on_my_model_gets_the_head_back_too(client, runtime, user, monkeypatch):
+    """Feedback #41: FASHN dresses one garment per call and redraws the face; My model's head goes back on."""
+    from tests.test_tryon import pick
+
+    class PerGarment:
+        name, renders = "fashn", True
+        extra_steps = ()
+
+        def dress(self, person_, media_type, garment):
+            return person(head=(200, 160, 60)), "image/png"
+
+    _setup(client, runtime, user, monkeypatch, PerGarment())
+    out = _try_on(client, runtime, user, pick(runtime, "top", "bottom"))
+    assert out["result"]["head_pasted"] is True and "face_reference" not in out["result"]
+    assert pixel(client.get(out["image_url"]).content, (150, 45)) < (90, 90, 90), "her own head and hair"
