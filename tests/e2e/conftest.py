@@ -125,10 +125,16 @@ def pytest_runtest_makereport(item, call):
             pass
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "timezone(name): run the page fixture's browser in this IANA time zone")
+
+
 @pytest.fixture
-def page(browser, base_url):
+def page(browser, base_url, request):
     """A fresh visitor (empty localStorage) who has filled in the profile and landed on Find dupes."""
-    context = browser.new_context(base_url=base_url, viewport={"width": 1280, "height": 900}, service_workers="block")
+    tz = request.node.get_closest_marker("timezone")
+    context = browser.new_context(base_url=base_url, viewport={"width": 1280, "height": 900}, service_workers="block",
+                                  **({"timezone_id": tz.args[0]} if tz else {}))
     if ACCESS_CODE:
         context.add_init_script(f"localStorage.setItem('accessCode', {ACCESS_CODE!r})")
     pg = context.new_page()

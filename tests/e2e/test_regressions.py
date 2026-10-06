@@ -8,6 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import unquote, unquote_plus, urlparse, parse_qs
 
+import pytest
+
 from .conftest import LIVE_URL, photo
 
 from lookmate.catalog.service import BRANDS
@@ -354,3 +356,48 @@ def test_a_piece_saved_in_find_dupes_appears_in_its_my_style_folder(page):
         section.locator(f"[data-fav-remove='{pick['id']}']").click()
     page.wait_for_function(f"!document.querySelector(\"[data-fav-remove='{pick['id']}']\")")
     assert not page.errors, page.errors
+
+
+FLIP = {"spring": "autumn", "summer": "winter", "autumn": "spring", "winter": "summer"}
+
+
+def _season_chips(page, box):
+    chips = page.locator(f"{box} button[data-season]")
+    return [c.inner_text().strip() for c in chips.all()], page.locator(f"{box} button[data-season].on").get_attribute("data-season")
+
+
+def _check_four_seasons(page, expected):
+    tab(page, "trends")
+    page.locator("#trend-list .trend").first.wait_for()
+    labels, on = _season_chips(page, "#trend-seasons")
+    assert labels == ["Spring", "Summer", "Autumn", "Winter"], labels
+    assert on == expected
+    assert str(__import__("datetime").date.today().year) in page.locator("#trends-meta").inner_text()
+    for season in ("spring", "summer", "autumn", "winter"):
+        page.locator(f"#trend-seasons [data-season='{season}']").click()
+        page.locator("#trend-list .trend").first.wait_for()  # every season has trends, seed or researched
+
+    tab(page, "lookbook")
+    page.locator("#lb-seasons button[data-season]").first.wait_for()
+    labels, on = _season_chips(page, "#lb-seasons")
+    assert labels == ["Spring", "Summer", "Autumn", "Winter"] and on == expected
+    assert not page.errors, page.errors
+
+
+def test_trends_and_lookbook_offer_all_four_seasons(page):
+    """Feedback (Trends): Spring to Winter for this year, no "now"/"next"; the northern season preselected."""
+    from datetime import datetime, timezone
+
+    from lookmate.services.trends import season_of
+
+    _check_four_seasons(page, season_of(datetime.now(timezone.utc).month))
+
+
+@pytest.mark.timezone("Australia/Sydney")
+def test_a_southern_hemisphere_shopper_starts_on_their_own_season(page):
+    """Feedback (Trends): it's spring in Sydney when it's autumn in New York."""
+    from datetime import datetime, timezone
+
+    from lookmate.services.trends import season_of
+
+    _check_four_seasons(page, FLIP[season_of(datetime.now(timezone.utc).month)])

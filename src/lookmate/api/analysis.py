@@ -19,7 +19,7 @@ from ..services.lookbook import OCCASIONS, build_lookbook, latest_analysis
 from ..services.make_it_mine import make_it_mine
 from ..services.price_range import PriceRange
 from ..services.style_memory import user_context
-from ..services.trends import SEASONS, latest_batch, season_of
+from ..services.trends import SEASONS, season_of, trends_for_every_season
 from ..worker import analysis_job
 from .looks import require_access_code, take_daily_quota
 from .profiles import get_user_or_404
@@ -116,7 +116,9 @@ def lookbook(
     # Outfits are labelled with clothing trends only (not a lipstick or a colour), current season first.
     now = season_of(datetime.now(timezone.utc).month)
     upcoming = SEASONS[(SEASONS.index(now) + 1) % 4]
-    pieces = sorted((t for t in latest_batch(db) if t.kind == "pieces"), key=lambda t: t.season != now)
+    wanted = season or now
+    pieces = sorted((t for t in trends_for_every_season(db, rt.data_dir) if t.kind == "pieces"),
+                    key=lambda t: t.season != wanted)
     first: dict[str, tuple[str, str]] = {}
     for t in pieces:
         first.setdefault(t.style_id, (t.style_id, t.label))

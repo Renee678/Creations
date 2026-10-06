@@ -140,7 +140,7 @@ def test_new_photos_hide_the_old_lookbook_until_they_are_read(client):
 def test_lookbook_offers_this_season_and_shows_the_stylists_line(client):
     app_js = client.get("/static/app.js").text
     assert 'id="lb-seasons"' in client.get("/").text
-    assert "chip(lb.current_season, \"now\") + chip(lb.next_season, \"next\")" in app_js
+    assert "ALL_SEASONS.map(" in app_js.split("function renderSeasonChips")[1], "all four seasons, no now/next"
     assert "outfit-why" in app_js.split("function outfitCard")[1].split("\n}\n")[0]
 
 

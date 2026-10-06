@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..services.lookbook import Palette, latest_analysis, outfit_styles
 from ..services.style_memory import user_context
-from ..services.trends import KINDS, SEASONS, latest_batch, season_of, seed_rows, trend_fit
+from ..services.trends import KINDS, SEASONS, season_of, trend_fit, trends_for_every_season
 from ..services.vocab import STYLES
 from .profiles import get_user_or_404
 
@@ -20,8 +20,8 @@ def list_trends(request: Request, user_id: int | None = Query(default=None), db:
     """Trends by season and kind. With a user, each one also says whether it suits them."""
     rt = request.app.state.runtime
     catalog = rt.catalog
-    # Never an empty page: before the worker has stored anything, serve the bundled seed trends.
-    batch = latest_batch(db) or seed_rows(rt.data_dir)
+    # Never an empty page or season: seasons research hasn't covered (or nothing stored yet) come from the seed.
+    batch = trends_for_every_season(db, rt.data_dir)
     palette, styles = Palette.from_analysis(None), []
     if user_id is not None:
         user = user_context(db, get_user_or_404(db, user_id))
@@ -35,6 +35,7 @@ def list_trends(request: Request, user_id: int | None = Query(default=None), db:
         "refreshed_at": batch[0].refreshed_at.isoformat() if batch else None,
         "origin": batch[0].origin if batch else None,
         "seasons": seasons,
+        "year": datetime.now(timezone.utc).year,
         "current_season": current if current in seasons else (seasons[0] if seasons else current),
         "kinds": KINDS,
         "my_styles": [{"id": s, "label": STYLES[s]} for s in styles],

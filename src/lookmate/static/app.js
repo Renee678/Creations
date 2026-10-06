@@ -331,15 +331,26 @@ let trendData = null;
 let trendSeason = null;
 let trendStyle = "mine";
 const SEASON_NAMES = { spring: "Spring", summer: "Summer", autumn: "Autumn", winter: "Winter" };
+const ALL_SEASONS = ["spring", "summer", "autumn", "winter"];
+
+// Renee: all four seasons, no "now". The preselected one follows the shopper's hemisphere, read from the
+// browser's time zone (the server only knows the northern season).
+const SOUTH_TZ = /^(Australia|Antarctica)\/|^Pacific\/(Auckland|Chatham|Fiji|Noumea|Tongatapu|Efate)$|^America\/(Sao_Paulo|Argentina\/.*|Buenos_Aires|Santiago|Montevideo|Asuncion|Punta_Arenas)$|^Africa\/(Johannesburg|Maputo|Harare|Windhoek|Gaborone|Lusaka|Maseru|Mbabane|Blantyre)$|^Indian\/(Mauritius|Reunion|Antananarivo)$/;
+const FLIP = { spring: "autumn", summer: "winter", autumn: "spring", winter: "summer" };
+function inSouth() {
+  try { return SOUTH_TZ.test(Intl.DateTimeFormat().resolvedOptions().timeZone || ""); } catch { return false; }
+}
+const localSeason = (northern) => (northern && inSouth() ? FLIP[northern] : northern);
 const FIT_BADGE = { suits: ["fit-suits", "✓ Suits you"], adapt: ["fit-adapt", "♡ Adapt it"], neutral: ["fit-neutral", "Neutral for you"] };
 
 async function loadTrends() {
   const t = await api(`/api/trends${userId ? `?user_id=${userId}` : ""}`);
   if (!t.trends.length) { $("#trends-meta").textContent = "Trends are still being gathered. Check back soon."; return; }
   trendData = t;
-  trendSeason = trendSeason && t.seasons.includes(trendSeason) ? trendSeason : t.current_season;
+  const preset = localSeason(t.current_season);
+  trendSeason = trendSeason && t.seasons.includes(trendSeason) ? trendSeason : t.seasons.includes(preset) ? preset : t.current_season;
   const when = new Date(t.refreshed_at).toLocaleDateString("en-US");
-  $("#trends-meta").textContent = t.origin === "seed" ? `Sample trends (offline data), updated ${when}` : `Researched by AI on the web, updated ${when}`;
+  $("#trends-meta").textContent = `${t.year} trends · ` + (t.origin === "seed" ? `sample trends (offline data), updated ${when}` : `researched by AI on the web, updated ${when}`);
   renderTrends();
 }
 
@@ -348,7 +359,7 @@ function renderTrends() {
   const mine = new Set(t.my_styles.map((s) => s.id));
   const personal = t.trends.some((x) => x.fit);
   $("#trend-seasons").innerHTML = t.seasons.map((s) =>
-    `<button type="button" class="chip ${s === trendSeason ? "on" : ""}" data-season="${s}">${SEASON_NAMES[s]}${s === t.current_season ? " · now" : ""}</button>`).join("");
+    `<button type="button" class="chip ${s === trendSeason ? "on" : ""}" data-season="${s}">${SEASON_NAMES[s]}</button>`).join("");
   const inSeason = t.trends.filter((x) => x.season === trendSeason);
   const styles = [...new Map(inSeason.map((x) => [x.style_id, x.style])).entries()];
   const forYou = (x) => mine.has(x.style_id) || (x.fit && x.fit.verdict === "suits");
@@ -1180,7 +1191,7 @@ async function showLookbookSetup() {
   } catch (err) { return setMeStatus(err.message, true); }
   if (seq !== lbSeq) return;
   renderAnalysis(lbSetup.analysis);
-  renderSeasonChips({ mode: lbMode, season: lbSeason || lbSetup.current_season, ...lbSetup });
+  renderSeasonChips({ mode: lbMode, season: lbSeason || localSeason(lbSetup.current_season), ...lbSetup });
   $("#lb-note").textContent = "";
   $("#lb-sections").innerHTML = lbSetup.personal ? "" : `<div class="lb-gate"><span class="tape"></span><h2>Start with your photos ♡</h2>
     <p>Add a selfie and a full-body photo above. Your lookbook is then built in your own colours, and the full-body photo is what <strong>Try it on me</strong> dresses.</p>
@@ -1201,7 +1212,8 @@ async function loadLookbook(force = false) {
     $("#lb-sections").innerHTML = "";
     return renderRoom();
   }
-  const season = lbMode === "seasons" && lbSeason ? `&season=${lbSeason}` : "";
+  const pickedSeason = lbSeason || (lbSetup && localSeason(lbSetup.current_season));
+  const season = lbMode === "seasons" && pickedSeason ? `&season=${pickedSeason}` : "";
   const occasion = lbMode === "occasions" ? `&occasion=${lbOccasion}` : "";
   const mode = lbMode === "mine" ? `mode=seasons&vibe=${encodeURIComponent(lbVibe)}` : `mode=${lbMode}${season}${occasion}`;
   const query = `${mode}&${priceQuery("lookbook")}`;
@@ -1300,7 +1312,7 @@ async function waitForInspo(id, tries) {
   } catch (err) { $("#lb-sections").innerHTML = `<p class="status error">${esc(err.message)}</p>`; }
 }
 
-/** By season: this season first, the next one a tap away. By occasion: one chip per occasion. */
+/** By season: all four, the shopper's own season preselected. By occasion: one chip per occasion. */
 function renderSeasonChips(lb) {
   const box = $("#lb-seasons");
   box.hidden = !["seasons", "occasions"].includes(lb.mode) || !!lb.vibe;
@@ -1310,8 +1322,8 @@ function renderSeasonChips(lb) {
     box.innerHTML = occasions.map((o) => `<button type="button" class="chip${lbOccasion === o.id ? " on" : ""}" data-occasion="${o.id}">${esc(o.label)}</button>`).join("");
     return;
   }
-  const chip = (id, tag) => `<button type="button" class="chip${lb.season === id ? " on" : ""}" data-season="${id}">${cap(id)} · ${tag}</button>`;
-  box.innerHTML = chip(lb.current_season, "now") + chip(lb.next_season, "next");
+  const on = lb.season || localSeason(lb.current_season);
+  box.innerHTML = ALL_SEASONS.map((id) => `<button type="button" class="chip${on === id ? " on" : ""}" data-season="${id}">${SEASON_NAMES[id]}</button>`).join("");
 }
 
 $("#lb-seasons").addEventListener("click", (e) => {

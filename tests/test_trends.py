@@ -45,7 +45,10 @@ def test_researched_trends_replace_seed(client):
         trends.refresh(s, None, DATA)
         trends.refresh(s, FakeResearcher([ITEM]), DATA)
     body = client.get("/api/trends").json()
-    assert body["origin"] == "web" and [t["label"] for t in body["trends"]] == ["Old money"]
+    assert body["origin"] == "web" and body["trends"][0]["label"] == "Old money"
+    researched = body["trends"][0]["season"]
+    assert [t["label"] for t in body["trends"] if t["season"] == researched] == ["Old money"], "seed gone for that season"
+    assert {t["season"] for t in body["trends"]} == set(trends.SEASONS), "seasons not researched yet come from the seed"
 
 
 def test_failed_research_keeps_last_good_batch(client):
@@ -149,3 +152,19 @@ def test_research_searches_first_then_structures_without_tools():
     (first, search), (second, structure) = calls
     assert first == "create" and search["tools"][0]["name"] == "web_search" and "output_format" not in search
     assert second == "parse" and "tools" not in structure and "https://example.com" in structure["messages"][0]["content"]
+
+
+def test_every_season_has_trends_when_research_covered_two(client, runtime):
+    """Trends offers all four seasons; research covers two, the seed fills the others instead of an empty page."""
+    from lookmate.db import SessionLocal
+    from lookmate.services.trends import load_seed, store_batch
+
+    researched = [t for t in load_seed(runtime.data_dir) if t.season in ("autumn", "winter")]
+    with SessionLocal() as s:
+        store_batch(s, researched, "claude")
+    body = client.get("/api/trends").json()
+    assert body["seasons"] == ["spring", "summer", "autumn", "winter"] and body["year"] >= 2026
+    by_season = {}
+    for t in body["trends"]:
+        by_season.setdefault(t["season"], set()).add(t.get("label"))
+    assert all(by_season.get(s) for s in body["seasons"]), "no season is empty"
