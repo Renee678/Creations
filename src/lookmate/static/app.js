@@ -1407,10 +1407,13 @@ let lbSetup = null;       // the palette and season choices shown before that
 async function showLookbookSetup() {
   const seq = ++lbSeq;
   lbShown = null;
+  let setup = lbSetup;
   try {
-    lbSetup = lbSetup || await api(`/api/users/${userId}/lookbook/setup`);
+    setup = setup || await api(`/api/users/${userId}/lookbook/setup`);
   } catch (err) { return setMeStatus(err.message, true); }
+  // An answer that arrives after new photos were uploaded belongs to the old photos: never cache it.
   if (seq !== lbSeq) return;
+  lbSetup = setup;
   renderAnalysis(lbSetup.analysis);
   renderSeasonChips({ mode: lbMode, season: lbSeason || localSeason(lbSetup.current_season), ...lbSetup });
   $("#lb-note").textContent = "";

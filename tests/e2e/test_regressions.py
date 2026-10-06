@@ -900,3 +900,28 @@ def test_look_book_outfit_filters_start_at_the_left_edge(page, width):
     assert chips[0] - left < 80, "chips sit right after the label, not centred"
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert not page.errors, page.errors
+
+
+def test_photos_uploaded_while_the_lookbook_is_still_opening_are_read(page):
+    """The Lookbook tab's first request could answer after new photos were uploaded; its old answer (no analysis)
+    was kept, so the photos' reading never showed. Held back here until the upload has gone out."""
+    held = []
+
+    def hold_first(route):
+        if held:
+            return route.continue_()
+        held.append((route, route.fetch()))
+
+    page.route("**/lookbook/setup", hold_first)
+    tab(page, "lookbook")
+    deadline = 50
+    while not held and deadline:
+        page.wait_for_timeout(100)
+        deadline -= 1
+    assert held, "the tab asked for its setup"
+    with page.expect_response(lambda r: r.url.endswith("/analyses") and r.request.method == "POST"):
+        page.locator("#me-files").set_input_files([photo("selfie", RED), photo("fullbody", BLUE)])
+    route, stale = held[0]
+    route.fulfill(response=stale)
+    page.wait_for_function("document.querySelector('#me-status').hidden && !!document.querySelector('#me-analysis .me-summary')")
+    assert not page.errors, page.errors
