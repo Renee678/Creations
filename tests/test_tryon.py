@@ -668,3 +668,31 @@ def test_fashn_dresses_my_model_bottom_then_top(client, runtime, user, monkeypat
     out = client.get(f"/api/tryons/{tid}").json()
     assert out["result"]["model"] == "fashn" and out["result"]["rendered_ids"] == [ids[1], ids[0]]
     assert client.get(out["image_url"]).content == b"after-top"
+
+
+def test_a_refused_shop_photo_is_retried_over_http2_only_when_switched_on(monkeypatch, tmp_path, caplog):
+    """SHOP_FETCH_HTTP2: Akamai may refuse httpx's HTTP/1.1 fingerprint; an HTTP/2 retry looks more like Chrome."""
+    import logging
+
+    from lookmate.config import get_settings
+    from lookmate.tryon import garments
+
+    url = "https://images.asos-media.com/products/h2/1"
+    tried = []
+    h1 = httpx.Client(transport=httpx.MockTransport(lambda req: (tried.append("h1"), httpx.Response(403))[1]))
+    h2 = httpx.Client(transport=httpx.MockTransport(
+        lambda req: (tried.append("h2"), httpx.Response(200, content=b"\xff\xd8\xffjpg"))[1]))
+    monkeypatch.setattr(garments, "_http2_client", lambda: h2)
+
+    assert garments.fetch_shop_photo(url, tmp_path, h1) == (None, "image/jpeg") and tried == ["h1"], "off by default"
+    monkeypatch.setattr(get_settings(), "shop_fetch_http2", True)
+    with caplog.at_level(logging.WARNING, logger="lookmate.tryon.garments"):
+        assert garments.fetch_shop_photo(url, tmp_path, h1) == (b"\xff\xd8\xffjpg", "image/jpeg")
+    assert tried == ["h1", "h1", "h2"] and "HTTP/2 retry loaded it" in caplog.text
+    assert garments.cached_photo(url, tmp_path)[0] == b"\xff\xd8\xffjpg", "cached for the try-on"
+
+
+def test_the_http2_client_can_be_built():
+    from lookmate.tryon.garments import _http2_client
+
+    assert _http2_client() is _http2_client()  # h2 is installed with httpx[http2]

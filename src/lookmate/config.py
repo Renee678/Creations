@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     fashn_api_key: str = ""        # preferred try-on model when set: warm, seconds per garment
     tryon_model: str = "google/nano-banana"  # or "cuuupid/idm-vton" (cheaper, slow cold starts)
     model_gen_model: str = "google/nano-banana-pro"  # draws "My model" once per user: the best at keeping a face
+    shop_fetch_http2: bool = False  # retry a refused shop photo over HTTP/2 (looks more like a browser to a CDN)
     daily_tryon_limit: int = 30    # rendered try-ons per UTC day across all users (0 = unlimited)
 
     # Cost guardrails for a public deployment.

@@ -81,15 +81,13 @@ def fetch_shop_photo(url: str, data_dir: Path | None, http: httpx.Client | None 
     if hit is not None:
         return hit
     path = _cached(data_dir, url)
-    try:
-        r = (http or httpx).get(url, follow_redirects=True, timeout=httpx.Timeout(5, read=read_s),
-                                headers=BROWSER_HEADERS)
-        r.raise_for_status()
-    except httpx.HTTPStatusError as e:
-        log.warning("shop photo refused (%s): %s", e.response.status_code, url)
-        return None, "image/jpeg"
-    except httpx.HTTPError as e:
-        log.warning("shop photo not loaded (%s): %s", type(e).__name__, url)
+    r, why = _get(http or httpx, url, read_s)
+    if r is None and _http2_retry_on():
+        # Behind Akamai, a CDN can refuse a client by its fingerprint: httpx on HTTP/1.1 doesn't look like Chrome.
+        r, why2 = _get(_http2_client(), url, read_s)
+        log.warning("shop photo HTTP/2 retry %s: %s", "loaded it" if r is not None else f"failed too ({why2})", url)
+    if r is None:
+        log.warning("shop photo %s: %s", why, url)
         return None, "image/jpeg"
     data = r.content
     media_type = sniff(data)
@@ -102,6 +100,35 @@ def fetch_shop_photo(url: str, data_dir: Path | None, http: httpx.Client | None 
     if path is not None:
         _write(path, media_type, data)
     return data, media_type
+
+
+def _get(client, url: str, read_s: float) -> tuple[httpx.Response | None, str]:
+    """(response, "") or (None, why it failed: "refused (403)", "not loaded (ReadTimeout)", ...)."""
+    try:
+        r = client.get(url, follow_redirects=True, timeout=httpx.Timeout(5, read=read_s), headers=BROWSER_HEADERS)
+        r.raise_for_status()
+        return r, ""
+    except httpx.HTTPStatusError as e:
+        return None, f"refused ({e.response.status_code})"
+    except httpx.HTTPError as e:
+        return None, f"not loaded ({type(e).__name__})"
+
+
+def _http2_retry_on() -> bool:
+    from ..config import get_settings
+
+    return get_settings().shop_fetch_http2
+
+
+_HTTP2: httpx.Client | None = None
+
+
+def _http2_client() -> httpx.Client:
+    """One shared HTTP/2 client (the h2 package comes with httpx[http2]), for SHOP_FETCH_HTTP2=true."""
+    global _HTTP2
+    if _HTTP2 is None:
+        _HTTP2 = httpx.Client(http2=True)
+    return _HTTP2
 
 
 def _write(path: Path, media_type: str, data: bytes) -> None:
