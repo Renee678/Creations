@@ -99,8 +99,9 @@ You are also the quality gate: nothing reaches the client unless you approve it.
 would proudly show it in a lookbook. If no combination of its candidates works (clashing colours, a piece that
 breaks the style, mismatched formality), set approved to false; it will not be shown. Don't reject over small
 matters of taste.
-Return the chosen ids in slot order and, for approved outfits, one short sentence (at most 20 words) for the
-client on why the outfit works; for rejected ones, what clashes. Write in English."""
+Return the chosen ids in slot order and, for approved outfits, one short, casual sentence of 12 words or fewer,
+said to the client like a friend would (e.g. "Soft camel and cream, easy and polished for a Monday."); for
+rejected ones, what clashes. Write in English."""
 
 
 class ClaudeVision:
@@ -336,8 +337,8 @@ class FakeVision:
             picks = [s.candidates[0] for s in o.slots if s.candidates]
             accent = next((c for c, s in zip(picks, o.slots) if s.role == "accent"), None)
             base = sorted({c.colour.lower() for c, s in zip(picks, o.slots) if s.role == "neutral" and c.colour})
-            why = (f"One {accent.colour.lower()} accent" if accent and accent.colour else "A calm base") + (
-                f" grounded by {' and '.join(base)}" if base else "") + f", true to {o.style.lower()}."
+            why = (f"{accent.colour.capitalize()} pops" if accent and accent.colour else "Calm and easy") + (
+                f" against {' and '.join(base[:2])}" if base else "") + f", very {o.style.lower()}."
             outfits.append(StyledOutfit(index=o.index, picks=[c.id for c in picks], approved=True, why=why))
         return StylingResult(outfits=outfits)
 

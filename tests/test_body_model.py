@@ -177,3 +177,18 @@ def test_without_a_model_the_try_on_still_needs_a_photo(client, runtime, user):
 
     res = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(pick(runtime, "dress"))})
     assert res.status_code == 400 and "My model" in res.json()["detail"]
+
+
+def test_a_try_on_on_my_model_is_the_outfit_pages_on_me_photo(client, runtime, user):
+    """Feedback #34: the Daily Look ("On me") hero is the latest try-on of the outfit, made on My model."""
+    from tests.test_tryon import pick
+
+    model = create(client, user["id"], b"\xff\xd8my-model").json()
+    client.post(f"/api/body-models/{model['id']}/save")
+    ids = pick(runtime, "top", "bottom")
+    tryon = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(ids)}).json()
+    run_next_job(runtime)
+    outfit = client.post(f"/api/users/{user['id']}/outfits", json={"title": "Mine", "product_ids": ids,
+                                                                   "style_id": "old_money", "source": "lookbook"}).json()
+    page = client.get(f"/api/users/{user['id']}/outfits").json()["outfits"][0]
+    assert page["id"] == outfit["id"] and page["tryon_image"] == f"/api/tryons/{tryon['id']}/image"

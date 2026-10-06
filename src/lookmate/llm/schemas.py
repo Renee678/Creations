@@ -121,7 +121,7 @@ class StyledOutfit(BaseModel):
     index: int = Field(description="The outfit's index from the request")
     picks: list[str] = Field(description="Exactly one candidate id per slot, in slot order")
     approved: bool = Field(description="True only if this outfit looks cohesive and true to its style")
-    why: str = Field(description="If approved: one short sentence, addressed to the client, on why it works. "
+    why: str = Field(description="If approved: one short, casual sentence (12 words or fewer), addressed to the client, on why it works. "
                                  "If not: what clashes")
 
 

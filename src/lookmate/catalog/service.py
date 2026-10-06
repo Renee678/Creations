@@ -57,6 +57,9 @@ def shop_query(name: str, colour: str = "") -> str:
     return text if not colour or any(w in text.split() for w in colour.split()) else f"{colour} {text}"
 
 
+WHITE_BACKGROUND_SOURCES = ("pv-", "amz-")
+
+
 @dataclass(frozen=True)
 class ProductView:
     id: str
@@ -83,8 +86,24 @@ class ProductView:
             links["amazon"] = f"https://www.amazon.com/dp/{quote(self.id.removeprefix('amz-'))}"
         return links
 
+    @property
+    def white_background(self) -> bool:
+        """Polyvore and Amazon photos are packshots on white; ASOS shows the piece on a model."""
+        return self.id.startswith(WHITE_BACKGROUND_SOURCES)
+
+    def shop(self) -> dict[str, str]:
+        """Where the label on a flat lay links: the shop this piece came from (a search there when the
+        dataset's product page is long gone; Polyvore closed, so its pieces are searched on SHEIN)."""
+        links = self.shop_links()
+        if "amazon" in links:
+            return {"name": "Amazon", "url": links["amazon"]}
+        if self.id.startswith("asos-"):
+            return {"name": "ASOS", "url": links["asos"]}
+        return {"name": "SHEIN", "url": links["shein"]}
+
     def to_dict(self) -> dict:
-        return asdict(self) | {"shop_links": self.shop_links()}
+        return asdict(self) | {"shop_links": self.shop_links(), "shop": self.shop(),
+                               "white_background": self.white_background}
 
 
 @dataclass(frozen=True)

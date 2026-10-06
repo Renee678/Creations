@@ -35,6 +35,7 @@ from .vocab import BODY_SHAPES, STYLE_DEFINITIONS, STYLES, style_name
 log = logging.getLogger(__name__)
 
 W_SIM, W_PALETTE, W_STYLE, W_FIT, W_PRICE = 0.55, 0.15, 0.10, 0.10, 0.10
+W_CLEAN_PHOTO = 0.02  # tie-breaker: a white-background product photo wins between near-equal candidates
 CANDIDATES_PER_SLOT = 30
 STYLIST_CHOICES = 5  # top candidates per slot the stylist may choose from
 
@@ -321,7 +322,10 @@ def _slot_options(catalog: Catalog, user: UserContext, palette: Palette, style: 
         scored = [_scored(c, user, palette, style, desc, price) for c in candidates
                   if _colour_ok(c.product, palette, style, neutral)]
         if scored:
-            return sorted(scored, key=lambda p: p["score"], reverse=True)
+            # A packshot on white makes a cleaner flat lay than a model shot: a nudge between close
+            # candidates, never a filter (Renee, feedback #34).
+            return sorted(scored, key=lambda p: p["score"] + (W_CLEAN_PHOTO if p["white_background"] else 0),
+                          reverse=True)
     return []
 
 

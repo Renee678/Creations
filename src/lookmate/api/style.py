@@ -16,6 +16,7 @@ from ..services.body import guide_for
 from ..services.lookbook import latest_analysis
 from ..services.ranking import STYLE_KEYWORDS
 from ..services.style_memory import record_saved, style_counts, user_context
+from ..services.stylist import short_why
 from ..services.trends import SEASONS, season_of
 from ..services.vocab import BODY_SHAPES, STYLES, style_name
 from .profiles import get_user_or_404
@@ -175,7 +176,7 @@ def outfit_out(o: SavedOutfit, catalog, db: Session | None = None, palette: dict
     return {"id": o.id, "title": o.title, "season": o.season, "style_id": o.style_id,
             "style": STYLES.get(o.style_id, o.style_id), "source": o.source, "pieces": pieces,
             "total_price": round(sum(p["price"] for p in pieces), 2), "created_at": o.created_at.isoformat(),
-            "why": o.why, "occasion": o.occasion,
+            "why": short_why(o.why), "occasion": o.occasion,
             "inspo": {"id": inspo.id, "vibe": (inspo.result or {}).get("vibe", "")} if inspo else None,
             "tryon_image": latest_tryon(db, o.user_id, o.product_ids) if db is not None else None}
 

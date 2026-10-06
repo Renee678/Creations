@@ -467,3 +467,60 @@ def test_by_occasion_builds_only_the_occasion_picked(client, user):
     assert len(every["sections"]) == 5, "without a pick, all occasions as before"
     app_js = client.get("/static/app.js").text
     assert "data-occasion" in app_js and "&occasion=${lbOccasion}" in app_js
+
+
+def test_a_white_background_photo_wins_only_between_close_candidates(monkeypatch):
+    """Feedback #34: packshots on white (Polyvore, Amazon) make cleaner flat lays than ASOS model shots,
+    as a tie-breaker, never a filter."""
+    from lookmate.catalog.service import ProductView, SearchResult
+    from lookmate.services import lookbook
+    from lookmate.services.ranking import UserContext
+
+    def piece(pid):
+        return ProductView(pid, "Black wool trousers", "trousers", "bottom", "black", "", "https://img/x.jpg", 25.0)
+
+    def options(asos_sim, pv_sim):
+        results = [SearchResult(piece("asos-1"), asos_sim), SearchResult(piece("pv-1"), pv_sim)]
+        monkeypatch.setattr(lookbook, "search_in_range", lambda *a, **k: results)
+        opts = lookbook._slot_options(None, UserContext(), Palette.from_analysis(None), "old_money", "bottom",
+                                      "trousers", "black", set(), neutral=True)
+        return [o["id"] for o in opts]
+
+    assert options(0.80, 0.79) == ["pv-1", "asos-1"], "near-equal: the white-background photo first"
+    assert options(0.80, 0.60) == ["asos-1", "pv-1"], "a clearly better match still wins"
+
+
+def test_products_carry_their_shop_and_photo_background():
+    from lookmate.catalog.service import ProductView
+
+    def shop(pid):
+        p = ProductView(pid, "Black trousers", "trousers", "bottom", "black", "", "", 25.0).to_dict()
+        return p["shop"]["name"], p["shop"]["url"], p["white_background"]
+
+    assert shop("asos-9")[0] == "ASOS" and shop("asos-9")[1].startswith("https://www.asos.com/") and not shop("asos-9")[2]
+    assert shop("amz-B01") == ("Amazon", "https://www.amazon.com/dp/B01", True)
+    assert shop("pv-3")[0] == "SHEIN" and shop("pv-3")[2], "Polyvore is gone: searched on SHEIN"
+
+
+def test_the_why_line_is_one_short_sentence():
+    from lookmate.services.stylist import short_why
+
+    assert short_why("Soft camel and cream, easy and polished.") == "Soft camel and cream, easy and polished."
+    assert short_why("Calm base. Then a second sentence nobody needs.") == "Calm base."
+    long = short_why("One rust accent grounded by black and ivory and cream, true to the quiet luxury look with gold")
+    assert len(long.split()) <= 12 and long.endswith(".") and not long.rstrip(".").split()[-1] in {"and", "with", "the"}
+    assert short_why("") is None and short_why(None) is None
+
+
+def test_the_offline_stylist_line_is_short(runtime):
+    from lookmate.services.lookbook import build_lookbook
+    from lookmate.services.ranking import UserContext
+    from lookmate.services.stylist import curate
+
+    class Rec:
+        result = WINTER
+
+    lb = build_lookbook(runtime.catalog, UserContext(), Rec, [], "seasons", season="autumn",
+                        stylist=lambda req: curate(FakeVision(), runtime.redis, req, 0))
+    whys = [o["why"] for s in lb["sections"] for o in s["outfits"] if o["why"]]
+    assert whys and all(len(w.split()) <= 12 for w in whys), whys
