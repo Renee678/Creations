@@ -1253,11 +1253,10 @@ function renderedHtml(key, t) {
   const rendered = new Set(t.result.rendered_ids || []);
   // Pieces the model didn't draw (shoes, bags, a second top layer) are pinned beside the photo, scrapbook style.
   const pinned = pieces.filter((p) => !rendered.has(p.id));
-  // A shop photo that wouldn't load is drawn from its description, so it may look less like the real piece.
-  const described = pieces.filter((p) => (t.result.described_ids || []).includes(p.id)).map((p) => p.name);
+  // Only claim the face when My model's own head really was put back on the picture.
   const note = t.result.rendered
     ? "Rendered by an AI try-on model. Colours and fit are an impression, not a promise."
-      + (described.length ? ` The shop photo wouldn't load for ${described.join(", ")}, so it was drawn from its description.` : "")
+      + (t.result.head_pasted ? " Face kept from My model." : "")
     : "Collage preview: add a FASHN_API_KEY or REPLICATE_API_TOKEN to .env to render the outfit on you.";
   return `<div class="tryon-board">
       <figure class="tryon-shot"><span class="tape"></span><img src="${esc(t.image_url)}" alt="You wearing this outfit"><figcaption>${t.result.rendered ? "you, in this look ♡" : "you + this look ♡"}</figcaption></figure>

@@ -15,7 +15,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES, LLMError
 from ..models import TryOn
-from ..tryon.client import REGIONS, TRYON_STAGE
+from ..tryon.client import REGIONS, TRYON_STAGE, tryon_quota_key
 from ..tryon.garments import fetch_shop_photo, prefetch
 from ..worker import tryon_job
 from .looks import require_access_code
@@ -38,7 +38,7 @@ def take_tryon_quota(redis_client, limit: int) -> bool:
     """Each rendered try-on costs real money on Replicate, so it has its own daily cap."""
     if limit <= 0:
         return True
-    key = f"quota:tryons:{datetime.now(timezone.utc):%Y-%m-%d}"
+    key = tryon_quota_key()
     used = redis_client.incr(key)
     if used == 1:
         redis_client.expire(key, 2 * 24 * 3600)

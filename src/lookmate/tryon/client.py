@@ -19,6 +19,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import httpx
 
@@ -63,6 +64,11 @@ def plan_steps(pieces: list[dict]) -> list[dict]:
 
 
 TRYON_STAGE = "tryon:stage:{}"  # what a running try-on is doing now, for the UI
+
+
+def tryon_quota_key() -> str:
+    """Today's count of paid try-on model runs (the daily cap)."""
+    return f"quota:tryons:{datetime.now(timezone.utc):%Y-%m-%d}"
 DATA_URI_MAX_BYTES = 256 * 1024  # Replicate's limit for inline data URIs; bigger files are uploaded first
 
 
@@ -83,6 +89,7 @@ class PreviewTryOn:
 class ReplicateTryOn:
     name = "idm-vton"
     renders = True
+    fetches_urls = True  # takes a garment photo by URL and loads it itself
 
     def __init__(self, token: str, model: str = DEFAULT_MODEL, timeout_s: float = 240.0,
                  http: httpx.Client | None = None):
@@ -205,20 +212,15 @@ in the result must match it exactly (same hairstyle and hair length: a chin-leng
 short hair stays short). Use it only for the face and hair, never for the clothes."""
 
 
-def nano_banana_prompt(shown: list[str], described: list[str], face: bool = False) -> str:
+def nano_banana_prompt(shown: list[str], face: bool = False) -> str:
     """The try-on prompt; with `face`, image 2 is a close-up of the person's face and the garments follow it."""
-    prompt = NANO_BANANA_PROMPT.format(pieces=nano_banana_pieces(shown, described, "images 3 onward" if face else None))
+    prompt = NANO_BANANA_PROMPT.format(pieces=nano_banana_pieces(shown, "images 3 onward" if face else None))
     return f"{prompt}\n{FACE_REFERENCE}" if face else prompt
 
 
-def nano_banana_pieces(shown: list[str], described: list[str], where: str | None = None) -> str:
-    """The outfit part of the prompt: pieces with a photo, then pieces known only by their description."""
-    parts = []
-    if shown:
-        parts.append(f"the clothes and accessories shown in {where or 'the other images'}: " + "; ".join(shown))
-    if described:
-        parts.append("these pieces, which have no photo, as described: " + "; ".join(described))
-    return ", and ".join(parts)
+def nano_banana_pieces(shown: list[str], where: str | None = None) -> str:
+    """The outfit part of the prompt: every piece is shown in a photo (none is drawn from words)."""
+    return f"the clothes and accessories shown in {where or 'the other images'}: " + "; ".join(shown)
 
 
 class NanoBananaTryOn(ReplicateTryOn):
@@ -227,6 +229,7 @@ class NanoBananaTryOn(ReplicateTryOn):
 
     name = "nano-banana"
     whole_outfit = True
+    fetches_urls = False  # only photos we fetched go in (see dress_outfit)
     takes_face = True  # dress_outfit accepts a face close-up (My model try-ons)
 
     def __init__(self, token: str, model: str = NANO_BANANA, timeout_s: float = 150.0, http: httpx.Client | None = None):
@@ -235,15 +238,15 @@ class NanoBananaTryOn(ReplicateTryOn):
     def dress_outfit(self, person: bytes, media_type: str, garments: list[Garment],
                      face: tuple[bytes, str] | None = None) -> tuple[bytes, str]:
         """`face`: a close-up of the person's head (see tryon.face), sent as image 2 so the face stays theirs."""
-        # Only photos we fetched ourselves go in. A shop URL would make the model fetch it, and a CDN that
-        # stalled us usually stalls it too, failing the whole outfit; such a piece is described in words.
-        shown = [g for g in garments if g.image]
-        described = [g for g in garments if not g.image]
+        # Only photos we fetched ourselves go in, and never a piece described in words instead: a garment
+        # drawn from text comes out wrong (the worker stops the try-on before it gets here).
+        if any(not g.image for g in garments):
+            raise TryOnError("A piece has no photo, so it can't be tried on.")
+        shown = garments
         images = [self._file_input(person, media_type)] + ([self._file_input(*face)] if face else []) \
             + [self._file_input(g.image, g.media_type) for g in shown]
         body = {"input": {
-            "prompt": nano_banana_prompt([g.description for g in shown], [g.description for g in described],
-                                         face=face is not None),
+            "prompt": nano_banana_prompt([g.description for g in shown], face=face is not None),
             "image_input": images,
             "aspect_ratio": "match_input_image",  # keep the person's own framing
             "output_format": "jpg",
@@ -280,6 +283,7 @@ class FashnTryOn:
 
     name = "fashn"
     renders = True
+    fetches_urls = True  # takes a garment photo by URL and loads it itself
 
     def __init__(self, api_key: str, timeout_s: float = 90.0, http: httpx.Client | None = None):
         self.timeout_s = timeout_s

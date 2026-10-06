@@ -22,7 +22,7 @@ from .services.dupes import find_dupes
 from .services.style_memory import record_look, user_context
 from .services.trends import refresh_if_due
 from .services.vocab import STYLES
-from .tryon.client import TRYON_STAGE, TryOnError, plan_steps
+from .tryon.client import TRYON_STAGE, TryOnError, plan_steps, tryon_quota_key
 from .tryon.face import face_crop, paste_head
 from .tryon.garments import cached_photo, garment_for, garment_from_words
 
@@ -164,6 +164,13 @@ HEADWEAR = re.compile(r"\b(hats?|caps?|beanies?|berets?|fedoras?|bucket hat|head
                       r"visors?|headwear|headscarf|bandanas?|turbans?)\b", re.I)
 
 
+def missing_photo_message(products) -> str:
+    names = [p.name for p in products]
+    listed = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    return (f"We couldn't load the photo for {listed}, so we won't guess what it looks like. "
+            "Try again, or swap it for another piece.")
+
+
 def _on_the_head(p) -> bool:
     return p.category == "accessory" and bool(HEADWEAR.search(f"{p.name} {p.product_type}"))
 
@@ -186,8 +193,7 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
         pieces = [rt.catalog.products[i] for i in rec.product_ids if i in rt.catalog.products]
         steps = plan_steps([{"category": p.category, "product": p} for p in pieces])
 
-        described: list[str] = []
-        meta: dict[str, bool] = {}
+        meta: dict[str, bool | str] = {}
 
         timings: dict[str, int] = {}
 
@@ -195,32 +201,40 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
             rt.redis.set(TRYON_STAGE.format(tryon_id), name, ex=900)
 
         def fetch(products) -> dict:
-            """Every piece's photo at once, within one short budget; a piece still loading is described instead."""
+            """Every piece's photo at once, within one budget. A piece without one stops the try-on before the
+            model is called: a garment drawn from its description comes out wrong (Renee: precision over fill)."""
             t0 = time.monotonic()
             stage("fetching")
-            out = {}
+            out, missing = {}, []
             pool = ThreadPoolExecutor(max_workers=max(1, len(products)))
             futures = {pool.submit(garment_for, p, rt.data_dir): p for p in products}
             done_f, _ = wait(futures, timeout=GARMENT_BUDGET_S)
             pool.shutdown(wait=False)  # a straggler still lands in the disk cache for next time
             for f, p in futures.items():
-                if f not in done_f:
-                    # The fitting room's prefetch may have landed in the cache while we waited.
+                garment = None
+                if f in done_f:
+                    try:
+                        garment = f.result()
+                    except TryOnError as e:
+                        if e.retryable:
+                            raise
+                        log.warning("try-on %s: no photo for %s (%s)", tryon_id, p.id, e)
+                if garment is None or garment.image is None:
+                    # The fitting room's prefetch (server or browser) may have landed in the cache meanwhile.
                     hit = cached_photo(p.image_url, rt.data_dir) if p.image_url.startswith("https://") else None
-                    words = garment_from_words(p)
                     if hit is not None:
-                        out[p.id] = replace(words, image=hit[0], media_type=hit[1])
-                        continue
-                    log.warning("try-on %s: %s photo still loading; describing it instead", tryon_id, p.id)
-                    out[p.id] = words
-                    continue
-                try:
-                    out[p.id] = f.result()
-                except TryOnError as e:
-                    if e.retryable:
-                        raise
-                    log.warning("try-on %s: skipping %s (%s)", tryon_id, p.id, e)
+                        garment = replace(garment or garment_from_words(p), image=hit[0], media_type=hit[1])
+                if garment is not None and (garment.image is not None
+                                            or (garment.url and getattr(rt.tryon, "fetches_urls", False))):
+                    out[p.id] = garment  # a photo, or a URL the provider loads itself (FASHN, IDM-VTON)
+                else:
+                    missing.append(p)
             timings["fetch_ms"] = round((time.monotonic() - t0) * 1000)
+            if missing:
+                log.warning("try-on %s: no photo for %s; not rendering", tryon_id, ", ".join(p.id for p in missing))
+                if get_settings().daily_tryon_limit > 0:
+                    rt.redis.decr(tryon_quota_key())  # the model was never called, so this one isn't counted
+                raise TryOnError(missing_photo_message(missing))
             return out
 
         def model(call, *args):
@@ -235,9 +249,7 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
             if rt.tryon.renders and getattr(rt.tryon, "whole_outfit", False):
                 # One call for the whole outfit, shoes and bags included.
                 fetched = fetch(pieces)
-                garments = [(p.id, fetched[p.id]) for p in pieces if p.id in fetched]
-                if not garments:
-                    raise TryOnError("None of these pieces has a photo the try-on model can use.")
+                garments = [(p.id, fetched[p.id]) for p in pieces]
                 face = None
                 if rec.from_model and getattr(rt.tryon, "takes_face", False):
                     # My model is a full-body shot, so its face is tiny: send a close-up too (tryon.face).
@@ -245,23 +257,24 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
                     meta["face_reference"] = face is not None
                 args = (image, media_type, [g for _, g in garments]) + ((face,) if face else ())
                 image, media_type = model(rt.tryon.dress_outfit, *args)
-                described.extend(pid for pid, g in garments if g.image is None)  # drawn from words, no photo
-                if rec.from_model and not any(_on_the_head(p) for p in pieces):
+                if rec.from_model:
                     # Safety net: put My model's own head back when the frames line up and nothing sits on it.
                     t0 = time.monotonic()
-                    pasted = paste_head(rec.photo, image)
+                    worn = [p.name for p in pieces if _on_the_head(p)]
+                    pasted, why = (None, "headwear") if worn else paste_head(rec.photo, image)
                     if pasted:
                         image, media_type = pasted
+                    else:
+                        meta["head_paste_skipped"] = why
+                        log.info("try-on %s: head not pasted back (%s%s)", tryon_id, why,
+                                 f": {', '.join(worn)}" if worn else "")
                     meta["head_pasted"] = pasted is not None
                     timings["paste_ms"] = round((time.monotonic() - t0) * 1000)
                 return image, media_type, [pid for pid, _ in garments]
             if rt.tryon.renders:
                 fetched = fetch([step["product"] for step in steps])
                 for step in steps:
-                    garment = fetched.get(step["product"].id)
-                    if garment is None:
-                        continue  # pinned beside the picture instead
-                    image, media_type = model(rt.tryon.dress, image, media_type, garment)
+                    image, media_type = model(rt.tryon.dress, image, media_type, fetched[step["product"].id])
                     done.append(step["product"].id)
                 if not done:
                     raise TryOnError("None of these pieces has a photo the try-on model can use.")
@@ -275,7 +288,6 @@ def process_tryon(rt: Runtime, tryon_id: str) -> str:
         _finish(session, rec, "done", result={
             "rendered": rendered,
             "rendered_ids": done,
-            "described_ids": described,
             "model": rt.tryon.name,
             "latency_ms": round((time.monotonic() - started) * 1000),
             "timings_ms": timings,

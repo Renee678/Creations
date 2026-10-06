@@ -604,7 +604,7 @@ def test_try_on_and_my_model_pictures_open_full_size(page):
         status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
     page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(content_type="application/json", body=json.dumps(
         {"id": "e2e-stub", "status": "done", "image_url": src,
-         "result": {"rendered": True, "rendered_ids": [], "described_ids": []}})))
+         "result": {"rendered": True, "rendered_ids": []}})))
     tab(page, "lookbook")
     page.locator("[data-lb-browse]").click()
     page.locator("[data-room-all]").first.click()
@@ -618,6 +618,50 @@ def test_try_on_and_my_model_pictures_open_full_size(page):
     lightbox.wait_for(state="detached")
     assert page.errors == []
 
+
+
+def test_a_piece_without_a_photo_stops_the_try_on_and_the_face_note_needs_the_paste_back(page):
+    """Feedback #38: a garment is never drawn from words. The worker stops before the model with a message naming
+    the piece, and the page shows it with Try again. "Face kept from My model" shows only when the head was
+    really pasted back. The try-on API is stubbed, so nothing is spent, even on the live site."""
+    missing = ("We couldn't load the photo for Satin midi skirt, so we won't guess what it looks like. "
+               "Try again, or swap it for another piece.")
+    answers = [
+        {"status": "failed", "error": missing},
+        {"status": "done", "result": {"rendered": True, "rendered_ids": [], "head_pasted": True}},
+        {"status": "done", "result": {"rendered": True, "rendered_ids": [], "head_pasted": False,
+                                      "head_paste_skipped": "moved"}},
+    ]
+    shown = []
+    page.route("**/api/users/*/tryons", lambda route: route.fulfill(
+        status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
+
+    def answer(route):
+        shown.append(answers[min(len(shown), len(answers) - 1)])
+        route.fulfill(content_type="application/json", body=json.dumps(
+            {"id": "e2e-stub", "image_url": "/static/logo.svg", **shown[-1]}))
+
+    page.route("**/api/tryons/e2e-stub", answer)
+    tab(page, "lookbook")
+    upload_me(page)
+    create_looks(page)
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room [data-room-try]").click()
+    page.locator("#tryon-room [data-model-skip]").click()
+    error = page.locator("#tryon-room .status.error")
+    error.wait_for()
+    assert missing in error.inner_text(), "the message names the piece and says nothing was guessed"
+    assert page.locator("#tryon-room .tryon-shot:not(.rendering) img").count() == 0, "no picture"
+
+    error.locator("[data-tryon-retry]").click()
+    note = page.locator("#tryon-room .tryon-board + p")
+    note.wait_for()
+    assert "Face kept from My model." in note.inner_text()
+    page.locator("#room [data-room-try]").click()
+    page.wait_for_function("() => { const p = document.querySelector('#tryon-room .tryon-board + p');"
+                           " return p && p.textContent.includes('Rendered') && !p.textContent.includes('Face kept'); }")
+    assert len(shown) == 3, "the third answer (head not pasted back) has no face note"
+    assert page.errors == []
 
 
 def test_the_fitting_room_is_a_side_panel_on_wide_screens_and_a_bottom_bar_on_phones(page):

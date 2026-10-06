@@ -309,17 +309,19 @@ def test_a_photo_prefetched_while_the_try_on_waited_is_used(client, runtime, use
     assert seen and seen[0].image == jpg, "the cached photo, not a description"
 
 
-def test_garment_photos_load_together_and_a_straggler_is_described(client, runtime, user, monkeypatch):
+def test_garment_photos_load_together_and_a_missing_one_stops_the_try_on(client, runtime, user, monkeypatch):
+    """Feedback #38: a piece whose photo can't be had is never drawn from its description. The try-on stops
+    before the model is called (nothing is paid), with a message naming the piece."""
     import threading
 
     from lookmate import worker
-    from lookmate.tryon.client import TRYON_STAGE
 
     class Outfit:
         name, renders, whole_outfit = "nano-banana", True, True
+        calls = 0
 
         def dress_outfit(self, person, media_type, garments):
-            self.seen = garments
+            self.calls += 1
             return b"out", "image/jpeg"
 
     release = threading.Event()
@@ -333,16 +335,53 @@ def test_garment_photos_load_together_and_a_straggler_is_described(client, runti
     monkeypatch.setattr(runtime, "tryon", model)
     monkeypatch.setattr(worker, "garment_for", slow_or_fast)
     monkeypatch.setattr(worker, "GARMENT_BUDGET_S", 0.3)
+    monkeypatch.setattr(worker.get_settings(), "daily_tryon_limit", 5)
     ids = pick(runtime, "top", "bottom")
     tid = request_tryon(client, user["id"], ids).json()["id"]
+    from lookmate.tryon.client import tryon_quota_key
+
+    assert int(runtime.redis.get(tryon_quota_key())) == 1
     t0 = time.monotonic()
-    assert worker.process_tryon(runtime, tid) == "done"
+    assert worker.process_tryon(runtime, tid) == "failed"
     release.set()
     assert time.monotonic() - t0 < 2, "photos load in parallel within one budget"
-    result = client.get(f"/api/tryons/{tid}").json()["result"]
-    assert len(result["described_ids"]) == 1 and set(result["timings_ms"]) == {"fetch_ms", "model_ms"}
-    assert [g.image for g in model.seen].count(None) == 1, "the stalled piece is drawn from its description"
-    assert runtime.redis.get(TRYON_STAGE.format(tid)) is None
+    out = client.get(f"/api/tryons/{tid}").json()
+    bottom = runtime.catalog.products[ids[1]].name
+    assert out["error"] == (f"We couldn't load the photo for {bottom}, so we won't guess what it looks like. "
+                            "Try again, or swap it for another piece.")
+    assert model.calls == 0, "no model call is paid for"
+    assert int(runtime.redis.get(tryon_quota_key())) == 0, "and it doesn't count against today's try-ons"
+
+
+def test_a_photo_that_failed_to_load_also_stops_the_try_on(client, runtime, user, monkeypatch):
+    from lookmate import worker
+
+    class Outfit:
+        name, renders, whole_outfit = "nano-banana", True, True
+
+        def dress_outfit(self, person, media_type, garments):
+            raise AssertionError("never called")
+
+    ids = pick(runtime, "top", "bottom", "shoes")
+    monkeypatch.setattr(runtime, "tryon", Outfit())
+    monkeypatch.setattr(worker, "garment_for", lambda p, d: Garment(None if p.category != "top" else b"img",
+                                                                    "image/jpeg", "upper_body", p.name, url="https://x"))
+    tid = request_tryon(client, user["id"], ids).json()["id"]
+    assert worker.process_tryon(runtime, tid) == "failed"
+    names = [runtime.catalog.products[i].name for i in ids[1:]]
+    assert client.get(f"/api/tryons/{tid}").json()["error"].startswith(
+        f"We couldn't load the photo for {names[0]} and {names[1]}, so"), "shoes and accessories too"
+
+
+def test_a_provider_that_loads_urls_itself_gets_the_url(client, runtime, user, renderer, monkeypatch):
+    """FASHN and IDM-VTON take a garment by URL: a photo we couldn't fetch is still a photo for them."""
+    monkeypatch.setattr(renderer, "fetches_urls", True, raising=False)
+    monkeypatch.setattr("lookmate.worker.garment_for",
+                        lambda p, d: Garment(None, "image/jpeg", "dresses", p.name, url="https://cdn/dress.jpg"))
+    seen = []
+    monkeypatch.setattr(renderer, "dress", lambda person, mt, g: (seen.append(g.url), (person, mt))[1])
+    tryon_id = request_tryon(client, user["id"], pick(runtime, "dress")).json()["id"]
+    assert run_next_job(runtime) == "done" and seen == ["https://cdn/dress.jpg"]
 
 
 def test_shop_photo_falls_back_to_its_url_when_the_cdn_stalls():
@@ -502,13 +541,16 @@ def test_nano_banana_dresses_the_whole_outfit_in_one_call(monkeypatch):
     nano = NanoBananaTryOn("token", http=httpx.Client(transport=httpx.MockTransport(handler)))
     out = nano.dress_outfit(b"me", "image/jpeg", [
         Garment(b"t", "image/jpeg", "upper_body", "white satin blouse"),
-        Garment(None, "image/jpeg", "accessory", "black ballet flats", url="https://img/flats.jpg")])
+        Garment(b"f", "image/jpeg", "accessory", "black ballet flats")])
     assert out == (b"JPG", "image/jpeg")
     body = next(s for s in seen if isinstance(s, dict))["input"]
-    # A photo we couldn't fetch isn't passed on as a URL (the CDN stalls the model too): it's described in words.
-    assert len(body["image_input"]) == 2 and not any(i.startswith("https://") for i in body["image_input"])
-    assert "shown in the other images: white satin blouse, and" in body["prompt"]
-    assert "no photo, as described: black ballet flats" in body["prompt"]
+    assert len(body["image_input"]) == 3 and not any(i.startswith("https://") for i in body["image_input"])
+    assert "shown in the other images: white satin blouse; black ballet flats" in body["prompt"]
+    assert "described" not in body["prompt"], "nothing is drawn from words"
+    calls = len(seen)
+    with pytest.raises(TryOnError):  # a piece without a photo never reaches the model
+        nano.dress_outfit(b"me", "image/jpeg", [Garment(None, "image/jpeg", "accessory", "flats", url="https://img/f.jpg")])
+    assert len(seen) == calls
     assert not any(p == "/v1/models/google/nano-banana" for _, p in [x for x in seen if isinstance(x, tuple)]), \
         "official models need no version lookup"
 
@@ -525,15 +567,14 @@ def test_a_whole_outfit_model_renders_shoes_too(client, runtime, user, monkeypat
 
     monkeypatch.setattr(runtime, "tryon", WholeOutfit())
     monkeypatch.setattr("lookmate.worker.garment_for",
-                        lambda p, data_dir: Garment(None if p.category == "shoes" else b"img", "image/jpeg",
+                        lambda p, data_dir: Garment(b"img", "image/jpeg",
                                                     {"shoes": "accessory"}.get(p.category, "upper_body"), p.name))
     ids = pick(runtime, "top", "bottom", "shoes")
     tryon_id = request_tryon(client, user["id"], ids).json()["id"]
     assert run_next_job(runtime) == "done"
     assert len(calls) == 1 and "accessory" in calls[0], "one call, shoes included"
     result = client.get(f"/api/tryons/{tryon_id}").json()["result"]
-    assert result["rendered_ids"] == ids
-    assert result["described_ids"] == [ids[2]], "the shoes' photo wouldn't load, so they were drawn from words"
+    assert result["rendered_ids"] == ids and "described_ids" not in result
 
 
 def test_a_try_on_photo_is_checked_before_it_is_used(client, runtime, user, monkeypatch):
@@ -558,7 +599,7 @@ def test_a_busy_model_is_retried_but_a_refusal_is_not(monkeypatch):
     assert not TRANSIENT.search("CUDA out of memory") and not TRANSIENT.search("Input image flagged as sensitive")
 
 
-def test_a_shop_photo_the_model_cant_read_is_described_instead():
+def test_a_shop_photo_the_model_cant_read_is_not_sent():
     from lookmate.catalog.service import ProductView
     from lookmate.tryon.garments import BROWSER_HEADERS, garment_for
 
@@ -567,7 +608,7 @@ def test_a_shop_photo_the_model_cant_read_is_described_instead():
         lambda req: httpx.Response(200, content=b"avif", headers={"content-type": "image/avif"})))
     p = ProductView("asos-3", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/z/1-2", 20)
     g = garment_for(p, None, http=avif)
-    assert g.image is None and g.description, "drawn from its description rather than sent as AVIF"
+    assert g.image is None, "never sent as AVIF; the try-on then stops and names the piece"
 
 
 def test_fitting_room_pieces_are_prefetched_and_the_stage_is_shown(client, runtime, user, renderer, monkeypatch):

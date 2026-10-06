@@ -326,11 +326,11 @@ def _tryon_runner(rt, person: Path, out_dir: Path):
         analysis = LookAnalysis(is_outfit=True, vibe="", style_tags=[], items=res.detected)
         sections = find_dupes(analysis, rt.catalog, UserContext())["sections"]
         pieces = [rt.catalog.products[s["picks"][0]["id"]] for s in sections if s["picks"] and not s["hidden"]]
-        garments = [garment_for(p, rt.data_dir) for p in pieces]
+        garments = [g for g in (garment_for(p, rt.data_dir) for p in pieces) if g.image]  # never drawn from words
         face = face_crop(photo)
         image, _ = rt.tryon.dress_outfit(photo, media_type, garments, face) if face and getattr(
             rt.tryon, "takes_face", False) else rt.tryon.dress_outfit(photo, media_type, garments)
-        image = (paste_head(photo, image) or (image, ""))[0]
+        image = (paste_head(photo, image)[0] or (image, ""))[0]
         path = out_dir / f"{Path(res.image).stem}-tryon.jpg"
         path.write_bytes(image)
         return str(path)
