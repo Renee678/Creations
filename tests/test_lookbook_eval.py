@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from lookmate.llm.client import FakeVision
 from lookmate.lookbook_eval import PhotoResult, check_outfits, evaluate_photo, run, summarise, to_markdown
 from lookmate.services.lookbook import Palette
@@ -54,3 +56,35 @@ def test_a_failing_photo_is_reported_and_the_run_goes_on(tmp_path):
     results = run(tmp_path, broken, lambda a: ({"sections": []}, 0))
     assert [r.image for r in results] == ["a.png", "b.png"]
     assert all(r.error == "analysis failed: timeout" for r in results)
+
+
+def test_labels_score_the_photo_checks_and_the_clear_face_photos(tmp_path):
+    from lookmate.lookbook_eval import load_labels
+
+    cases = tmp_path / "cases.csv"
+    cases.write_text("image,framing,good_for_colour,good_for_tryon,lighting,notes\n# comment,,,,,\n"
+                     "a.png,Full body,yes,yes,daylight,\nb.png,full_body,no,,night,sunglasses\n", encoding="utf-8")
+    labels = load_labels(cases)
+    assert labels["a.png"] == {"framing": "full_body", "good_for_colour": True, "good_for_tryon": True,
+                               "notes": "daylight"}
+    assert labels["b.png"]["good_for_tryon"] is None and labels["b.png"]["notes"] == "night; sunglasses"
+    (tmp_path / "a.png").write_bytes(png((200, 170, 150)))
+    (tmp_path / "b.png").write_bytes(png((20, 20, 20)))
+    results = run(tmp_path, FakeVision(), lambda a: ({"sections": []}, 0), labels)
+    # Offline, FakeVision calls every lone photo full body, good for colour and for try-on.
+    assert results[1].wrong_checks() == ["good_for_colour"]
+    s = summarise(results)
+    assert s["checks"] == {"framing": (1.0, 2), "good_for_colour": (0.5, 2), "good_for_tryon": (1.0, 1)}
+    assert s["clear"] == 1 and s["clear_season"][1] == 1
+    md = to_markdown(results, s, "fake")
+    assert "| Photo check right: \"good for colour\" | 50% | 2 labelled |" in md
+    assert "wrong photo check: good_for_colour" in md and "| night; sunglasses |" in md
+
+
+def test_a_bad_framing_label_is_refused(tmp_path):
+    from lookmate.lookbook_eval import load_labels
+
+    cases = tmp_path / "cases.csv"
+    cases.write_text("image,framing\na.png,legs\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="framing"):
+        load_labels(cases)

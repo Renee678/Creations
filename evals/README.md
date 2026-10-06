@@ -88,4 +88,9 @@ What it measures:
   avoid, and outfits with more than one bright piece (both should be 0%).
 - **Would you wear them?**: a blank column in the per-photo table for your own judgement.
 
+Optional labels: one row per photo in `evals/lookbook-cases.csv` (`framing` is `face`, `upper_body`, `full_body` or
+`no_person`; `good_for_colour` and `good_for_tryon` are `yes` or `no`; `lighting` and `notes` are free text).
+With them the table also shows how often the AI's own photo checks were right, and the colour-season agreement on
+just the photos marked good for colour. Photos are sent the way the app sends them: at most 1024 px, JPEG.
+
 Each photo costs two Claude calls (analysis and stylist).

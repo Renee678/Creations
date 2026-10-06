@@ -3,6 +3,9 @@
     python scripts/run_lookbook_eval.py                              # evals/lookbook-photos -> evals/lookbook-results.md
     python scripts/run_lookbook_eval.py --season summer --undertone cool   # also score against the known answer
 
+Optional labels in evals/lookbook-cases.csv (one row per photo: framing, good_for_colour, good_for_tryon, lighting,
+notes) score the model's own photo checks and give the season agreement on clear-face photos on its own line.
+
 For each selfie it runs the same colour analysis the app runs on upload, then builds the current season's lookbook
 from it the way "Create my looks" does (stylist included). The photos are all of one person, so the colour season
 should come out the same every time: agreement needs no labels. The outfit checks reuse the app's own colour rules.
@@ -10,6 +13,7 @@ Uses Claude when ANTHROPIC_API_KEY is set, else the offline FakeVision (which on
 """
 
 import argparse
+import csv
 import re
 import time
 from collections import Counter
@@ -17,11 +21,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 
-from .eval import MEDIA_TYPES, _ms, _pct, percentile
+from .eval import MEDIA_TYPES, _flag, _ms, _pct, load_photo, percentile
 from .services.colours import NEUTRALS, family
 from .services.lookbook import Palette
 
 DENIM = re.compile(r"\b(denim|jeans?)\b", re.I)
+CHECKS = ("framing", "good_for_colour", "good_for_tryon")
+FRAMINGS = {"face", "upper_body", "full_body", "no_person"}
 
 
 @dataclass
@@ -39,6 +45,30 @@ class PhotoResult:
     analysis_ms: float = 0.0
     lookbook_ms: float = 0.0
     error: str = ""
+    check: dict = field(default_factory=dict)   # what the model said the photo is good for
+    label: dict = field(default_factory=dict)   # what the photo really shows (evals/lookbook-cases.csv)
+
+    def wrong_checks(self) -> list[str]:
+        return [k for k in CHECKS if self.label.get(k) is not None and k in self.check
+                and self.check[k] != self.label[k]]
+
+
+def load_labels(path: Path) -> dict[str, dict]:
+    """Photo file -> its labels. Blank cells are not scored; rows starting with # are comments."""
+    labels = {}
+    with path.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            image = (row.get("image") or "").strip()
+            if not image or image.startswith("#"):
+                continue
+            framing = (row.get("framing") or "").strip().lower().replace(" ", "_").replace("-", "_") or None
+            if framing and framing not in FRAMINGS:
+                raise ValueError(f"{image}: framing must be one of {', '.join(sorted(FRAMINGS))}, not {framing!r}")
+            labels[image] = {"framing": framing, "good_for_colour": _flag(row.get("good_for_colour", "")),
+                             "good_for_tryon": _flag(row.get("good_for_tryon", "")),
+                             "notes": "; ".join(x for x in ((row.get("lighting") or "").strip(),
+                                                            (row.get("notes") or "").strip()) if x)}
+    return labels
 
 
 def bright(piece: dict) -> bool:
@@ -68,6 +98,8 @@ def evaluate_photo(image: str, data: bytes, media_type: str, llm, build) -> Phot
         res.error = f"analysis failed: {e}"
         return res
     res.analysis_ms = (time.perf_counter() - t) * 1000
+    if person.photo_checks:
+        res.check = person.photo_checks[0].model_dump(include=set(CHECKS))
     if not person.usable:
         res.error = "no face found"
         return res
@@ -96,7 +128,14 @@ def summarise(results: list[PhotoResult], season: str = "", undertone: str = "")
     reviewed = sum(r.reviewed for r in ok)
     latency = [r.analysis_ms + r.lookbook_ms for r in ok]
     top = lambda c: c.most_common(1)[0] if c else ("", 0)
+    checks = {}
+    for k in CHECKS:
+        scored = [r.check[k] == r.label[k] for r in results if r.label.get(k) is not None and k in r.check]
+        if scored:
+            checks[k] = (sum(scored) / len(scored), len(scored))
+    clear = [r for r in ok if r.label.get("good_for_colour")]
     return {
+        "checks": checks, "clear": len(clear), "clear_season": top(Counter(r.season for r in clear)),
         "photos": len(results), "errors": len(results) - len(ok), "ok": len(ok),
         "season": top(seasons), "detail": top(details), "undertone": top(tones),
         "seasons": dict(seasons), "details": dict(details),
@@ -121,6 +160,14 @@ def to_markdown(results: list[PhotoResult], s: dict, model: str, season: str = "
         f"| Same sub-season (most common: {s['detail'][0] or 'n/a'}) | {_pct(s['detail'][1] / s['ok'] if s['ok'] else None)} | {share(s['detail'][1])} |",
         f"| Same undertone (most common: {s['undertone'][0] or 'n/a'}) | {_pct(s['undertone'][1] / s['ok'] if s['ok'] else None)} | {share(s['undertone'][1])} |",
     ]
+    if s["clear"]:
+        c = s["clear_season"]
+        lines.append(f"| Same colour season on the photos you marked good for colour (most common: {c[0]}) "
+                     f"| {_pct(c[1] / s['clear'])} | {c[1]} of {s['clear']} |")
+    names = {"framing": "framing (face / upper body / full body)", "good_for_colour": "\"good for colour\"",
+             "good_for_tryon": "\"good for try-on\""}
+    for k, (value, n) in s["checks"].items():
+        lines.append(f"| Photo check right: {names[k]} | {_pct(value)} | {n} labelled |")
     if season:
         lines.append(f"| Colour season matches the known answer ({season}) | {_pct(s['season_accuracy'])} | {s['ok']} |")
     if undertone:
@@ -134,30 +181,38 @@ def to_markdown(results: list[PhotoResult], s: dict, model: str, season: str = "
         f"| Failed photos | {s['errors']} | {s['photos']} |",
         "", "Seasons read: " + (", ".join(f"{k} {v}" for k, v in sorted(s["details"].items(), key=lambda kv: -kv[1])) or "none"),
         "", "### Per photo (fill in the last column by eye)", "",
-        "| Photo | Season | Undertone | Outfits | Problems | Lighting / filter notes | Would you wear them? |",
-        "|---|---|---|---|---|---|---|",
+        "| Photo | Season | Undertone | Outfits | Problems | Your notes | AI's caveats | Would you wear them? |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for r in results:
         if r.error:
-            lines.append(f"| {r.image} | error | | | {r.error} | | |")
+            lines.append(f"| {r.image} | error | | | {r.error} | {r.label.get('notes', '')} | | |")
             continue
         problems = [f"avoided colour: {', '.join(r.off_palette)}"] if r.off_palette else []
         problems += [f"two brights: {', '.join(r.loud)}"] if r.loud else []
+        problems += [f"wrong photo check: {', '.join(r.wrong_checks())}"] if r.wrong_checks() else []
         caveats = r.caveats.replace("|", "/").replace("\n", " ")
         lines.append(f"| {r.image} | {r.detail or r.season} | {r.undertone} | {r.approved}/{r.reviewed} approved "
-                     f"| {'; '.join(problems) or '-'} | {caveats} | |")
+                     f"| {'; '.join(problems) or '-'} | {r.label.get('notes', '')} | {caveats} | |")
     return "\n".join(lines) + "\n"
 
 
-def run(photos_dir: Path, llm, build) -> list[PhotoResult]:
+def run(photos_dir: Path, llm, build, labels: dict[str, dict] | None = None) -> list[PhotoResult]:
     files = sorted(p for p in photos_dir.iterdir() if p.suffix.lower() in MEDIA_TYPES) if photos_dir.is_dir() else []
-    return [evaluate_photo(p.name, p.read_bytes(), MEDIA_TYPES[p.suffix.lower()], llm, build) for p in files]
+    results = []
+    for p in files:
+        res = evaluate_photo(p.name, *load_photo(p), llm, build)
+        res.label = (labels or {}).get(p.name, {})
+        results.append(res)
+    return results
 
 
 def main(argv: list[str] | None = None) -> None:
     root = Path.cwd()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--photos", type=Path, default=root / "evals" / "lookbook-photos")
+    ap.add_argument("--cases", type=Path, default=root / "evals" / "lookbook-cases.csv",
+                    help="optional labels per photo (skipped when the file is missing)")
     ap.add_argument("--out", type=Path, default=root / "evals" / "lookbook-results.md")
     ap.add_argument("--season", choices=["spring", "summer", "autumn", "winter"], help="your known colour season")
     ap.add_argument("--undertone", choices=["warm", "cool", "neutral"], help="your known undertone")
@@ -197,7 +252,7 @@ def main(argv: list[str] | None = None) -> None:
 
     if not args.photos.is_dir() or not any(p.suffix.lower() in MEDIA_TYPES for p in args.photos.iterdir()):
         raise SystemExit(f"No photos in {args.photos}: put your selfies there (jpg, png or webp).")
-    results = run(args.photos, llm, build)
+    results = run(args.photos, llm, build, load_labels(args.cases) if args.cases.is_file() else None)
     summary = summarise(results, args.season or "", args.undertone or "")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(to_markdown(results, summary, llm.name, args.season or "", args.undertone or ""), encoding="utf-8")
