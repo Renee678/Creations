@@ -277,13 +277,20 @@ FASHN_CATEGORIES = {"upper_body": "tops", "lower_body": "bottoms", "dresses": "o
 
 
 FASHN_MAX = "tryon-max"
+FASHN_CLOTHES = "tryon-v1.6"
+
+
+def _photo_type(garment: Garment) -> str:
+    """FASHN's garment_photo_type: ASOS shoots every piece on a model; anything else, FASHN decides."""
+    return "model" if garment.url and "asos-media.com/" in garment.url else "auto"
 
 
 class FashnTryOn:
     """FASHN's hosted try-on (https://docs.fashn.ai): no cold starts, one garment per call.
 
-    Try-On Max (the default) keeps the person's identity and also handles shoes; tryon-v1.6 is the
-    cheaper, faster one for clothes only.
+    Clothes always go through tryon-v1.6 with their category (tops, bottoms, one-pieces), so a step puts on
+    only that piece. With FASHN_MODEL=tryon-max (the default) the shoes go on last through Try-On Max;
+    with tryon-v1.6 shoes aren't drawn.
     """
 
     name = "fashn"
@@ -315,14 +322,18 @@ class FashnTryOn:
 
     def dress(self, person: bytes, media_type: str, garment: Garment) -> tuple[bytes, str]:
         product = _data_uri(garment.image, garment.media_type) if garment.image else garment.url
-        if self.model == FASHN_MAX:
+        if garment.region in FASHN_CATEGORIES:
+            # Clothes go through tryon-v1.6, locked to the piece's category: Try-On Max has no category, and
+            # from an on-model shop photo it copied the model's other clothes (a cardigan came back as the
+            # skirt worn with it). ASOS photos are on a model; others are left to FASHN to tell.
+            body = {"model_name": FASHN_CLOTHES, "inputs": {
+                "model_image": _data_uri(person, media_type), "garment_image": product,
+                "category": FASHN_CATEGORIES[garment.region], "garment_photo_type": _photo_type(garment),
+                "mode": "balanced", "output_format": "jpeg"}}
+        else:  # shoes: a packshot, which Try-On Max puts on as it is
             body = {"model_name": FASHN_MAX, "inputs": {
                 "model_image": _data_uri(person, media_type), "product_image": product,
                 "generation_mode": "balanced", "output_format": "jpeg"}}
-        else:
-            body = {"model_name": self.model, "inputs": {
-                "model_image": _data_uri(person, media_type), "garment_image": product,
-                "category": FASHN_CATEGORIES.get(garment.region, "auto"), "mode": "balanced", "output_format": "jpeg"}}
         run = self._request("POST", f"{FASHN_API}/run", json=body)
         if run.get("error") or not run.get("id"):
             raise TryOnError(f"try-on was not accepted: {run.get('error')}")

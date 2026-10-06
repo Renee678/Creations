@@ -637,9 +637,10 @@ def test_fitting_room_pieces_are_prefetched_and_the_stage_is_shown(client, runti
 
 
 def test_fashn_dresses_my_model_layer_by_layer_with_shoes(client, runtime, user, monkeypatch):
-    """Feedback #38/#41: with FASHN_API_KEY a try-on uses the saved My model as the person and dresses one piece
-    per call in wearing order, each on the picture the last call returned: bottom, top, the jacket over it,
-    then shoes (Try-On Max draws shoes). A bag isn't drawn, and the result says which model drew it."""
+    """Feedback #38/#41/#42: with FASHN_API_KEY a try-on uses the saved My model as the person and dresses one
+    piece per call in wearing order, each on the picture the last call returned: bottom, top, the jacket over
+    it, then shoes. Every clothing step is locked to its category on tryon-v1.6 (Try-On Max copied the other
+    clothes in an on-model photo); only the shoes go through Try-On Max. A bag isn't drawn."""
     from lookmate import worker
     from tests.test_body_model import create
 
@@ -661,7 +662,8 @@ def test_fashn_dresses_my_model_layer_by_layer_with_shoes(client, runtime, user,
 
     monkeypatch.setattr(runtime, "tryon", FashnTryOn("fa-key", http=httpx.Client(transport=httpx.MockTransport(handler))))
     monkeypatch.setattr(worker, "garment_for", lambda p, data_dir: Garment(
-        f"photo:{p.category}".encode(), "image/jpeg", REGIONS.get(p.category, "accessory"), p.name))
+        f"photo:{p.category}".encode(), "image/jpeg", REGIONS.get(p.category, "accessory"), p.name,
+        url="https://images.asos-media.com/products/x/1" if p.category == "top" else None))
     my_model = b"\xff\xd8\xff\xe0my-saved-model"
     monkeypatch.setattr(runtime, "model_maker", None)  # keeps the uploaded picture as My model
     saved = create(client, user["id"], photo=my_model).json()
@@ -670,8 +672,10 @@ def test_fashn_dresses_my_model_layer_by_layer_with_shoes(client, runtime, user,
     ids = pick(runtime, "outerwear", "top", "bottom", "shoes", "bag")
     tid = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(ids)}).json()["id"]
     assert run_next_job(runtime) == "done"
-    assert {r["model_name"] for r in runs} == {"tryon-max"}
-    pieces = [base64.b64decode(r["product_image"].split(",", 1)[1]) for r in runs]
+    assert [r["model_name"] for r in runs] == ["tryon-v1.6"] * 3 + ["tryon-max"], "Max for the shoes only"
+    assert [r.get("category") for r in runs] == ["bottoms", "tops", "tops", None], "each step puts on its piece only"
+    assert [r.get("garment_photo_type") for r in runs] == ["auto", "model", "auto", None], "ASOS shoots on a model"
+    pieces = [base64.b64decode((r.get("garment_image") or r["product_image"]).split(",", 1)[1]) for r in runs]
     assert pieces == [b"photo:bottom", b"photo:top", b"photo:outerwear", b"photo:shoes"], "wearing order, no bag"
     model_images = [base64.b64decode(r["model_image"].split(",", 1)[1]) for r in runs]
     assert model_images == [my_model, b"after-bottom", b"after-top", b"after-jacket"]
@@ -777,3 +781,17 @@ def test_impersonation_is_used_only_when_installed_and_switched_on(monkeypatch):
     monkeypatch.delitem(sys.modules, "curl_cffi.requests", raising=False)
     monkeypatch.setattr(builtins, "__import__", no_curl_cffi)
     assert _impersonator() is None, "not installed: the plain fetch only, nothing breaks"
+
+
+def test_fashn_locks_a_dress_to_one_pieces():
+    seen = []
+    import lookmate.tryon.client as c
+
+    c_sleep, c.time.sleep = c.time.sleep, lambda s: None
+    try:
+        FashnTryOn("key", http=fashn_stub(["completed"], seen)).dress(
+            b"p", "image/jpeg", Garment(b"g", "image/jpeg", "dresses", "black ribbed dress"))
+    finally:
+        c.time.sleep = c_sleep
+    body = next(x for x in seen if isinstance(x, dict))
+    assert body["model_name"] == "tryon-v1.6" and body["inputs"]["category"] == "one-pieces"
