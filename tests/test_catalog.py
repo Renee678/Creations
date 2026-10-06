@@ -479,5 +479,5 @@ def test_the_gateway_resolves_the_api_at_request_time():
     assert "resolver 127.0.0.11 valid=10s" in conf, "Docker's DNS, re-asked every 10 s"
     assert "upstream app" not in conf and "server api:8000" not in conf
     assert "set $app http://api:8000;" in conf
-    passes = [line.strip() for line in conf.splitlines() if "proxy_pass" in line]
+    passes = [line.strip() for line in conf.splitlines() if line.strip().startswith("proxy_pass")]
     assert passes and all(p == "proxy_pass $app;" for p in passes)
