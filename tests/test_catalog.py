@@ -446,10 +446,28 @@ def test_the_compose_importer_runs_apart_from_the_api_with_a_memory_cap():
     assert services["importer"]["mem_limit"] and services["importer"]["restart"].startswith("on-failure")
     for name in ("api", "worker"):
         assert services[name]["environment"]["CATALOG_IMPORT"] == "external"
+    assert services["importer"]["mem_limit"] == "${IMPORTER_MEM_LIMIT:-1800m}"
     deploy = (Path(__file__).resolve().parents[1] / "scripts" / "deploy.sh").read_text()
-    assert "CATALOG_SOURCE=asos,polyvore$/" not in deploy, "a CATALOG_SOURCE Renee set in .env is kept"
-    # Renee, 2026-10-06: no Amazon on the server until its import is proven on 4 GB.
     assert "set_default CATALOG_SOURCE asos,polyvore\n" in deploy
-    assert "s/^CATALOG_SOURCE=asos,polyvore,amazon$/CATALOG_SOURCE=asos,polyvore/" in deploy
+    assert "bash scripts/memory_defaults.sh .env /proc/meminfo" in deploy
     for name in ("api", "worker", "importer"):
         assert services[name]["environment"]["CATALOG_SOURCE"] == "${CATALOG_SOURCE:-asos,polyvore}"
+
+
+@pytest.mark.parametrize("gb, env, expected", [
+    # The 4 GB box: Amazon goes back off and a 4g importer cap is dropped (compose's 1800m applies).
+    (3.8, "CATALOG_SOURCE=asos,polyvore,amazon\nIMPORTER_MEM_LIMIT=4g\n", "CATALOG_SOURCE=asos,polyvore\n"),
+    (3.8, "CATALOG_SOURCE=polyvore\n", "CATALOG_SOURCE=polyvore\n"),
+    # After a rescale to 8 GB: Amazon stays on and the importer may use 4g.
+    (7.7, "CATALOG_SOURCE=asos,polyvore,amazon\n", "CATALOG_SOURCE=asos,polyvore,amazon\nIMPORTER_MEM_LIMIT=4g\n"),
+    (7.7, "IMPORTER_MEM_LIMIT=6g\n", "IMPORTER_MEM_LIMIT=6g\n"),  # set by hand: kept
+])
+def test_deploy_sets_catalog_defaults_by_the_servers_memory(tmp_path, gb, env, expected):
+    import subprocess
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "memory_defaults.sh"
+    (tmp_path / ".env").write_text(env)
+    (tmp_path / "meminfo").write_text(f"MemTotal:       {int(gb * 1024 * 1024)} kB\nMemFree:  1000 kB\n")
+    subprocess.run(["bash", str(script), str(tmp_path / ".env"), str(tmp_path / "meminfo")], check=True,
+                   capture_output=True)
+    assert (tmp_path / ".env").read_text() == expected

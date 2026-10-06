@@ -171,6 +171,7 @@ adds its own `AMAZON_MAX_ITEMS` on top:
 | `EMBEDDER` | `bge` (compose) | `bge` or `hash` (offline lexical) |
 | `CATALOG_SIZE` | `5000` | Products from ASOS, Polyvore and H&M, split evenly across them |
 | `AMAZON_MAX_ITEMS` | `40000` | Products from the Amazon source, on top of `CATALOG_SIZE` |
+| `IMPORTER_MEM_LIMIT` | `1800m` | Memory cap of the catalog importer. `scripts/deploy.sh` sets `4g` on a server with 6 GB or more; under 6 GB it keeps 1800m and turns Amazon off, since its import ran the 4 GB box out of memory |
 | `REPLICATE_API_TOKEN` | empty | Rendered try-on and "My model" on Replicate; empty (and no FASHN key) shows a collage preview, and My model keeps the uploaded photo |
 | `TRYON_MODEL` | `google/nano-banana` | Replicate try-on model: Nano Banana (warm, one call per outfit), `google/nano-banana-pro` (better at keeping the face, slower and dearer) or `cuuupid/idm-vton` (cheaper, slow cold starts) |
 | `MODEL_GEN_MODEL` | `google/nano-banana-pro` | Draws "My model" (once per user, so the better model): falls back to `google/nano-banana` if it fails |

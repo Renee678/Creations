@@ -21,9 +21,9 @@ set_default ACCESS_CODE "$(tr -dc 'a-z0-9' </dev/urandom | head -c 8)"
 set_default DAILY_LOOK_LIMIT 50
 set_default DAILY_TRYON_LIMIT 20
 set_default DAILY_STYLIST_LIMIT 100
-# Amazon is off on the 4 GB server for now (Renee, 2026-10-06): its import ran the box out of memory.
-# Turn an old default back into ASOS + Polyvore; any other value already in .env is kept.
-sed -i 's/^CATALOG_SOURCE=asos,polyvore,amazon$/CATALOG_SOURCE=asos,polyvore/' .env
+# Amazon's import ran the 4 GB server out of memory (Renee, 2026-10-06): under 6 GB it stays off and the
+# importer keeps its 1800m cap; from 6 GB up the importer gets 4g and Amazon can be switched on in .env.
+bash scripts/memory_defaults.sh .env /proc/meminfo
 set_default CATALOG_SOURCE asos,polyvore
 grep -qE '^ANTHROPIC_API_KEY=.+' .env || echo "!! ANTHROPIC_API_KEY is empty: the site will use the offline fake model"
 

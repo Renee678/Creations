@@ -58,13 +58,13 @@ services:
         condition: service_healthy
 
   # One-off: imports the configured catalog if the stored one differs, then exits. Its own process with a
-  # memory cap, so on a 4 GB server an import can only ever kill itself, never the site. Downloads and
+  # memory cap (IMPORTER_MEM_LIMIT), so an import can only ever kill itself, never the site. Downloads and
   # embedded chunks are cached, so a restart resumes. `docker compose logs -f importer` shows progress.
   importer:
     build: .
     command: ["python", "-m", "lookmate.catalog_import"]
     restart: on-failure:5
-    mem_limit: 1800m
+    mem_limit: ${IMPORTER_MEM_LIMIT:-1800m}  # deploy.sh sets 4g on a server with 6 GB or more
     env_file:
       - path: .env
         required: false
