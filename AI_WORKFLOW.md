@@ -24,11 +24,9 @@
 
 ## What the project does
 
-Lookmate is an AI fashion advisor. Its heart is **My Look Book**: a personal style book you shop from. Selfies
-give your colour season, palette, hair and makeup ideas; outfits you love are kept as pages (a flat lay, or
-"On me" via virtual try-on on a saved model of you) and favourite pieces hang in a closet. Around it,
-**Find dupes** turns an outfit screenshot from Xiaohongshu, TikTok or Instagram into cheaper look-alikes,
-ranked by similarity, body shape, budget and a style memory; a weekly job researches trends.
+Lookmate is an AI fashion advisor. Its heart is **My Look Book**: selfies give your colour season, palette, hair
+and makeup ideas; outfits you love become pages (a flat lay, or "On me" via virtual try-on) you shop from.
+**Find dupes** turns an outfit screenshot into cheaper look-alikes ranked by similarity, body, budget and style.
 
 ## Why this project
 
@@ -40,9 +38,6 @@ ranked by similarity, body shape, budget and a style memory; a weekly job resear
   don't offer: personalisation (colours, body, budget, learned style), a reason for each pick, and a keepsake.
 - **Real system-design and SRE content.** Slow, costly AI calls behind a public endpoint need a queue, retries,
   idempotency, rate limits and graceful degradation.
-
-My first idea was a flash-sale system. Claude's market research found hundreds of load-tested GitHub projects
-like it, so I pivoted to a clearer gap (`docs/market-research.zh.md`, `docs/product-plan.zh.md`, in Chinese).
 
 ## Tools, models and infrastructure
 
@@ -60,41 +55,53 @@ No other AI coding assistant (Copilot, Cursor) was used.
 | **Hetzner Cloud** (CPX21, Ashburn) + Caddy | The live demo server; Caddy adds HTTPS; deployed from my Windows PC with one script |
 | **GitHub Actions**, pytest, Playwright | CI runs every test and boots the full stack for a smoke test on each push |
 
+## Data: finding, comparing and choosing it
+
+The hardest data problem was a catalog with real prices *and* product photos usable for try-on; most public
+fashion datasets have one or the other. I compared candidates with Claude against three criteria (women's
+fashion, a price, a usable photo), and changed course when a source failed:
+
+| Dataset | Result | Why |
+|---|---|---|
+| H&M e-commerce (Qdrant, with vectors) | dropped | my first choice; its image bucket had been deleted, so no photos |
+| ASOS e-commerce (UniqueData) | 2,500 kept | real prices and CDN photos; rows repeat per size, so deduplicated per SKU |
+| Polyvore (Marqo, 1 of 6 shards) | 2,500 kept | designer pieces with photos; no prices, so a deterministic designer-band price |
+| Amazon Reviews 2023 (UCSD), clothing metadata | 40,000 kept | real prices and photos; filtered from about 7.2 million listings |
+
+The import is a small data pipeline: it streams Amazon's gzipped file without storing it, filters by category
+path and exclusion words, deduplicates, embeds in cached chunks so a crash resumes, runs in a memory-capped
+process, and swaps the new catalog in one transaction while the site keeps serving the old one.
+
 ## How I worked with AI
 
-1. **I decide, Claude builds.** At each fork Claude laid out options with a recommendation; I chose the
-   architecture, the features and the design. Then Claude wrote the module and its tests, ran `pytest` and
-   committed in small steps. Design went the same way: Claude drew mockups, I picked and refined them over
-   several rounds (the Favourites closet took six) until they looked right to me.
-2. **I was the tester and reviewer.** I reported what was wrong with screenshots; every bug became a fix plus a
-   regression test (unit, or Playwright in `tests/e2e/test_regressions.py`), and I checked each fix live.
+1. **I decide, Claude builds.** At each fork Claude laid out options with a recommendation and I chose; Claude
+   wrote the module and its tests and committed in small steps. Design too: the Favourites closet took six mockups.
+2. **I was the tester.** Every bug I reported with a screenshot became a fix plus a regression test (unit, or
+   Playwright in `tests/e2e/test_regressions.py`), and I checked each fix live.
 3. **Guardrails in the repo.** `CLAUDE.md` records my rules (no keys in tracked files, a test with every change,
    retrieval and scoring deterministic), and tests enforce the ones that matter.
 
 ## Where AI significantly helped
 
-**1. Research that changed my direction.** In one session Claude showed that both halves of my first idea were
-crowded and that SHEIN already ships Camera Search. That pushed me towards personalisation and explanations.
-By hand this would have taken most of a day; it took under an hour.
+**1. Research that changed my direction.** My first idea was a flash-sale system. In under an hour Claude's
+market research found hundreds of load-tested GitHub projects like it, and that SHEIN already ships Camera
+Search, so I pivoted to personalisation and explanations (`docs/market-research.zh.md`, in Chinese).
 
 **2. Designing the failure modes.** Claude proposed the reliable queue (atomic `BLMOVE` into a per-worker list,
 delayed retries in a sorted set, recovery on startup) and wrote a test for each failure path: transient errors
 retried, permanent ones failing fast, duplicate delivery harmless, a crashed worker's jobs recovered.
 
-**3. Options to choose from, so I could decide fast.** At each real fork Claude gave two or three options, each
-with its consequence and a recommendation. Example: I saw try-on draw a blazer over a jumper as one V-neck
-knit. Claude found why (each try-on step replaces the whole upper body) and offered "skip the jacket", "draw
-the jacket instead" or "document it as a limit". I chose to skip it, and the code, a test and this document
-changed in one step. Decisions came fast, and the reasoning is recorded.
+**3. Options to choose from, so I could decide fast.** At each fork Claude gave two or three options with their
+consequences and a recommendation. When try-on drew a blazer over a jumper as one V-neck knit, Claude found why
+(each step replaces the whole upper body) and offered three fixes; I chose "skip the jacket" in one step.
 
 ## Where AI output needed correction or validation
 
 **1. An overconfident claim.** Claude first said flash-sale projects "have no load-test evidence"; checking
 GitHub showed several with k6 tests. **Lesson:** I treat AI claims about "what exists" as hypotheses to check.
 
-**2. A leaked API key.** I pasted a real key into a tracked file and pushed it. Claude spotted it, I revoked it,
-and we added `tests/test_no_secrets.py`, which fails CI on any key. History was not rewritten (the
-assessment forbids it), so revoking was the real fix.
+**2. A leaked API key.** I pushed a real key in a tracked file. Claude spotted it, I revoked it, and
+`tests/test_no_secrets.py` now fails CI on any key (history stays unrewritten, as the assessment requires).
 
 **3. Rules alone had no taste.** Testing the first, fully rule-based lookbook, I got a bright green satin blazer
 with bright blue trousers labelled "quiet luxury". Claude traced it: slots were filled independently and
@@ -103,13 +110,10 @@ true neutrals in neutral slots), then Claude as a stylist that picks among the t
 slot and says why. Its answer is validated, cached and capped, and on any error the scorer's picks stand. In
 the evaluation below it approved 93% of 75 outfits, with no colour to avoid and no outfit with two bright pieces.
 
-**4. My eyes find the error, AI finds the cause.** We had no labelled dataset, no time to train or fine-tune,
-and used the hosted models as they are, so the AI could not tell on its own that a picture looked wrong. I
-could. I sent a screenshot; Claude traced the cause in our code and fixed it with a rule and a regression
-test. A frayed band under a cropped cardigan was My model's denim
-shorts left at the bare waist (now the cropped top goes on before the trousers); "no light blue jeans" was a
-shade rule that rejected plain "blue"; a blurred high neckline was our own face paste-back reaching below the
-chin. My judgement found the problems; Claude made the fixes fast, and the tests keep them fixed.
+**4. My eyes find the error, AI finds the cause.** With hosted models and no labelled data to train on, the AI
+could not tell that a picture looked wrong; I could. I sent a screenshot, Claude traced the cause and fixed it
+with a rule and a test: a frayed band under a cropped cardigan was My model's shorts left at the waist; "no
+light blue jeans" was a shade rule rejecting plain "blue"; a blurred neckline was our own face paste-back.
 
 **5. Green tests, missing data.** Results felt thin while I tested. On submission day I asked why the live
 catalog showed 5,000 products, not 45,000: one over-long Amazon field made Postgres reject the whole import,
@@ -126,10 +130,8 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
   candidates the rules already scored; a try-on never draws a garment it has no real photo of.
 - **Evaluation on my own photos** (I labelled them; live server, real catalog; `scripts/run_eval.py`,
   `scripts/run_lookbook_eval.py`, tables in `evals/`):
-  - *The catalog it searches:* 45,000 women's fashion products on the live server, from three public datasets
-    that took real searching to find (most fashion sets lack prices or photos): ASOS (2,500, real prices),
-    Polyvore (2,500 designer pieces) and Amazon Reviews 2023 (40,000, filtered from millions of listings). The
-    numbers below were measured on the first 5,000 (see correction 5).
+  - *Catalog:* the numbers below were measured on the first 5,000 products (ASOS and Polyvore; see
+    correction 5). The live catalog now holds all 45,000.
   - *Find dupes, 24 photos, 68 hand-labelled pieces:* every piece found (100% category recall); 88% of shown
     dupes had the right type, colour, length and pattern (90 of 102); none outside the price range; 5-7 s
     per photo. Most mistakes were garment type (tank tops read as "halter").
@@ -138,11 +140,8 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
   - *What the numbers missed:* clicking through, I found bugs the labels didn't cover (jeans by wash name, a
     bracelet returning earrings, a re-upload keeping old results), each fixed with a test.
     `python -m lookmate.why_no_dupes` shows which rule rejects each candidate.
-  - *Image models, judged by my eye:* try-on and My model can't be scored by a script. I compared providers on
-    my own photos and chose FASHN over Nano Banana and IDM-VTON because it kept me closest to real; its
-    "quality" mode takes close to a minute per outfit, worth it for a fitting room, with a timer on screen.
-    Known limits stay visible: a jacket over a top isn't drawn; it is pinned beside the picture and the
-    caption says so.
+  - *Image models, judged by my eye:* no script can score try-on, so I compared providers on my own photos;
+    FASHN kept me closest to real. Its quality mode takes about a minute per outfit, shown with a timer.
 
 ## What I learned, and what I would do next
 
