@@ -157,6 +157,12 @@ of 75 outfits, and across 165 pieces none was in a colour to avoid and no outfit
     Nano Banana Pro on Replicate draws "My model" once per user. FASHN was chosen over Nano Banana and
     IDM-VTON for try-on because it kept the person closest to real. Garments go on one after another, so
     the detail setting multiplies: "quality" draws hands and fabric most realistically but takes close to a
-    minute for a three-piece outfit, "balanced" about half that. The deployed demo keeps "quality"
-    (`FASHN_MODE` in `.env`): for a fitting room, a result that looks like you is worth the wait, and the
-    screen shows a running timer while it works.
+    minute for a three-piece outfit, "balanced" about half that. The default is "quality" (`FASHN_MODE`
+    switches it): for a fitting room, a result that looks like you is worth the wait, and the screen shows a
+    running timer while it works.
+  - *Known limits of try-on:* our own head paste-back once blurred high necklines (the feathered face oval
+    reached below the chin; it now stops at the chin, with a test). What remains is the model's: open-front
+    and two-in-one tops (a cami joined to a shrug) render badly either way. Drawn over My model's clothes,
+    the open front shows the old tank top through it; with the old clothes removed first, the model invents
+    what fills the gaps, copying the shop model's skin or jeans. We kept the overlay mode and record this as
+    a limit rather than add a second, paid "redraw another way" pass on submission night.
