@@ -53,12 +53,30 @@ class Garment:
 def plan_steps(pieces: list[dict], extras: tuple[str, ...] = ()) -> list[dict]:
     """Which pieces of an outfit to render, one model call each, in the order they are put on.
 
-    Every clothing layer: a dress, or the bottom then the top; then the outerwear over it. Then the
-    `extras` the model can also draw (FASHN Try-On Max: shoes). At most four calls per outfit.
+    Every clothing layer: a dress, or the bottom then the top; then the outerwear over it. A cropped top (or a
+    cropped jacket with no top) goes on first and the bottom last. Then the `extras` the model can also draw (FASHN Try-On Max: shoes). At most four calls per outfit.
     """
     by_cat = {p["category"]: p for p in pieces}
-    base = ["dress"] if "dress" in by_cat else ["bottom", "top"]
-    return [by_cat[c] for c in (*base, "outerwear", *extras) if c in by_cat]
+    if "dress" in by_cat:
+        order = ["dress", "outerwear"]
+    elif _cropped(by_cat.get("top") or by_cat.get("outerwear")):
+        # A cropped top leaves the waist bare: put on over My model's denim shorts it kept their frayed hem, or the
+        # shop photo's jeans, as a blurry band under the hem (Renee, 2026-10-07). With the trousers last, their own
+        # waistband is drawn into that gap.
+        order = ["top", "outerwear", "bottom"]
+    else:
+        order = ["bottom", "top", "outerwear"]
+    return [by_cat[c] for c in (*order, *extras) if c in by_cat]
+
+
+CROPPED_TOP = re.compile(r"\bcrop(ped)?\b", re.I)
+CROPPED_FIT = re.compile(r"\bcrop(ped)? (length|fit|cut|hem|style)\b", re.I)  # ASOS: "Cropped length" in the details
+
+
+def _cropped(piece: dict | None) -> bool:
+    product = (piece or {}).get("product")
+    return bool(product and (CROPPED_TOP.search(f"{product.name} {product.product_type}")
+                             or CROPPED_FIT.search(getattr(product, "description", "") or "")))
 
 
 TRYON_STAGE = "tryon:stage:{}"  # what a running try-on is doing now, for the UI

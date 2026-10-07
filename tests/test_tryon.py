@@ -17,7 +17,8 @@ PHOTO = b"\xff\xd8\xff\xe0" + b"full-body-photo"
 def pick(runtime, *categories):
     by_cat = {}
     for p in runtime.catalog.products.values():
-        by_cat.setdefault(p.category, p.id)
+        if "crop" not in f"{p.name} {p.description}".lower():  # a cropped top changes the wearing order
+            by_cat.setdefault(p.category, p.id)
     return [by_cat[c] for c in categories]
 
 
@@ -846,3 +847,26 @@ def test_open_layered_tops_have_the_base_clothes_taken_off_first(monkeypatch):
         tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", region, name))
     flags = [s["inputs"].get("segmentation_free") for s in seen if isinstance(s, dict)]
     assert flags == [False, False, None, None], "only open or two-in-one tops; a cropped cardigan keeps the default"
+
+
+def test_a_cropped_top_goes_on_before_the_bottom():
+    """Renee (2026-10-07): under a cropped blue cardigan the try-on showed a blurry fringed band, left over from My
+    model's denim shorts, between the hem and the trousers. With a cropped top the trousers go on last."""
+    from types import SimpleNamespace
+
+    def piece(c, name="Plain piece"):
+        return {"category": c, "product": SimpleNamespace(name=name, product_type=c)}
+
+    top, bottom, coat = piece("top", "ASOS DESIGN cropped cardigan in blue"), piece("bottom"), piece("outerwear")
+    assert plan_steps([top, bottom, coat]) == [top, coat, bottom]
+    jacket = piece("outerwear", "Crop denim jacket")
+    assert plan_steps([bottom, jacket]) == [jacket, bottom]
+    long_top = piece("top", "Longline knitted jumper")
+    assert plan_steps([long_top, bottom]) == [bottom, long_top], "other tops still go over the waistband"
+    assert plan_steps([piece("top", "Microcrop tee"), bottom])[0] == bottom, "whole words only"
+    knit = {"category": "top", "product": SimpleNamespace(name="Cardigan with jewel buttons in blue", product_type="Cardigans",
+                                                          description="V-neck. Button placket. Cropped length. Regular fit")}
+    assert plan_steps([bottom, knit]) == [knit, bottom], "the shop's details say cropped"
+    styled = {"category": "top", "product": SimpleNamespace(name="Fitted tee", product_type="T-shirts",
+                                                            description="Style it with cropped jeans")}
+    assert plan_steps([bottom, styled]) == [bottom, styled], "styling tips don't count"
