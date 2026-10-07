@@ -59,7 +59,9 @@ LENGTHS = [("mini", ("mini", "micro")), ("midi", ("midi", "knee length", "knee-l
 LENGTH_ORDER = ["mini", "midi", "maxi"]
 
 # Leg shape, for trousers and jeans: a wide-leg original never gets skinny or pencil pants, and the other way round.
-LEGS = [("narrow", ("skinny", "pencil", "slim", "tapered", "cigarette", "drainpipe", "jegging", "jeggings")),
+# Shops' own names for their skinny fits count too: "Topshop Joni jeans in mid blue" never says skinny (Renee).
+SKINNY_FITS = ("joni", "jamie", "leigh", "ridley", "rivington", "lift and contour", "711", "721")
+LEGS = [("narrow", ("skinny", "pencil", "slim", "tapered", "cigarette", "drainpipe", "jegging", "jeggings", *SKINNY_FITS)),
         ("wide", ("wide", "palazzo", "flare", "flared", "bootcut", "boot cut", "boot-cut", "straight", "barrel",
                   "baggy", "balloon", "culotte", "kick flare", "relaxed leg", "loose", "relaxed", "regular leg",
                   "mom", "dad", "boyfriend", "kort"))]  # mom, dad and boyfriend jeans are straight or relaxed

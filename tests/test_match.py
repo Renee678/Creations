@@ -367,3 +367,18 @@ def test_cropped_ankle_jeans_also_take_full_length_jeans():
     trousers = Target("bottom", "cropped wide-leg trousers", "black")
     assert trousers.rejection(_product("t", "Wide leg trousers", "Black", "bottom", "Trousers")) == "cropped", \
         "trousers keep the rule: a culotte is not a full-length trouser"
+
+
+def test_shops_named_skinny_fits_are_narrow():
+    """Renee (2026-10-07): light blue straight jeans got "Topshop Curve Joni jeans in mid blue", a skinny fit that
+    never says skinny. Shops' own names for their skinny fits count as narrow."""
+    from lookmate.services.match import leg
+
+    target = Target("bottom", "light blue high-rise straight-leg jeans", "light blue")
+    for name in ["Topshop Curve Joni jeans in mid blue", "Topshop Jamie jeans in blue", "ASOS DESIGN Ridley high waist jeans",
+                 "ASOS DESIGN Rivington jeggings in mid wash", "Levi's 721 high rise jeans in blue"]:
+        assert leg(name) == "narrow", name
+        assert target.rejection(_product(name, name, "mid blue", "bottom", "Jeans")) == "leg shape", name
+    assert target.check(_product("k", "Topshop Curve Kort jeans in mid blue", "mid blue", "bottom", "Jeans"))
+    assert leg("Jamie bag") == "narrow" and Target("bag", "Jamie shoulder bag", "black").leg is None, \
+        "the leg rule only reads trousers and jeans"
