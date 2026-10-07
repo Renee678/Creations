@@ -75,6 +75,12 @@ each failure path: transient LLM errors retried with backoff, permanent errors f
 delivery being harmless, and a crashed worker's jobs being recovered. These are the cases that usually get
 skipped under time pressure.
 
+**3. Options, not orders, for engineering decisions.** At each real fork Claude gave two or three options,
+each with its consequence and one recommendation, and I chose. Example: try-on drew a blazer over a jumper
+as a single V-neck knit, because each try-on step replaces the whole upper body. Claude offered "skip the
+jacket", "draw the jacket instead" or "document it as a limit", recommended the first, and I picked it; the
+code, a test and this document changed in one step. Decisions came fast, and the reasoning is recorded.
+
 ## Where AI output needed correction or validation
 
 **1. An overconfident claim, corrected by research.** Early on, Claude said typical flash-sale projects
@@ -118,6 +124,14 @@ capped per day, and on any error the scorer's picks stand. The project rule in `
 "the LLM only perceives" to "retrieval and scoring stay deterministic; Claude curates the final outfit from
 scored candidates, with a deterministic fallback". In the lookbook evaluation below the stylist approved 93%
 of 75 outfits, and across 165 pieces none was in a colour to avoid and no outfit had two bright pieces.
+
+**6. Human eyes find the error, AI finds the cause.** We had no labelled dataset, no time to train or
+fine-tune, and used the hosted models as they are, so the AI could not tell on its own that a picture looked
+wrong. The loop that worked: I clicked through the live site and sent a screenshot of what looked wrong; Claude
+traced it to a cause in our code and fixed it with a deterministic rule and a regression test. A frayed band
+under a cropped cardigan turned out to be My model's denim shorts left at the bare waist (fix: the cropped top
+goes on before the trousers); "no light blue jeans" turned out to be a shade rule that rejected plain "blue".
+My judgement found the problems; Claude made the fixes fast and kept them from coming back.
 
 ## How generated code was evaluated
 
