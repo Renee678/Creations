@@ -1,6 +1,6 @@
 # AI Workflow
 
-> Draft written with Claude Code from the development log; sections marked **TODO(Renee)** need first-hand notes before submission.
+> Written with Claude Code from the development log, with first-hand notes from Renee.
 
 ## What the project does
 
@@ -25,7 +25,8 @@ an API key.
   for each pick, and trend context.
 - **Real system-design and SRE content.** Slow, costly LLM calls behind a public endpoint force decisions
   about async processing, retries, idempotency, rate limiting, privacy and graceful degradation.
-- **I would use it myself.** **TODO(Renee):** one or two sentences in your own words.
+- **I would use it myself.** Especially My Style: I can gather every outfit I love into sets and keep them in
+  one little book of my own, and whenever I find something new I like, I just add it in.
 
 We got here through research rather than picking the first idea. The first candidate was a flash-sale
 system. Market research showed hundreds of GitHub flash-sale projects, many already load-tested with k6,
