@@ -410,6 +410,18 @@ def _embed(rows: list[dict], embedder: Embedder, cache_dir: Path | None) -> np.n
 STORE_CHUNK = 2000  # rows inserted per statement: plain dicts, not ORM objects, to keep a 4 GB box comfortable
 
 
+def _clip(row: dict) -> dict:
+    """Make each text value fit Postgres: cut it to its column's length and drop NUL characters. Postgres rejects
+    either and fails the whole import (an Amazon "Color" can run past 60 characters); SQLite checks neither."""
+    for col in Product.__table__.columns:
+        value = row.get(col.name)
+        if isinstance(value, str):
+            value = value.replace("\x00", "")
+            limit = getattr(col.type, "length", None)
+            row[col.name] = value[:limit] if limit else value
+    return row
+
+
 def _store(session: Session, rows: list[dict], embedder: Embedder, cache_dir: Path | None = None) -> int:
     """Replace the stored catalog with these rows. Embedding (the slow part) happens before anything is deleted."""
     precomputed = embedder.name == "bge" and all(r.get("vector") is not None for r in rows)
@@ -420,13 +432,13 @@ def _store(session: Session, rows: list[dict], embedder: Embedder, cache_dir: Pa
         vectors = _embed(rows, embedder, cache_dir)
     session.execute(delete(Product))
     for start in range(0, len(rows), STORE_CHUNK):
-        session.execute(insert(Product), [{
+        session.execute(insert(Product), [_clip({
             "id": r["id"], "name": r["name"], "product_type": r["product_type"], "category": r["category"],
             "colour": r["colour"], "pattern": r["pattern"], "section": r["section"],
             "description": r["description"], "image_url": r["image_url"],
             "price": r.get("price") or synthetic_price(r["id"], r["category"]),
             "embedding": v.astype(np.float32).tobytes(),
-        } for r, v in zip(rows[start:start + STORE_CHUNK], vectors[start:start + STORE_CHUNK])])
+        }) for r, v in zip(rows[start:start + STORE_CHUNK], vectors[start:start + STORE_CHUNK])])
     session.commit()
     return len(rows)
 

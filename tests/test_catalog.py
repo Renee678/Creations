@@ -481,3 +481,29 @@ def test_the_gateway_resolves_the_api_at_request_time():
     assert "set $app http://api:8000;" in conf
     passes = [line.strip() for line in conf.splitlines() if line.strip().startswith("proxy_pass")]
     assert passes and all(p == "proxy_pass $app;" for p in passes)
+
+
+def test_over_long_text_is_cut_to_the_column_length_before_storing(tmp_path):
+    """The live import failed in Postgres on Amazon rows whose colour ran past 60 characters."""
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+
+    from lookmate.catalog import importer
+    from lookmate.db import Base
+    from lookmate.models import Product
+
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    Base.metadata.create_all(eng)
+    row = {"id": "amz-B0LONG", "name": "N" * 300, "product_type": "T" * 120, "category": "top",
+           "colour": "Black/White/Grey/Navy/Beige/Pink/Red/Green/Blue/Purple/Yellow/Brown", "pattern": "",
+           "section": "Amazon · " + "S" * 100, "description": "soft\x00 knit", "image_url": "https://x/" + "i" * 500,
+           "price": 9.99}
+    with Session(eng) as s:
+        assert importer._store(s, [row], HashEmbedder()) == 1
+        p = s.scalar(select(Product))
+    for col in Product.__table__.columns:
+        limit = getattr(col.type, "length", None)
+        if limit:
+            assert len(getattr(p, col.name)) <= limit, col.name
+    assert p.colour.startswith("Black/White") and p.price == 9.99
+    assert p.description == "soft knit"
