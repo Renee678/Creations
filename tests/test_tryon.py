@@ -527,7 +527,7 @@ def test_fashn_client_renders_a_garment(monkeypatch):
     assert ("POST", "/v1/run", "Bearer key") in seen
 
 
-def test_fashn_takes_off_the_persons_own_clothes_first_and_draws_in_quality(monkeypatch):
+def test_fashn_draws_clothes_in_quality_on_its_default_segmentation_free_fit(monkeypatch):
     """Renee (2026-10-07): a cardigan laid over a baggy hoodie kept the hoodie's collar, a wider waist and a
     blurred hand. Clothes are segmented out first and rendered in quality mode; shoes are left as they were."""
     monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
@@ -536,7 +536,7 @@ def test_fashn_takes_off_the_persons_own_clothes_first_and_draws_in_quality(monk
     tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "upper_body", "cardigan"))
     tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "shoes", "sneakers"))
     clothes, shoes = [s["inputs"] for s in seen if isinstance(s, dict)]
-    assert clothes["segmentation_free"] is False and clothes["mode"] == "quality"
+    assert "segmentation_free" not in clothes and clothes["mode"] == "quality"
     assert "segmentation_free" not in shoes and shoes["generation_mode"] == "balanced"
 
 
