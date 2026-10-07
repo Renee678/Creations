@@ -217,35 +217,39 @@ class Target:
         self.patterned = bool(PATTERNED.search(text.lower()))
 
     def check(self, product) -> bool:
+        return self.rejection(product) is None
+
+    def rejection(self, product) -> str | None:
+        """Why the product is not a dupe for this piece (the first rule it breaks), or None if it is."""
         text = f"{product.name} {product.product_type}"
         kind = product_kind(product)
         if self.subtype and kind != self.subtype:
-            return False  # a skirt is never a dupe for trousers, however close the fabric
+            return "type"  # a skirt is never a dupe for trousers, however close the fabric
         label = _shop_label_kinds(product)
         if self.subtype and label and self.subtype not in label:
-            return False  # named a "jumper" but filed under Hoodies & Sweatshirts
+            return "shop label"  # named a "jumper" but filed under Hoodies & Sweatshirts
         if self.length and length(text) != self.length:
-            return False  # a maxi skirt wants a maxi skirt, not a midi or one of unknown length
+            return "length"  # a maxi skirt wants a maxi skirt, not a midi or one of unknown length
         if self.cropped is not None and bool(CROPPED.search(text.lower())) != self.cropped:
-            return False  # cropped trousers for cropped, full length (stated or not) for full length
+            return "cropped"  # cropped trousers for cropped, full length (stated or not) for full length
         described = f"{text} {product.description[:600]}"
         theirs = sleeve(described)
         if self.sleeve and theirs not in (None, self.sleeve):
-            return False  # short sleeves want short sleeves; a candidate that doesn't say isn't ruled out
+            return "sleeve"  # short sleeves want short sleeves; a candidate that doesn't say isn't ruled out
         if self.sleeve in ("short", "sleeveless") and kind in ("knit", "cardigan") and theirs != self.sleeve:
-            return False  # a knit that doesn't say it has short sleeves has long ones
+            return "knit sleeve"  # a knit that doesn't say it has short sleeves has long ones
         if self.warmth and warmth(described) not in (None, self.warmth):
-            return False  # a summer top never gets a winter jumper, nor a winter coat a summer one
+            return "season"  # a summer top never gets a winter jumper, nor a winter coat a summer one
         if self.leg and leg(product.name) not in (None, self.leg):
-            return False  # wide or straight legs never take skinny or pencil, nor the other way round
+            return "leg shape"  # wide or straight legs never take skinny or pencil, nor the other way round
         if self.colour and not same_colour(self.colour, self._product_colour(product, kind)):
-            return False  # a white skirt wants a white skirt
+            return "colour"  # a white skirt wants a white skirt
         if not self.same_shade(product):
-            return False  # light blue wants light blue, not navy-dark denim
+            return "shade"  # light blue wants light blue, not navy-dark denim
         patterned = PATTERNED.search(text.lower()) or LOUD_IN_DESCRIPTION.search(product.description[:600].lower())
         if bool(patterned) != self.patterned:
-            return False  # a plain top never gets a Mickey Mouse sweatshirt, and a floral one wants a print
-        return True
+            return "pattern"  # a plain top never gets a Mickey Mouse sweatshirt, and a floral one wants a print
+        return None
 
     @staticmethod
     def _product_colour(product, kind: str | None) -> str | None:

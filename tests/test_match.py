@@ -313,3 +313,37 @@ def test_a_bangle_never_gets_earrings_or_a_necklace():
     assert target.check(acc("Thin bangle in gold"))
     assert subtype("accessory", "Studded leather belt") == "belt", "a studded belt isn't earrings"
     assert subtype("accessory", "Gold hoop earrings") == "earrings" and subtype("accessory", "Ear cuff") == "earrings"
+
+
+def test_why_no_dupes_names_the_rule_that_rejects_each_close_product():
+    """Renee (2026-10-07): light blue straight jeans still said "No light blue jeans in our catalog yet" after two
+    fixes. The diagnostic lists the closest products and the first rule each one breaks, read-only."""
+    from lookmate.why_no_dupes import explain
+
+    item = DetectedItem(category="bottom", name="light blue high-rise straight-leg jeans", colour="light blue",
+                        fit="straight", details=["high-rise"], style_tags=[], search_query="light blue jeans",
+                        warmth="summer")
+    stock = [(_product("t", "Wide leg trousers", "Light Blue", "bottom", "Trousers"), 0.9),
+             (_product("s", "Skinny jeans in light wash", "Light Blue", "bottom", "Jeans"), 0.8),
+             (_product("d", "Straight leg jeans in dark wash", "Dark Blue", "bottom", "Jeans"), 0.7),
+             (_product("ok", "Straight leg jeans", "Light Blue", "bottom", "Jeans", price=60.0), 0.6)]
+    target = Target.of(item)
+    assert [target.rejection(p) for p, _ in stock] == ["type", "leg shape", "colour", None]
+    lines = explain(FakeCatalog(stock), item, max_price=50)
+    assert "4 products in bottom: 1 pass every rule, 0 of them at $50 or less" in lines[2]
+    assert lines[3] == "Rejected by: type 1, leg shape 1, colour 1"
+    assert lines[5].split()[0] == "type" and lines[-1].split()[0] == "PASS"
+
+
+def test_why_no_dupes_finds_the_latest_look_with_that_piece(client, runtime, user):
+    import pytest
+
+    from lookmate.why_no_dupes import _item_from_look
+    from tests.test_looks import run_next_job, upload
+
+    upload(client, user["id"], data=b"\x89PNG\r\n\x1a\nwhy-no-dupes")
+    assert run_next_job(runtime) == "done"
+    item = _item_from_look(None, None)
+    assert item.name and item.category
+    with pytest.raises(SystemExit, match="no analysed look"):
+        _item_from_look(None, "unicorn onesie")
