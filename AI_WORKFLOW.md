@@ -104,7 +104,8 @@ with k6 tests. **Lesson:** I treat AI claims about "what exists" as hypotheses t
 **3. Rules alone had no taste.** Testing the first, fully rule-based lookbook, I got a bright green satin blazer
 with bright blue trousers labelled "quiet luxury": nothing judged the whole outfit. I chose two layers:
 stricter unit-tested rules (one accent per outfit), then Claude as a stylist picking among the top 5 scored
-candidates per slot, validated, cached and capped, with the scorer's picks as the fallback. In the evaluation it approved 93% of 75 outfits, with no colour to avoid and no outfit with two bright pieces.
+candidates per slot, validated, cached and capped, with the scorer's picks as the fallback. The rules held in every run: no colour to avoid, no outfit with two
+bright pieces.
 
 **4. My eyes find the error, AI finds the cause.** With hosted models and no labelled data to train on, the AI
 could not tell that a picture looked wrong; I could. I sent a screenshot, Claude traced the cause and fixed it
@@ -136,8 +137,19 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
     The bigger catalog showed a third more dupes and a higher share of right ones, none outside the price range.
     Most mistakes are garment type (tank tops read as "halter"); 30% of pieces still have no dupe in range,
     shown as a note, not a guess.
-  - *Lookbook, 25 photos of me:* the colour season was stable (winter on 21 of 25), the sub-season was not
-    (cool winter on 11 of 25), and warm indoor light mattered more than a clear face. About 27 s per photo.
+  - *Lookbook, 25 photos of me, run on both catalogs:*
+
+    | Metric | 5,000 products | 45,000 products |
+    |---|---|---|
+    | Same colour season (winter) / sub-season (cool winter) | 84% / 44% | 80% / 32% |
+    | Outfits the AI stylist approved | 93% of 75 | 75% of 75 |
+    | Pieces in a colour to avoid / outfits with two bright pieces | 0 of 165 / 0 of 70 | 0 of 206 / 0 of 56 |
+    | Time per photo, median / p95 | 26.8 s / 29.8 s | 27.4 s / 35.0 s |
+
+    The season is the control (it ignores the catalog): stable, while the sub-season is not. With the bigger
+    catalog the colour rules still held, but the stylist approved fewer outfits, most likely because many Amazon
+    listings have no colour field and keyword-stuffed titles, so the scorer ranks pieces the stylist rejects.
+    More data was not automatically better data; cleaning Amazon's metadata is the next step.
   - *What the numbers missed:* clicking through, I found bugs the labels didn't cover (jeans by wash name, a
     bracelet returning earrings), each fixed with a test; `lookmate.why_no_dupes` shows which rule rejects what.
   - *Image models, judged by my eye:* no script can score try-on, so I compared providers on my own photos;
