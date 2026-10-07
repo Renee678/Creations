@@ -20,6 +20,10 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 
 ## Screenshots
 
+**My model**: one full-body photo becomes a standing figure of you, with your face, skin tone and real proportions from your height and weight, in plain basics on a grey studio background. Every try-on dresses this figure. (The face is covered with a sticker here.)
+
+<img src="docs/images/my-model.jpg" alt="My model card in Profile: a generated full-body figure in a white tank and denim shorts, face covered by a cat sticker" width="520">
+
 **Find dupes**: one outfit photo becomes a section per piece, each with same-type, same-colour picks inside the price range, and a note when nothing in range matches.
 
 <img src="docs/images/find-dupes-results.jpg" alt="Find dupes results: tank tops and light blue jeans within $0-$50, with a note for pieces that have no match in range" width="520">
