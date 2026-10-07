@@ -197,13 +197,18 @@ def to_markdown(results: list[PhotoResult], s: dict, model: str, season: str = "
     return "\n".join(lines) + "\n"
 
 
-def run(photos_dir: Path, llm, build, labels: dict[str, dict] | None = None) -> list[PhotoResult]:
+def run(photos_dir: Path, llm, build, labels: dict[str, dict] | None = None, progress=None) -> list[PhotoResult]:
+    """`progress(line)`, when given, hears about each photo as it starts and ends: a long run is never silent."""
     files = sorted(p for p in photos_dir.iterdir() if p.suffix.lower() in MEDIA_TYPES) if photos_dir.is_dir() else []
+    say = progress or (lambda line: None)
     results = []
-    for p in files:
+    for i, p in enumerate(files, 1):
+        say(f"[{i}/{len(files)}] {p.name}: analysing...")
         res = evaluate_photo(p.name, *load_photo(p), llm, build)
         res.label = (labels or {}).get(p.name, {})
         results.append(res)
+        took = _ms(res.analysis_ms + res.lookbook_ms)
+        say(f"[{i}/{len(files)}] {p.name}: {res.error or f'{res.detail or res.season}, {len(res.outfits)} outfits'} ({took})")
     return results
 
 
@@ -252,7 +257,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if not args.photos.is_dir() or not any(p.suffix.lower() in MEDIA_TYPES for p in args.photos.iterdir()):
         raise SystemExit(f"No photos in {args.photos}: put your selfies there (jpg, png or webp).")
-    results = run(args.photos, llm, build, load_labels(args.cases) if args.cases.is_file() else None)
+    results = run(args.photos, llm, build, load_labels(args.cases) if args.cases.is_file() else None,
+                  progress=lambda line: print(line, flush=True))
     summary = summarise(results, args.season or "", args.undertone or "")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(to_markdown(results, summary, llm.name, args.season or "", args.undertone or ""), encoding="utf-8")

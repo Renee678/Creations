@@ -88,3 +88,12 @@ def test_a_bad_framing_label_is_refused(tmp_path):
     cases.write_text("image,framing\na.png,legs\n", encoding="utf-8")
     with pytest.raises(ValueError, match="framing"):
         load_labels(cases)
+
+
+def test_a_long_run_reports_each_photo_as_it_goes(tmp_path):
+    (tmp_path / "a.png").write_bytes(png((200, 170, 150)))
+    lines = []
+    run(tmp_path, FakeVision(), lambda a: ({"sections": [{"outfits": [outfit("x", piece("tee", "white"))]}]}, 1),
+        progress=lines.append)
+    assert lines[0] == "[1/1] a.png: analysing..."
+    assert lines[1].startswith("[1/1] a.png: ") and "1 outfits" in lines[1]
