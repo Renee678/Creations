@@ -51,7 +51,8 @@ async def upload_look(
     digest = hashlib.sha256(data).hexdigest()
     existing = db.scalar(select(Look).where(Look.user_id == user_id, Look.image_sha256 == digest))
     if existing is not None:
-        return JSONResponse(look_out(existing) | {"deduplicated": True}, status_code=200)
+        out = look_out(existing) | {"result": fresh_result(request, db, existing)}
+        return JSONResponse(out | {"deduplicated": True}, status_code=200)
 
     if not take_daily_quota(request.app.state.runtime.redis, settings.daily_look_limit):
         raise HTTPException(429, "Today's AI analysis quota is used up. Please come back tomorrow.")
@@ -74,16 +75,24 @@ def get_look(
     look = db.get(Look, look_id)
     if look is None:
         raise HTTPException(404, "look not found")
-    out = look_out(look)
-    if look.status == "done" and (price_min is not None or price_max is not None):
-        # Re-pick for another price range from the stored analysis: search only, no new model call.
-        r = look.result
-        analysis = LookAnalysis(is_outfit=True, vibe=r["vibe"], style_tags=r["style_tags"],
-                                items=[s["item"] for s in r["sections"]])
-        user = user_context(db, get_user_or_404(db, look.user_id))
-        price = PriceRange.from_params(price_min, price_max, user.budget_per_item)
-        out["result"] = r | find_dupes(analysis, request.app.state.runtime.catalog, user, price)
-    return out
+    return look_out(look) | {"result": fresh_result(request, db, look, price_min, price_max)}
+
+
+def fresh_result(request: Request, db: Session, look: Look,
+                 price_min: float | None = None, price_max: float | None = None) -> dict | None:
+    """Re-pick a finished look from its stored analysis: search only, no new model call.
+
+    Always, not only for a new price range, so matching-rule fixes reach photos analysed before them, and a
+    re-upload of the same photo never shows stale picks.
+    """
+    r = look.result
+    if look.status != "done" or not r or not r.get("sections"):
+        return r
+    analysis = LookAnalysis(is_outfit=True, vibe=r["vibe"], style_tags=r["style_tags"],
+                            items=[s["item"] for s in r["sections"]])
+    user = user_context(db, get_user_or_404(db, look.user_id))
+    price = PriceRange.from_params(price_min, price_max, user.budget_per_item)
+    return r | find_dupes(analysis, request.app.state.runtime.catalog, user, price)
 
 
 def require_access_code(given: str) -> None:

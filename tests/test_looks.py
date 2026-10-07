@@ -119,3 +119,24 @@ def test_recover_requeues_jobs_held_by_a_crashed_worker(client, runtime, user):
     assert runtime.queue.depth()["processing"] == 1
     assert runtime.queue.recover() == 1
     assert run_next_job(runtime) == "done"
+
+
+def test_finished_look_is_repicked_with_current_rules(client, runtime, user):
+    """Renee: re-running Find dupes on the same jeans photo showed picks from the old matching rules. A finished
+    look is re-picked from its stored analysis on every read and on a re-upload, with no new model call."""
+    from lookmate.db import SessionLocal
+    from lookmate.models import Look
+
+    look_id = upload(client, user["id"]).json()["id"]
+    run_next_job(runtime)
+    with SessionLocal() as s:  # simulate picks saved by older rules
+        look = s.get(Look, look_id)
+        look.result = look.result | {"sections": [sec | {"picks": [], "note": "stale"}
+                                                  for sec in look.result["sections"]]}
+        s.commit()
+
+    for res in (client.get(f"/api/looks/{look_id}"), upload(client, user["id"])):
+        sections = res.json()["result"]["sections"]
+        assert any(sec["picks"] for sec in sections)
+        assert all(sec["note"] != "stale" for sec in sections)
+    assert runtime.queue.depth()["ready"] == 0, "no new analysis job, so no new model call"
