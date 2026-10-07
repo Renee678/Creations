@@ -19,8 +19,8 @@
     the live server, tested every feature by hand, and turned each bug into a regression test.
   - *Product:* which features to build or cut, and the visual style of the Look Book.
 - **Claude Code's part:** it proposed options with a recommendation and wrote the code and tests; I reviewed it.
-- **How it is validated:** about 300 automated tests, an evaluation on real data (45,000 products from three
-  public datasets on the live server), and a rule that AI output is never trusted raw.
+- **How it is validated:** 300 automated tests, an evaluation on my labelled photos against 45,000 real
+  products (91% of dupes right), and a rule that AI output is never trusted raw.
 
 ## What the project does
 
@@ -36,8 +36,6 @@ and makeup ideas; outfits you love become pages (a flat lay, or "On me" via virt
   something like it" is broken. Price-led "dupe" culture on Xiaohongshu fits SHEIN's low-price positioning.
 - **Not just photo search.** Taobao's and SHEIN's own Camera Search find *identical* items. I wanted what they
   don't offer: personalisation (colours, body, budget, learned style), a reason for each pick, and a keepsake.
-- **Real system-design and SRE content.** Slow, costly AI calls behind a public endpoint need a queue, retries,
-  idempotency, rate limits and graceful degradation.
 
 ## Tools, models and infrastructure
 
@@ -97,18 +95,16 @@ consequences and a recommendation. When try-on drew a blazer over a jumper as on
 
 ## Where AI output needed correction or validation
 
-**1. An overconfident claim.** Claude first said flash-sale projects "have no load-test evidence"; checking
-GitHub showed several with k6 tests. **Lesson:** I treat AI claims about "what exists" as hypotheses to check.
+**1. An overconfident claim.** Claude said flash-sale projects "have no load-test evidence"; GitHub showed several
+with k6 tests. **Lesson:** I treat AI claims about "what exists" as hypotheses to check.
 
 **2. A leaked API key.** I pushed a real key in a tracked file. Claude spotted it, I revoked it, and
 `tests/test_no_secrets.py` now fails CI on any key (history stays unrewritten, as the assessment requires).
 
 **3. Rules alone had no taste.** Testing the first, fully rule-based lookbook, I got a bright green satin blazer
-with bright blue trousers labelled "quiet luxury". Claude traced it: slots were filled independently and
-nothing judged the whole outfit. I decided on two layers: stricter, unit-tested rules (one accent per outfit,
-true neutrals in neutral slots), then Claude as a stylist that picks among the top 5 scored candidates per
-slot and says why. Its answer is validated, cached and capped, and on any error the scorer's picks stand. In
-the evaluation below it approved 93% of 75 outfits, with no colour to avoid and no outfit with two bright pieces.
+with bright blue trousers labelled "quiet luxury": nothing judged the whole outfit. I chose two layers:
+stricter unit-tested rules (one accent per outfit), then Claude as a stylist picking among the top 5 scored
+candidates per slot, validated, cached and capped, with the scorer's picks as the fallback. In the evaluation it approved 93% of 75 outfits, with no colour to avoid and no outfit with two bright pieces.
 
 **4. My eyes find the error, AI finds the cause.** With hosted models and no labelled data to train on, the AI
 could not tell that a picture looked wrong; I could. I sent a screenshot, Claude traced the cause and fixed it
@@ -123,23 +119,27 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
 
 - **Tests as the contract.** 266 unit and integration tests run offline (SQLite, fakeredis, a fake vision
   model): ranking, fit and colour rules, the queue's failure modes, idempotent uploads, style memory, try-on
-  steps. 34 Playwright browser tests replay every bug I reported, offline in CI or against the live site.
-- **Smoke and load tests.** `scripts/smoke_test.sh` runs against the real Compose stack in CI;
-  `scripts/load_test.py` measures latency and the gateway's rate limiting on free endpoints.
+  steps. 34 Playwright browser tests replay every bug I reported. A smoke test boots the full Compose stack in
+  CI; `scripts/load_test.py` measures latency and the gateway's rate limiting.
 - **AI output is never trusted raw.** Vision output must match a Pydantic schema; the stylist may only choose
   candidates the rules already scored; a try-on never draws a garment it has no real photo of.
 - **Evaluation on my own photos** (I labelled them; live server, real catalog; `scripts/run_eval.py`,
   `scripts/run_lookbook_eval.py`, tables in `evals/`):
-  - *Catalog:* the numbers below were measured on the first 5,000 products (ASOS and Polyvore; see
-    correction 5). The live catalog now holds all 45,000.
-  - *Find dupes, 24 photos, 68 hand-labelled pieces:* every piece found (100% category recall); 88% of shown
-    dupes had the right type, colour, length and pattern (90 of 102); none outside the price range; 5-7 s
-    per photo. Most mistakes were garment type (tank tops read as "halter").
+  - *Find dupes, 24 photos, 68 hand-labelled pieces, run on both catalogs:*
+
+    | Metric | 5,000 products | 45,000 products |
+    |---|---|---|
+    | Pieces found (category recall) | 100% | 99% (one pair of trousers missed) |
+    | Dupes with the right type, colour, length and pattern | 88% (90 of 102) | 91% (precision@5, 134 picks) |
+    | Latency per photo (perception + search) | 5-7 s | median 6.4 s, p95 11.6 s |
+
+    The bigger catalog showed a third more dupes and a higher share of right ones, none outside the price range.
+    Most mistakes are garment type (tank tops read as "halter"); 30% of pieces still have no dupe in range,
+    shown as a note, not a guess.
   - *Lookbook, 25 photos of me:* the colour season was stable (winter on 21 of 25), the sub-season was not
     (cool winter on 11 of 25), and warm indoor light mattered more than a clear face. About 27 s per photo.
   - *What the numbers missed:* clicking through, I found bugs the labels didn't cover (jeans by wash name, a
-    bracelet returning earrings, a re-upload keeping old results), each fixed with a test.
-    `python -m lookmate.why_no_dupes` shows which rule rejects each candidate.
+    bracelet returning earrings), each fixed with a test; `lookmate.why_no_dupes` shows which rule rejects what.
   - *Image models, judged by my eye:* no script can score try-on, so I compared providers on my own photos;
     FASHN kept me closest to real. Its quality mode takes about a minute per outfit, shown with a timer.
 
@@ -148,8 +148,7 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
 - **AI is a tool that turns ideas into working software faster and better, but people steer it.** It gave me
   wings: more done in less time, faster iterations, and models chosen on evidence rather than guesswork. The
   direction, the architecture, the environment and its permissions, and the call on which result is right
-  stayed human work, and on a real product that means a team. With building this cheap, judgement became the
-  bottleneck, and that is where I spent my time.
+  stayed human work, and on a real product that means a team. Judgement became the bottleneck; that is my part.
 - **Next.** In two days I chose accuracy over speed; with more time I would work on three things:
   - *Latency:* a try-on takes about a minute; a real product needs under 10 s. Benchmark faster models and
     modes on the same photos, run non-overlapping garment steps in parallel, cache, and show a quick preview.
