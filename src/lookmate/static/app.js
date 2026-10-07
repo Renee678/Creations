@@ -827,7 +827,7 @@ function openPage(i) {
       <button type="button" class="gel" data-book-rename="${pg.o.id}">✎ Rename</button>
       <button type="button" class="gel primary" data-room-all="${esc(pg.o.pieces.map((p) => p.id).join(","))}" data-goto="lookbook">Try it on me</button>
       <button type="button" class="gel" data-book-image="${pg.o.id}">⤓ Save as image</button>
-      <button type="button" class="linklike" data-book-delete="${pg.o.id}">Delete</button>` : "";
+      <button type="button" class="gel danger" data-book-delete="${pg.o.id}">✕ Delete</button>` : "";
 }
 
 function closeBook() {
@@ -905,7 +905,7 @@ function pieceImg(p) {
 
 function lookPage(o) {
   const view = o.tryon_image && book.views[o.id] !== "flat" ? (book.views[o.id] || "me") : "flat";
-  const toggle = o.tryon_image ? `<div class="chips bk-views">
+  const toggle = o.tryon_image ? `<div class="chips bk-views" role="group" aria-label="View">
       <button type="button" class="chip ${view === "flat" ? "on" : ""}" data-book-view="flat" data-outfit="${o.id}">Flat lay</button>
       <button type="button" class="chip ${view === "me" ? "on" : ""}" data-book-view="me" data-outfit="${o.id}">On me</button></div>` : "";
   const ids = o.pieces.map((p) => p.id).join(",");

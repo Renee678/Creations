@@ -1137,3 +1137,30 @@ def test_a_flat_lay_of_a_top_and_trousers_stands_centred_without_arrows(page):
     assert abs(two["boardCentre"] - two["boxCentre"]) < 2, "and the board in the middle of the page"
     assert full["columns"] == 3 and full["arrows"] == 0, "a coat and a bag still get their side columns"
     assert page.errors == []
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_look_book_page_buttons_are_one_row_of_same_size_pills(page, width):
+    """Renee (2026-10-07): under an outfit page, Rename, Try it on me, Save as image and Delete had different sizes and
+    Delete was a bare link. They are now pills of one height, in one row on a laptop, Delete included."""
+    page.set_viewport_size({"width": width, "height": 900})
+    tab(page, "lookbook")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok):
+        page.locator("[data-lb-browse]").click()
+    with page.expect_response(lambda r: r.url.endswith("/outfits") and r.request.method == "POST"):
+        page.locator("#lb-sections .save-outfit").first.click()
+    tab(page, "style")
+    page.locator("#book-tabs button", has_text="Outfits").click()
+    page.locator("#book-contents .book-thumb-look").first.click()
+    buttons = page.locator("#book-actions button")
+    buttons.first.wait_for()
+    assert [b.inner_text().strip().split()[-1] for b in buttons.all()] == ["Rename", "me", "image", "Delete"]
+    boxes = [b.bounding_box() for b in buttons.all()]
+    assert max(b["height"] for b in boxes) - min(b["height"] for b in boxes) < 1, boxes
+    if width >= 1000:
+        assert max(b["y"] for b in boxes) - min(b["y"] for b in boxes) < 1, "one row"
+    for b in buttons.all():
+        style = b.evaluate("e => { const s = getComputedStyle(e); return [s.borderTopWidth, s.borderRadius]; }")
+        assert style[0] != "0px" and style[1] != "0px", "every button is a pill with an outline"
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert not page.errors, page.errors

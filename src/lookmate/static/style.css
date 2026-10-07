@@ -440,7 +440,11 @@ body.room-open { padding-bottom: 110px; }
 .book-pager:empty { display: none; }
 .book-pager button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: #d9c2ff; cursor: pointer; }
 .book-pager button.on { width: 20px; border-radius: 4px; background: #8a4fd6; }
-.book-actions { display: flex; gap: 10px; justify-content: center; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+/* One row of same-size pill buttons under an outfit page (Renee, 2026-10-07: mixed sizes and a bare Delete link looked
+   untidy). Try it on me stays the blue one; Delete is a pill with red text. */
+.book-actions { display: flex; gap: 10px; justify-content: center; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.book-actions .gel { margin: 0; font-size: 13px; padding: 10px 16px; min-height: 36px; box-sizing: border-box; }
+.gel.danger { color: #c2416b; border-color: rgba(194,65,107,.35); box-shadow: inset 0 -3px 6px rgba(230,120,160,.22), 0 1px 0 #fff; }
 .book-page { touch-action: pan-y; }
 
 .bk { position: relative; max-width: 620px; margin: 0 auto; min-height: 560px; padding: 26px 24px 18px; border-radius: 6px;
@@ -466,7 +470,11 @@ body.room-open { padding-bottom: 110px; }
 .bk-about .sr-hero, .bk-about .sr-card { background: transparent; box-shadow: none; border-top: 1px solid #ddd3c6; border-radius: 0; color: #3a2a22; }
 .bk-about h2, .bk-about h3 { font-family: "Bodoni Moda", serif; color: #3a2a22; }
 
-.bk-views { position: absolute; top: 14px; right: 14px; }
+/* Flat lay | On me: one segmented pill, both halves the same size */
+.bk-views { position: absolute; top: 14px; right: 14px; gap: 0; padding: 3px; border-radius: 999px; background: #fff;
+  border: 1px solid rgba(80,130,190,.3); box-shadow: 0 2px 8px rgba(19,50,79,.08); }
+.bk-views .chip { border: 0; background: transparent; box-shadow: none; min-width: 64px; text-align: center; }
+.bk-views .chip.on { background: linear-gradient(180deg, #d3b4ff 0%, #9b63e6 52%, #7a43c9 100%); }
 .bk-title { font: 700 clamp(36px, 10vw, 58px)/1 "Bodoni Moda", serif; margin: 0; letter-spacing: -.02em; color: #3a2a22; }
 .bk-sub { font: 400 11px/1 Jost, sans-serif; letter-spacing: .3em; text-transform: uppercase; margin: 6px 0 0; }
 .bk-motto { font: 300 13px/1.35 Jost, sans-serif; color: #7b6a5f; margin: 4px 0 0; }
