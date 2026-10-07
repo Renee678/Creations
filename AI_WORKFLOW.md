@@ -4,8 +4,9 @@
 
 ## In short
 
-- **My idea:** a personal Look Book you shop from, not just another photo search. I chose the topic and set
-  the direction twice after research.
+- **My idea:** after researching and brainstorming with Claude, I decided to build a personal Look Book you
+  shop from, not another search by picture or by item: a personal reference that tells you which colours,
+  hairstyles and trends suit you, and keeps the outfits you love.
 - **My part:** product direction, architecture and feature decisions, and the look and feel. From Claude's options I
   chose the shape of the system (an async job queue so slow AI calls never block a page, plain JS over React,
   one Compose stack that also runs without keys) and which features to build or cut. I set the visual style (the
