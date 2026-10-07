@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     replicate_api_token: str = ""
     fashn_api_key: str = ""        # preferred try-on model when set: warm, seconds per garment
     fashn_model: str = "tryon-max"  # keeps the face and does shoes; "tryon-v1.6" is cheaper, clothes only
-    # Per clothing step: "balanced" (about 8 s), "quality" (sharper hands, slower: three pieces took nearly a minute)
-    # or "performance" (fastest). Pieces are put on one after another, so this multiplies.
-    fashn_mode: str = "balanced"
+    # Per clothing step: "quality" (closest to a real photo, sharper hands; three pieces take about a minute),
+    # "balanced" (about 8 s) or "performance" (fastest). Pieces go on one after another, so this multiplies.
+    fashn_mode: str = "quality"
     tryon_model: str = "google/nano-banana"  # or "cuuupid/idm-vton" (cheaper, slow cold starts)
     model_gen_model: str = "google/nano-banana-pro"  # draws "My model" once per user: the best at keeping a face
     shop_fetch_impersonate: bool = True  # retry a refused shop photo as Chrome (curl_cffi, when installed)

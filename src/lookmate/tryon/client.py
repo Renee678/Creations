@@ -321,7 +321,7 @@ class FashnTryOn:
     fetches_urls = True  # takes a garment photo by URL and loads it itself
 
     def __init__(self, api_key: str, model: str = FASHN_MAX, timeout_s: float = 90.0,
-                 http: httpx.Client | None = None, mode: str = "balanced"):
+                 http: httpx.Client | None = None, mode: str = "quality"):
         self.model = model
         self.mode = mode  # FASHN_MODE: "performance", "balanced" or "quality", per clothing step
         self.extra_steps = ("shoes",) if model == FASHN_MAX else ()
@@ -352,7 +352,7 @@ class FashnTryOn:
             # skirt worn with it). ASOS photos are on a model; others are left to FASHN to tell.
             # FASHN's default segmentation-free fit, on My model in fitted basics. Segmenting the clothes out first
             # left the gap under a cropped cardigan to be guessed, and it painted a denim band from the shop photo
-            # (Renee, 2026-10-07). The mode is FASHN_MODE: "quality" was sharper but made three pieces take a minute.
+            # (Renee, 2026-10-07). The mode is FASHN_MODE: quality by default, the closest to a real photo.
             body = {"model_name": FASHN_CLOTHES, "inputs": {
                 "model_image": _data_uri(person, media_type), "garment_image": product,
                 "category": FASHN_CATEGORIES[garment.region], "garment_photo_type": _photo_type(garment),
@@ -412,10 +412,10 @@ def make_model_maker(token: str, model: str = NANO_BANANA_PRO):
 
 
 def make_tryon(token: str, model: str = NANO_BANANA, fashn_key: str = "", fashn_model: str = FASHN_MAX,
-               fashn_mode: str = "balanced"):
+               fashn_mode: str = "quality"):
     """FASHN whenever FASHN_API_KEY is set (TRYON_MODEL=fashn says the same); else the Replicate TRYON_MODEL."""
     if fashn_key:
-        return FashnTryOn(fashn_key, fashn_model or FASHN_MAX, mode=fashn_mode or "balanced")
+        return FashnTryOn(fashn_key, fashn_model or FASHN_MAX, mode=fashn_mode or "quality")
     if model.lower() == "fashn":
         log.warning("TRYON_MODEL=fashn needs FASHN_API_KEY in .env; using %s instead", NANO_BANANA)
         model = NANO_BANANA

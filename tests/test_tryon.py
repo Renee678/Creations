@@ -536,12 +536,12 @@ def test_fashn_draws_clothes_in_the_configured_mode_on_its_default_segmentation_
     tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "upper_body", "cardigan"))
     tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "shoes", "sneakers"))
     clothes, shoes = [s["inputs"] for s in seen if isinstance(s, dict)]
-    assert "segmentation_free" not in clothes and clothes["mode"] == "balanced", \
-        "quality mode made three pieces take nearly a minute (Renee): balanced unless FASHN_MODE says otherwise"
+    assert "segmentation_free" not in clothes and clothes["mode"] == "quality", \
+        "quality by default: the closest to a real photo, worth the wait (Renee); FASHN_MODE can trade it for speed"
     seen.clear()
-    FashnTryOn("key", http=fashn_stub(["completed"], seen), mode="quality").dress(
+    FashnTryOn("key", http=fashn_stub(["completed"], seen), mode="balanced").dress(
         b"person", "image/jpeg", Garment(b"g", "image/jpeg", "lower_body", "trousers"))
-    assert [s["inputs"]["mode"] for s in seen if isinstance(s, dict)] == ["quality"]
+    assert [s["inputs"]["mode"] for s in seen if isinstance(s, dict)] == ["balanced"]
     assert make_tryon("", "", "fa-key", fashn_mode="performance").mode == "performance"
     assert "segmentation_free" not in shoes and shoes["generation_mode"] == "balanced"
 
