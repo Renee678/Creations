@@ -286,6 +286,23 @@ def test_jeans_that_just_say_blue_pass_a_light_blue_search():
     assert "Same colour" not in reasons
 
 
+def test_light_blue_jeans_take_denim_named_by_its_wash_and_ignore_the_jeggings_label():
+    """Renee (2026-10-07, after the redeploy): light blue straight jeans still found nothing. ASOS colours denim by
+    its wash ("Bleach", "Lightwash", "Mid wash"), which had no colour family, and its "Jeans & Jeggings" label
+    read every jean as narrow. "Slim straight" is a straight cut."""
+    target = Target("bottom", "light blue high-rise straight-leg jeans", "light blue", ["high-rise", "straight leg"])
+    for name, colour, label in [("Topshop Editor straight leg jeans", "Bleach", "Jeans"),
+                                ("ASOS DESIGN mom jeans", "LIGHTWASH", "Jeans"),
+                                ("Wrangler straight jeans", "Mid wash", "Jeans"),
+                                ("Bershka high waist straight jeans in light blue", "Light Blue", "Jeans & Jeggings"),
+                                ("Stradivarius slim straight jeans", "Blue", "Jeans")]:
+        assert target.check(_product(name, name, colour, "bottom", label)), name
+    assert not target.check(_product("dw", "ASOS DESIGN straight jeans", "Darkwash", "bottom", "Jeans")), "dark"
+    assert not target.check(_product("bw", "ASOS DESIGN straight jeans", "Black wash", "bottom", "Jeans")), "black"
+    assert not target.check(_product("sk", "ASOS DESIGN skinny jeans", "Lightwash", "bottom", "Jeans")), "skinny"
+    assert not target.check(_product("jg", "ASOS DESIGN jeggings", "Lightwash", "bottom", "Jeans & Jeggings"))
+
+
 def test_a_bangle_never_gets_earrings_or_a_necklace():
     """Renee (2026-10-06): a gold thin bangle got bow stud earrings, a pearl necklace and a beaded bracelet."""
     target = Target("accessory", "gold thin bangle bracelet", "gold")

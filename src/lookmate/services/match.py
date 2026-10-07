@@ -64,6 +64,12 @@ LEGS = [("narrow", ("skinny", "pencil", "slim", "tapered", "cigarette", "drainpi
                   "baggy", "balloon", "culotte", "kick flare", "relaxed leg", "loose", "relaxed", "regular leg",
                   "mom", "dad", "boyfriend", "kort"))]  # mom, dad and boyfriend jeans are straight or relaxed
 LEG_SUBTYPES = {"trousers", "jeans"}
+# "Slim straight" jeans are a straight cut; only skinny, pencil and jeggings stay narrow next to "straight".
+STRAIGHT = re.compile(r"\bstraight\b")
+STILL_NARROW = re.compile(r"\b(skinny|pencil|jeggings?)\b")
+# ASOS names a jean's colour by its wash ("Bleach", "Lightwash", "Mid wash"): on denim that is blue.
+DENIM_WASH = re.compile(r"\b(light|mid|medium|dark|stone|acid|vintage|bleach|retro|tinted)?[- ]?wash(ed)?\b|"
+                        r"\b(lightwash|midwash|darkwash|stonewash|stonewashed|bleach|bleached|rinse)\b")
 
 # A shade word next to the colour: light blue and dark blue are not the same colour.
 SHADES = [("dark", ("dark", "deep", "indigo", "midnight", "raw denim", "rinse", "dark wash", "dark-wash", "darkwash",
@@ -125,6 +131,9 @@ def sleeve(text: str) -> str | None:
 
 
 def leg(text: str) -> str | None:
+    t = text.lower()
+    if STRAIGHT.search(t) and not STILL_NARROW.search(t):
+        return "wide"
     return _whole_word(text, LEGS)
 
 
@@ -227,9 +236,9 @@ class Target:
             return False  # a knit that doesn't say it has short sleeves has long ones
         if self.warmth and warmth(described) not in (None, self.warmth):
             return False  # a summer top never gets a winter jumper, nor a winter coat a summer one
-        if self.leg and leg(text) not in (None, self.leg):
+        if self.leg and leg(product.name) not in (None, self.leg):
             return False  # wide or straight legs never take skinny or pencil, nor the other way round
-        if self.colour and not same_colour(self.colour, colour_family(product.colour, product.name)):
+        if self.colour and not same_colour(self.colour, self._product_colour(product, kind)):
             return False  # a white skirt wants a white skirt
         if not self.same_shade(product):
             return False  # light blue wants light blue, not navy-dark denim
@@ -237,6 +246,14 @@ class Target:
         if bool(patterned) != self.patterned:
             return False  # a plain top never gets a Mickey Mouse sweatshirt, and a floral one wants a print
         return True
+
+    @staticmethod
+    def _product_colour(product, kind: str | None) -> str | None:
+        """The product's colour family; denim that only names its wash ("Bleach", "Mid wash") is blue."""
+        fam = colour_family(product.colour, product.name)
+        if fam is None and kind == "jeans" and DENIM_WASH.search(f"{product.colour} {product.name}".lower()):
+            return "blue"
+        return fam
 
     def same_shade(self, product) -> bool:
         """Light never takes a stated dark, nor dark a stated light; jeans that just say "blue" pass either."""
