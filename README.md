@@ -82,7 +82,7 @@ make e2e                         # Playwright browser tests: one per bug found w
 python scripts/load_test.py --url https://5-161-202-29.sslip.io --clients 20 --seconds 30  # free endpoints only
 ```
 
-265 unit and integration tests and 34 browser tests pass offline, without API keys.
+266 unit and integration tests and 34 browser tests pass offline, without API keys.
 CI (GitHub Actions) runs the test suite and boots the full Compose stack for the smoke test on every push.
 
 The load test calls only `/healthz` and the catalog search (embeddings), never Claude or try-on, and prints

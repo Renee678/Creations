@@ -18,8 +18,7 @@
   - *Evaluation and QA:* I built and labelled the test set (49 photos, 68 hand-labelled pieces), ran it on
     the live server, tested every feature by hand, and turned each bug into a regression test.
   - *Product:* which features to build or cut, and the visual style of the Look Book.
-- **Claude Code's part:** it proposed options with a recommendation, wrote the code and tests, and ran the
-  tools. I reviewed each change before it stayed in.
+- **Claude Code's part:** it proposed options with a recommendation and wrote the code and tests; I reviewed it.
 - **How it is validated:** about 300 automated tests, an evaluation on real data (45,000 products from three
   public datasets on the live server), and a rule that AI output is never trusted raw.
 
@@ -31,9 +30,6 @@ give your colour season, palette, hair and makeup ideas; outfits you love are ke
 **Find dupes** turns an outfit screenshot from Xiaohongshu, TikTok or Instagram into cheaper look-alikes,
 ranked by similarity, body shape, budget and a style memory; a weekly job researches trends.
 
-Under the hood: an Nginx gateway (rate limits, upload cap), FastAPI, a Redis job queue and worker
-(at-least-once, idempotent, retries, crash recovery), Postgres and an in-memory vector index.
-
 ## Why this project
 
 - **I would use it myself.** Especially My Style: I can gather every outfit I love into sets and keep them in
@@ -42,8 +38,8 @@ Under the hood: an Nginx gateway (rate limits, upload cap), FastAPI, a Redis job
   something like it" is broken. Price-led "dupe" culture on Xiaohongshu fits SHEIN's low-price positioning.
 - **Not just photo search.** Taobao's and SHEIN's own Camera Search find *identical* items. I wanted what they
   don't offer: personalisation (colours, body, budget, learned style), a reason for each pick, and a keepsake.
-- **Real system-design and SRE content.** Slow, costly AI calls behind a public endpoint force decisions about
-  async processing, retries, idempotency, rate limiting, privacy and graceful degradation.
+- **Real system-design and SRE content.** Slow, costly AI calls behind a public endpoint need a queue, retries,
+  idempotency, rate limits and graceful degradation.
 
 My first idea was a flash-sale system. Claude's market research found hundreds of load-tested GitHub projects
 like it, so I pivoted to a clearer gap (`docs/market-research.zh.md`, `docs/product-plan.zh.md`, in Chinese).
@@ -109,15 +105,19 @@ the evaluation below it approved 93% of 75 outfits, with no colour to avoid and 
 
 **4. My eyes find the error, AI finds the cause.** We had no labelled dataset, no time to train or fine-tune,
 and used the hosted models as they are, so the AI could not tell on its own that a picture looked wrong. I
-could. I spotted the problem and sent a screenshot; Claude traced it to a cause in our code and fixed it with
-a deterministic rule and a regression test. A frayed band under a cropped cardigan was My model's denim
+could. I sent a screenshot; Claude traced the cause in our code and fixed it with a rule and a regression
+test. A frayed band under a cropped cardigan was My model's denim
 shorts left at the bare waist (now the cropped top goes on before the trousers); "no light blue jeans" was a
 shade rule that rejected plain "blue"; a blurred high neckline was our own face paste-back reaching below the
 chin. My judgement found the problems; Claude made the fixes fast, and the tests keep them fixed.
 
+**5. Green tests, missing data.** Results felt thin while I tested. On submission day I asked why the live
+catalog showed 5,000 products, not 45,000: one over-long Amazon field made Postgres reject the whole import,
+while the SQLite tests never check lengths. Claude reproduced it on a real Postgres and fixed it the same hour.
+
 ## How generated code was evaluated
 
-- **Tests as the contract.** 265 unit and integration tests run offline (SQLite, fakeredis, a fake vision
+- **Tests as the contract.** 266 unit and integration tests run offline (SQLite, fakeredis, a fake vision
   model): ranking, fit and colour rules, the queue's failure modes, idempotent uploads, style memory, try-on
   steps. 34 Playwright browser tests replay every bug I reported, offline in CI or against the live site.
 - **Smoke and load tests.** `scripts/smoke_test.sh` runs against the real Compose stack in CI;
@@ -128,7 +128,8 @@ chin. My judgement found the problems; Claude made the fixes fast, and the tests
   `scripts/run_lookbook_eval.py`, tables in `evals/`):
   - *The catalog it searches:* 45,000 women's fashion products on the live server, from three public datasets
     that took real searching to find (most fashion sets lack prices or photos): ASOS and Polyvore (5,000, real
-    prices and designer pieces) and Amazon Reviews 2023 (40,000, filtered from millions of listings).
+    prices and designer pieces) and Amazon Reviews 2023 (40,000, filtered from millions of listings). The
+    numbers below were measured on the first 5,000 (see correction 5).
   - *Find dupes, 24 photos, 68 hand-labelled pieces:* every piece found (100% category recall); 88% of shown
     dupes had the right type, colour, length and pattern (90 of 102); none outside the price range; 5-7 s
     per photo. Most mistakes were garment type (tank tops read as "halter").
