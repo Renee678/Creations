@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..services.colours import families
+from ..services.match import colour_family
 from ..services.lookbook import Palette, latest_analysis, outfit_styles
 from ..services.style_memory import user_context
 from ..services.trends import KINDS, SEASONS, season_of, trend_fit, trends_for_every_season
@@ -13,6 +15,25 @@ from .profiles import get_user_or_404
 router = APIRouter(prefix="/api/trends", tags=["trends"])
 
 SHOPPABLE = {"pieces", "bags_shoes", "colour"}  # kinds with product examples (not makeup)
+CLOTHES = ("top", "bottom", "dress", "outerwear")
+
+
+def examples(catalog, trend, k: int = 4) -> list[dict]:
+    """Shop examples for a trend card. A colour trend shows clothes only, each in one of the trend's colours
+    (Renee: the aqua card showed a beige dress and a blush one, the tomato-red card grey and python bags)."""
+    if trend.kind not in SHOPPABLE or not trend.example_query:
+        return []
+    if trend.kind != "colour":
+        return [r.product.to_dict() for r in catalog.search(trend.example_query, k=k)]
+    wanted = families([c["name"] for c in trend.colours or []])
+    picks = []
+    for r in catalog.search(trend.example_query, k=300):
+        p = r.product
+        if p.category in CLOTHES and colour_family(p.colour, p.name) in wanted:
+            picks.append(p.to_dict())
+            if len(picks) == k:
+                break
+    return picks
 
 
 @router.get("")
@@ -45,8 +66,7 @@ def list_trends(request: Request, user_id: int | None = Query(default=None), db:
                 "label": t.label, "description": t.description, "keywords": t.keywords, "sources": t.sources,
                 "colours": t.colours or [],
                 "fit": trend_fit(t, palette, styles),
-                "examples": [r.product.to_dict() for r in catalog.search(t.example_query, k=4)]
-                if t.kind in SHOPPABLE and t.example_query else [],
+                "examples": examples(catalog, t),
             }
             for t in batch
         ],
