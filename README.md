@@ -4,6 +4,11 @@
 > Best on a phone, where it can be added to the home screen as an app. To run it yourself, see
 > [Quick start](#quick-start); [Tests](#tests) covers setup and tests, and [AI_WORKFLOW.md](AI_WORKFLOW.md)
 > how it was built with AI.
+>
+> The live demo is shared and has daily limits across all visitors, reset at 00:00 UTC: 50 try-ons (drawing
+> "My model" counts as one) and 50 new photo analyses (re-uploading the same photo is free). When a limit is
+> reached the site says so; try again after the reset, or run it locally
+> and set your own limits in `.env`.
 
 Turn outfit inspiration from Xiaohongshu, TikTok or Instagram into **affordable look-alikes that suit you**.
 Upload a screenshot: the app identifies each garment, then finds cheaper alternatives in a product catalog,
