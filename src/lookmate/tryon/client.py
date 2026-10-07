@@ -184,6 +184,8 @@ Keep it the same person: the same face, skin tone and hair.
 {body}
 Pose: facing the camera, standing straight, arms relaxed at the sides, the whole body visible from head to toe.
 Clothes: a plain white tank top, light blue denim shorts and white sneakers, nothing else.
+No sunglasses, glasses, hat, jewellery, bag or other accessories, even if the photo has them: a bare face
+with the eyes visible.
 Background: a plain light-grey studio backdrop with soft, even light, like a shop's try-on base model.
 Draw the body neither slimmer nor heavier than that: do not reshape or beautify it, and do not retouch the face.
 The result must look like this person on an ordinary day, just in basics against a plain wall."""

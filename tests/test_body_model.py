@@ -290,3 +290,10 @@ def test_without_a_face_upload_the_model_maker_is_called_as_before(client, runti
     mid = create(client, user["id"]).json()["id"]  # FakeModelMaker takes no face argument
     assert run_next_job(runtime) == "done"
     assert client.get(f"/api/body-models/{mid}").json()["generated"] is True
+
+
+def test_my_model_wears_no_sunglasses_or_accessories():
+    """Renee (2026-10-07): My model came out in sunglasses copied from the photo. It should be plain."""
+    for prompt in (model_prompt(166, 55), model_prompt(), model_prompt(face=True)):
+        assert "No sunglasses, glasses, hat, jewellery, bag or other accessories, even if the photo has them" in prompt
+        assert "with the eyes visible" in prompt
