@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -67,6 +67,10 @@ class SavedOutfit(Base):
     style_id: Mapped[str] = mapped_column(String(30))
     source: Mapped[str] = mapped_column(String(20))  # lookbook | mine | fitting_room
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # For the My Look Book page: the stylist's line, the occasion, and the inspiration look (Make it mine).
+    why: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    occasion: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    inspo_look_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Look(Base):
@@ -151,5 +155,35 @@ class TryOn(Base):
     result_image: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     result_media_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
     model: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    from_model: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # the person is the user's "My model"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BodyModel(Base):
+    """"My model": a standing base figure of the user that the fitting room dresses.
+
+    Made once from one full-body photo (same face, skin tone, hair and real proportions, in plain basics
+    on a grey studio background). The uploaded photo is dropped as soon as the job finishes; only the
+    saved result is kept, so the model works on every device. The id is a random token: it's a picture
+    of the user.
+    """
+
+    __tablename__ = "body_models"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    media_type: Mapped[str] = mapped_column(String(30))
+    photo: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # the upload, until the job ends
+    face_photo: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # optional face close-up, likewise
+    face_media_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # generated, note, timings_ms
+    result_image: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    result_media_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    saved: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -27,7 +27,7 @@ from pathlib import Path
 
 import httpx
 import numpy as np
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
 
 from ..models import Product
@@ -407,39 +407,63 @@ def _embed(rows: list[dict], embedder: Embedder, cache_dir: Path | None) -> np.n
     return np.concatenate(out) if out else np.zeros((0, embedder.dim), dtype=np.float32)
 
 
+STORE_CHUNK = 2000  # rows inserted per statement: plain dicts, not ORM objects, to keep a 4 GB box comfortable
+
+
+def _clip(row: dict) -> dict:
+    """Make each text value fit Postgres: cut it to its column's length and drop NUL characters. Postgres rejects
+    either and fails the whole import (an Amazon "Color" can run past 60 characters); SQLite checks neither."""
+    for col in Product.__table__.columns:
+        value = row.get(col.name)
+        if isinstance(value, str):
+            value = value.replace("\x00", "")
+            limit = getattr(col.type, "length", None)
+            row[col.name] = value[:limit] if limit else value
+    return row
+
+
 def _store(session: Session, rows: list[dict], embedder: Embedder, cache_dir: Path | None = None) -> int:
+    """Replace the stored catalog with these rows. Embedding (the slow part) happens before anything is deleted."""
     precomputed = embedder.name == "bge" and all(r.get("vector") is not None for r in rows)
     if precomputed:
         vectors = np.array([r["vector"] for r in rows], dtype=np.float32)
         vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
     else:
         vectors = _embed(rows, embedder, cache_dir)
-    for r, v in zip(rows, vectors):
-        session.add(Product(
-            id=r["id"], name=r["name"], product_type=r["product_type"], category=r["category"],
-            colour=r["colour"], pattern=r["pattern"], section=r["section"],
-            description=r["description"], image_url=r["image_url"],
-            price=r.get("price") or synthetic_price(r["id"], r["category"]),
-            embedding=v.astype(np.float32).tobytes(),
-        ))
+    session.execute(delete(Product))
+    for start in range(0, len(rows), STORE_CHUNK):
+        session.execute(insert(Product), [_clip({
+            "id": r["id"], "name": r["name"], "product_type": r["product_type"], "category": r["category"],
+            "colour": r["colour"], "pattern": r["pattern"], "section": r["section"],
+            "description": r["description"], "image_url": r["image_url"],
+            "price": r.get("price") or synthetic_price(r["id"], r["category"]),
+            "embedding": v.astype(np.float32).tobytes(),
+        }) for r, v in zip(rows[start:start + STORE_CHUNK], vectors[start:start + STORE_CHUNK])])
     session.commit()
     return len(rows)
 
 
+def catalog_is_current(session: Session, embedder: Embedder, source: str) -> bool:
+    """True when the stored catalog came from exactly these sources with this embedding model."""
+    sample = session.scalar(select(Product).limit(1))
+    return (sample is not None and len(sample.embedding) // 4 == embedder.dim
+            and stored_sources(session) == parse_sources(source))
+
+
 def ensure_catalog(session: Session, embedder: Embedder, source: str, data_dir: Path, size: int,
                    amazon_size: int = 40_000) -> int:
-    """Import the catalog if the table is empty, came from other sources or used a different model."""
+    """Import the catalog if the table is empty, came from other sources or used a different model.
+
+    The old catalog stays in the table until the new one is fully downloaded and embedded, then both
+    are swapped in one transaction: a slow or failed import never leaves the site without products.
+    """
     wanted = parse_sources(source)
     count = session.scalar(select(func.count()).select_from(Product)) or 0
     if count:
-        sample = session.scalar(select(Product).limit(1))
-        current = stored_sources(session)
-        if len(sample.embedding) // 4 == embedder.dim and current == wanted:
+        if catalog_is_current(session, embedder, source):
             return count
-        log.warning("catalog is %s/%d-d but %s/%s is configured; re-importing",
-                    ",".join(sorted(current)), len(sample.embedding) // 4, source, embedder.name)
-        session.execute(delete(Product))
-        session.commit()
+        log.warning("catalog is %s but %s/%s is configured; re-importing",
+                    ",".join(sorted(stored_sources(session))), source, embedder.name)
 
     rows = []
     cache = data_dir / "cache"

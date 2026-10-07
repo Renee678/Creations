@@ -8,6 +8,7 @@ scorer's picks stand, so the lookbook never depends on the model.
 
 import hashlib
 import logging
+import re
 from datetime import datetime, timezone
 
 from ..llm.client import LLMError
@@ -16,6 +17,22 @@ from ..llm.schemas import StylingRequest, StylingResult
 log = logging.getLogger(__name__)
 
 CACHE_TTL_S = 7 * 24 * 3600
+WHY_MAX_WORDS = 12  # the line printed on a Look Book page: one short, casual sentence (Renee)
+DANGLING = {"and", "or", "but", "with", "in", "on", "of", "for", "to", "a", "an", "the", "your", "its", "by", "as", "at"}
+
+
+def short_why(text: str | None, max_words: int = WHY_MAX_WORDS) -> str | None:
+    """One sentence of at most `max_words` words, cut at a word and never ending on "and" or "with"."""
+    if not text or not text.strip():
+        return None
+    first = re.split(r"(?<=[.!?])\s", text.strip(), maxsplit=1)[0]
+    words = first.split()
+    if len(words) <= max_words:
+        return first
+    words = words[:max_words]
+    while len(words) > 1 and (words[-1].lower().strip(",;:—-") in DANGLING or not words[-1].strip(",;:—-")):
+        words.pop()
+    return " ".join(words).rstrip(",;:—- ") + "."
 
 
 Curated = dict[int, tuple[list[str], str, bool]]
@@ -28,7 +45,7 @@ def curate(llm, redis_client, request: StylingRequest, daily_limit: int) -> Cura
     if not request.outfits:
         return {}
     body = request.model_dump_json()
-    key = f"stylist:v2:{getattr(llm, 'name', '')}:{hashlib.sha256(body.encode()).hexdigest()}"
+    key = f"stylist:v3:{getattr(llm, 'name', '')}:{hashlib.sha256(body.encode()).hexdigest()}"
     cached = _cache_get(redis_client, key)
     if cached is None:
         if not _take_quota(redis_client, daily_limit):
@@ -56,7 +73,8 @@ def _validated(request: StylingRequest, result_json: str) -> Curated:
             ids = [c.id for c in slot.candidates]
             pick = styled.picks[i] if i < len(styled.picks) else None
             picks.append(pick if pick in ids else (ids[0] if ids else ""))
-        out[styled.index] = (picks, styled.why.strip(), styled.approved)
+        why = short_why(styled.why) if styled.approved else styled.why.strip()
+        out[styled.index] = (picks, why or "", styled.approved)
     return out
 
 

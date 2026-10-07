@@ -47,10 +47,15 @@ class VisionLLM(Protocol):
 
 SYSTEM_PROMPT = f"""You are a fashion stylist who breaks outfit photos down into shoppable items.
 
-For the image, list every clearly visible garment, pair of shoes, bag and accessory (at most 6),
-most prominent first. Describe each one in plain English the way a product catalogue would:
+For the image, list the main pieces of the outfit: each garment, pair of shoes, bag and accessory
+that is mostly in frame (about half or more visible), at most 6, most prominent first. A piece that
+is only a sliver at the edge of the photo is not what the user is asking about: list it only if it is
+still clearly identifiable, last, with partial set to true. Describe each one in plain English the way a product catalogue would:
 category, colour, fit, distinguishing details, and a one-sentence search_query that a shopper
 would type to find a similar product (include colour, garment type, fit and key details).
+For each garment also judge from the photo its sleeve length (sleeveless, short or long; cap sleeves are short)
+and its warmth: summer (thin jersey, linen, cap sleeves, straps), winter (chunky, cable or roll-neck knit,
+wool, fleece, padding) or all-season. A thin fitted top is not a jumper: name it for what it is.
 
 Use only these style labels for style_tags: {", ".join(STYLES)}.
 Estimate the original retail price only when the item looks premium or designer; otherwise null.
@@ -72,7 +77,9 @@ of themselves and asked for personal styling advice.
 - Use only these style labels for style_tags: {", ".join(STYLES)}.
 - photo_checks: one entry per photo, in the order given. Say how the person is framed, whether the photo
   works for colour analysis, and whether it works for a virtual try-on (one person, standing, facing the
-  camera, head to at least the knees). The tip tells the user, kindly, what to retake if it doesn't.
+  camera, head to at least the knees). Every photo of the person helps read their style, so the tip says,
+  warmly, what this photo adds, with at most one soft hint (e.g. daylight shows colours truest). Never call
+  a photo of the person unusable or list what is wrong with it.
 If no person's face is clearly visible, set usable to false and fill the rest with your best neutral defaults.
 Write everything in English."""
 
@@ -97,8 +104,9 @@ You are also the quality gate: nothing reaches the client unless you approve it.
 would proudly show it in a lookbook. If no combination of its candidates works (clashing colours, a piece that
 breaks the style, mismatched formality), set approved to false; it will not be shown. Don't reject over small
 matters of taste.
-Return the chosen ids in slot order and, for approved outfits, one short sentence (at most 20 words) for the
-client on why the outfit works; for rejected ones, what clashes. Write in English."""
+Return the chosen ids in slot order and, for approved outfits, one short, casual sentence of 12 words or fewer,
+said to the client like a friend would (e.g. "Soft camel and cream, easy and polished for a Monday."); for
+rejected ones, what clashes. Write in English."""
 
 
 class ClaudeVision:
@@ -175,14 +183,15 @@ _FAKE_LOOKS = [
             DetectedItem(category="top", name="fine-knit V-neck cardigan", colour="beige", fit="relaxed",
                          details=["V-neck", "buttons", "ribbed cuffs"], style_tags=["old_money"],
                          search_query="beige fine-knit V-neck cardigan with buttons, relaxed fit",
+                         sleeve="long", warmth="all-season",
                          estimated_original_price_usd=890),
             DetectedItem(category="bottom", name="wide-leg tailored trousers", colour="white", fit="wide-leg",
                          details=["high-waisted", "pressed pleats"], style_tags=["old_money", "office"],
-                         search_query="white high-waisted wide-leg tailored trousers with pleats",
+                         search_query="white high-waisted wide-leg tailored trousers with pleats", warmth="all-season",
                          estimated_original_price_usd=650),
             DetectedItem(category="shoes", name="slingback kitten heels", colour="black", fit="pointed toe",
                          details=["slingback", "kitten heel"], style_tags=["quiet_luxury"],
-                         search_query="black slingback kitten heel pumps with pointed toe",
+                         search_query="black slingback kitten heel pumps with pointed toe", warmth="all-season",
                          estimated_original_price_usd=1100),
         ],
     ),
@@ -193,14 +202,15 @@ _FAKE_LOOKS = [
             DetectedItem(category="dress", name="linen maxi dress", colour="white", fit="flowing",
                          details=["sleeveless", "square neckline", "flared skirt"], style_tags=["resort"],
                          search_query="white sleeveless linen maxi dress with square neckline",
+                         sleeve="sleeveless", warmth="summer",
                          estimated_original_price_usd=420),
             DetectedItem(category="bag", name="woven straw cross-body bag", colour="beige", fit="small",
                          details=["woven straw", "adjustable strap"], style_tags=["boho", "resort"],
-                         search_query="woven straw cross-body bag beige",
+                         search_query="woven straw cross-body bag beige", warmth="summer",
                          estimated_original_price_usd=380),
             DetectedItem(category="accessory", name="straw sun hat", colour="beige", fit="wide brim",
                          details=["ribbon band"], style_tags=["resort"],
-                         search_query="wide-brimmed straw sun hat with ribbon",
+                         search_query="wide-brimmed straw sun hat with ribbon", warmth="summer",
                          estimated_original_price_usd=None),
         ],
     ),
@@ -211,14 +221,15 @@ _FAKE_LOOKS = [
             DetectedItem(category="top", name="satin bow blouse", colour="light pink", fit="flowing",
                          details=["tie bow neck", "puff sleeves", "satin"], style_tags=["coquette"],
                          search_query="light pink satin blouse with bow at the neck and puff sleeves",
+                         sleeve="short", warmth="all-season",
                          estimated_original_price_usd=560),
             DetectedItem(category="bottom", name="pleated mini skirt", colour="white", fit="a-line",
                          details=["pleated", "high waist"], style_tags=["preppy", "coquette"],
-                         search_query="white pleated mini skirt high waist",
+                         search_query="white pleated mini skirt high waist", warmth="all-season",
                          estimated_original_price_usd=None),
             DetectedItem(category="shoes", name="Mary Jane ballet flats", colour="black", fit="flat",
                          details=["strap with buckle", "round toe"], style_tags=["ballet_core"],
-                         search_query="black Mary Jane ballet flats with strap and buckle",
+                         search_query="black Mary Jane ballet flats with strap and buckle", warmth="all-season",
                          estimated_original_price_usd=750),
         ],
     ),
@@ -334,8 +345,8 @@ class FakeVision:
             picks = [s.candidates[0] for s in o.slots if s.candidates]
             accent = next((c for c, s in zip(picks, o.slots) if s.role == "accent"), None)
             base = sorted({c.colour.lower() for c, s in zip(picks, o.slots) if s.role == "neutral" and c.colour})
-            why = (f"One {accent.colour.lower()} accent" if accent and accent.colour else "A calm base") + (
-                f" grounded by {' and '.join(base)}" if base else "") + f", true to {o.style.lower()}."
+            why = (f"{accent.colour.capitalize()} pops" if accent and accent.colour else "Calm and easy") + (
+                f" against {' and '.join(base[:2])}" if base else "") + f", very {o.style.lower()}."
             outfits.append(StyledOutfit(index=o.index, picks=[c.id for c in picks], approved=True, why=why))
         return StylingResult(outfits=outfits)
 

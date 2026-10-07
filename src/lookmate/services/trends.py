@@ -189,6 +189,17 @@ def seed_rows(data_dir: Path) -> list[Trend]:
             for t in load_seed(data_dir)]
 
 
+def trends_for_every_season(session: Session, data_dir: Path) -> list[Trend]:
+    """The latest batch, topped up from the seed trends for any season it doesn't cover.
+
+    Research covers the current and the next season; the page offers all four (shoppers in the southern
+    hemisphere, or packing for a trip), so the other two come from the bundled seed rather than an empty page.
+    """
+    batch = latest_batch(session) or seed_rows(data_dir)
+    have = {t.season for t in batch}
+    return batch + [t for t in seed_rows(data_dir) if t.season not in have]
+
+
 def ensure_some(session: Session, data_dir: Path) -> None:
     """Seed trends right away, so the page isn't empty while the first research runs (it takes minutes)."""
     if not latest_batch(session):

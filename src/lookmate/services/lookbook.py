@@ -32,9 +32,12 @@ from .price_range import PriceRange, search_in_range
 from .ranking import STYLE_KEYWORDS, UserContext, price_score, style_score
 from .vocab import BODY_SHAPES, STYLE_DEFINITIONS, STYLES, style_name
 
+ANY_PRICE = PriceRange(0, float("inf"))  # only to tell "nothing at this price" from "nothing at all"
+
 log = logging.getLogger(__name__)
 
 W_SIM, W_PALETTE, W_STYLE, W_FIT, W_PRICE = 0.55, 0.15, 0.10, 0.10, 0.10
+W_CLEAN_PHOTO = 0.02  # tie-breaker: a white-background product photo wins between near-equal candidates
 CANDIDATES_PER_SLOT = 30
 STYLIST_CHOICES = 5  # top candidates per slot the stylist may choose from
 
@@ -178,7 +181,7 @@ def build_lookbook(
     season: str | None = None, stylist: Stylist | None = None, vibe: str | None = None,
     occasion: str | None = None,
 ) -> dict:
-    # A soft price range (see price_range.py): without it a $260 designer pump can win a slot,
+    # The price range is a hard filter (see price_range.py): without it a $260 designer pump can win a slot,
     # since price is only 10% of the score.
     price = price or PriceRange.from_params(None, None, user.budget_per_item)
     analysis = analysis_rec.result if analysis_rec else None
@@ -206,12 +209,14 @@ def build_lookbook(
         for n, slots in enumerate(formulas):
             style = styles[n % len(styles)]
             colours = palette.colours_for(n + len(sections), len(slots))
-            filled = []
+            filled, missing = [], []
             for i, ((cat, desc), colour) in enumerate(zip(slots, colours)):
                 options = _slot_options(catalog, user, palette, style, cat, desc, colour, used, price, neutral=i > 0)
                 if options:
                     used.add(options[0]["id"])
                     filled.append((desc, "neutral" if i > 0 else "accent", options))
+                elif _slot_options(catalog, user, palette, style, cat, desc, colour, used, ANY_PRICE, neutral=i > 0):
+                    missing.append(desc)  # the price is why: said on the card, never filled with a pricier piece
             if not filled:
                 continue
             outfits.append({
@@ -221,6 +226,8 @@ def build_lookbook(
                 "why": None,
                 "reviewed": False,  # True once the stylist has approved it
                 "slots": filled,
+                "missing_note": (f"Nothing in {price.label()} for the {_either(missing)}. "
+                                 "Widen the price range to see more.") if missing else None,
             })
         sections.append({"id": section_id, "title": title, "outfits": outfits})
 
@@ -284,6 +291,11 @@ def _apply_stylist(stylist: Stylist, sections: list[dict], palette: Palette, ana
         section["outfits"] = [o for o in section["outfits"] if not o.pop("rejected", False)]
 
 
+def _either(words: list[str]) -> str:
+    """'blazer', 'blazer or boots', 'blazer, trousers or boots'."""
+    return words[0] if len(words) == 1 else f"{', '.join(words[:-1])} or {words[-1]}"
+
+
 def _colour_family(p) -> str | None:
     return family(p.colour) if p.colour else family(colour_word(p.name))
 
@@ -314,14 +326,17 @@ def _slot_options(catalog: Catalog, user: UserContext, palette: Palette, style: 
         queries.append(f"black {desc}")
     for query in queries:
         candidates = (
-            search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, exclude=used, any_price=False)
+            search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, exclude=used)
             # small catalogs run out: reuse a piece rather than leave a gap
-            or search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price, any_price=False)
+            or search_in_range(catalog, query, CANDIDATES_PER_SLOT, category, price)
         )
         scored = [_scored(c, user, palette, style, desc, price) for c in candidates
                   if _colour_ok(c.product, palette, style, neutral)]
         if scored:
-            return sorted(scored, key=lambda p: p["score"], reverse=True)
+            # A packshot on white makes a cleaner flat lay than a model shot: a nudge between close
+            # candidates, never a filter (Renee, feedback #34).
+            return sorted(scored, key=lambda p: p["score"] + (W_CLEAN_PHOTO if p["white_background"] else 0),
+                          reverse=True)
     return []
 
 
@@ -352,6 +367,5 @@ def _scored(c, user: UserContext, palette: Palette, style: str, desc: str, price
         reasons.append(f"Matches your {style_name(style)} style" if mine else f"Gives a {style_name(style)} feel")
     if s_fit > 0:
         reasons.append(f"Cut suits your {BODY_SHAPES.get(user.body_shape, '').lower()} shape")
-    note = price.note(p.price)
-    reasons.append(note or "In your price range")
+    reasons.append("In your price range")
     return {**p.to_dict(), "slot": desc, "score": round(score, 4), "reasons": reasons}

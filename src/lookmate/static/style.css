@@ -1,6 +1,6 @@
 /* Lookmate "gel scrapbook" look: Y2K gel colour and material (sky gradient, sparkles, gel buttons,
    chrome type) with scrapbook objects (tape, polaroids, stickers, handwriting). One light look. */
-@import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Caveat:wght@600;700&family=DM+Sans:wght@400;500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700&family=Caveat:wght@600;700&family=DM+Sans:wght@400;500;700&family=Bodoni+Moda:ital,opsz,wght@0,6..96,500;0,6..96,700;1,6..96,500&family=Jost:wght@300;400;500&display=swap");
 
 [hidden] { display: none !important; }
 :root {
@@ -224,21 +224,43 @@ html, body { overflow-x: hidden; }
 .me-photo figcaption strong { display: block; color: var(--ink); }
 .me-photo figcaption span { display: block; }
 .me-photo figcaption.ok strong { color: var(--good); }
-.me-photo figcaption.warn strong { color: #b4235a; }
+.me-photo figcaption.note strong { color: var(--muted); }
 
 /* per-page price range */
 .price-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 6px 0 22px;
   padding: 12px 16px; background: rgba(255,255,255,.7); border-radius: 14px; box-shadow: var(--note-shadow); }
 .price-range .pr-label { font: 600 14px/1 var(--f-body); color: var(--ink); }
-.price-range label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
-.price-range input[type=range] { width: 140px; accent-color: var(--gel); }
 .price-range .pr-out { font: 600 15px/1 var(--f-body); color: var(--gel-deep); min-width: 92px; }
 .price-range .muted { flex-basis: 100%; }
-#find .price-range:not(:has(+ #results > *)) { display: none; }
+#find:not(.has-photo) .price-range { display: none; }
+/* One track, two thumbs (Renee): the fill runs only between them, never left of the low thumb. */
+.pr-slider { position: relative; width: 260px; height: 28px; }
+/* The track runs from the centre of the thumb at $0 to its centre at the top: inset by half a thumb (10px). */
+.pr-track { position: absolute; left: 10px; right: 10px; top: 12px; height: 4px; border-radius: 2px; background: var(--sky-1); }
+.pr-fill { position: absolute; top: 0; bottom: 0; left: 0; right: 0; border-radius: 2px; background: var(--gel); }
+.pr-slider input[type=range] { position: absolute; inset: 0; width: 100%; height: 28px; margin: 0; padding: 0; border: 0;
+  border-radius: 0; box-shadow: none; outline: none; background: transparent;
+  -webkit-appearance: none; appearance: none; pointer-events: none; }
+.pr-slider input[type=range]::-webkit-slider-runnable-track { background: transparent; height: 28px; }
+.pr-slider input[type=range]::-moz-range-track { background: transparent; }
+.pr-slider input[type=range]::-moz-range-progress { background: transparent; }
+.pr-slider input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; pointer-events: auto;
+  box-sizing: border-box; width: 20px; height: 20px; margin-top: 4px; border-radius: 50%; background: #fff; border: 2px solid var(--gel);
+  box-shadow: 0 1px 4px rgba(18,48,90,.25); cursor: pointer; }
+.pr-slider input[type=range]::-moz-range-thumb { pointer-events: auto; box-sizing: border-box; width: 20px; border-radius: 50%;
+  height: 20px; background: #fff; border: 2px solid var(--gel); box-shadow: 0 1px 4px rgba(18,48,90,.25); cursor: pointer; }
+.pr-slider input[type=range]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--violet); outline-offset: 2px; }
 @media (max-width: 600px) {
-  .price-range label { flex: 1 1 100%; }
-  .price-range input[type=range] { flex: 1; width: auto; }
+  .pr-slider { flex: 1 1 100%; width: auto; }
 }
+
+/* Find dupes: one clear button, and a loading state you can't miss */
+.find-go { display: flex; justify-content: center; margin: 4px 0 18px; }
+.big-btn { font-size: 18px; padding: 14px 30px; }
+.find-loading { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 36px 16px;
+  font: 600 22px/1.3 var(--f-body); color: var(--gel-deep); background: rgba(255,255,255,.7); border-radius: 18px;
+  box-shadow: var(--note-shadow); }
+.find-loading .spinner { width: 30px; height: 30px; border-width: 4px; flex: none; }
 
 /* ---------- fitting room: a tray of picked pieces, like a dress-up game ---------- */
 .card button.room-add { margin-top: 8px; width: 100%; font: 600 12px/1 var(--f-body); color: var(--violet); background: var(--lilac);
@@ -363,7 +385,7 @@ body.room-open { padding-bottom: 110px; }
 /* Outfit boards: the whole outfit laid flat on white, every piece labelled by hand */
 .board { display: grid; grid-template-columns: 1fr 1.2fr .9fr; grid-template-rows: repeat(3, auto); gap: 8px 18px;
   align-items: center; justify-items: center; margin: 6px 0 10px; padding: 22px 18px; background: #fff; border-radius: 20px;
-  box-shadow: 0 10px 30px rgba(18, 48, 90, .08); max-width: 720px; }
+  box-shadow: 0 10px 30px rgba(18, 48, 90, .08); max-width: 720px; margin-inline: auto; }
 .bp { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
 .bp img { max-width: 100%; max-height: 210px; object-fit: contain; mix-blend-mode: multiply; }
 .bp-bottom img, .bp-dress img { max-height: 320px; }
@@ -378,13 +400,242 @@ body.room-open { padding-bottom: 110px; }
 .shop-pieces summary { cursor: pointer; color: var(--gel-deep); font-size: 13px; margin: 2px 0 8px; }
 .my-outfits { margin-top: 34px; }
 .my-outfits h2 { font: 600 24px/1.2 var(--f-display); }
-.my-outfits .trend-filter { margin: 8px 0 14px; display: flex; flex-direction: column; gap: 8px; }
+.mo-filters { margin: 8px 0 14px; }
+.mo-filters[hidden] { display: none; }
+.mo-filters .trend-filter { align-items: baseline; }
 @media (max-width: 600px) {
   .board { gap: 6px 10px; padding: 14px 10px; }
   .bp img { max-height: 140px; }
   .bp-bottom img, .bp-dress img { max-height: 210px; }
   .bp figcaption { font-size: 14px; }
 }
-.board.board-2 { grid-template-columns: 1fr 1.2fr; max-width: 520px; }
 .mo-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 8px 22px; }
 .mo-card .item-head h3 { font-size: 22px; }
+.piece-chips { align-items: center; margin: 14px 0 4px; }
+
+/* ---------- My Look Book: printed pages on warm paper, the same in every theme ---------- */
+.book-contents { margin-top: 14px; }
+.book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+.book-thumb { position: relative; aspect-ratio: 3 / 4; border: 0; border-radius: 6px; padding: 10px; overflow: hidden;
+  background: #f4f0ea; color: #3a2a22; text-align: left; cursor: pointer; display: flex; flex-direction: column;
+  justify-content: flex-end; gap: 2px; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 10px 24px -14px rgba(40,30,60,.45);
+  font: 700 15px/1.15 "Bodoni Moda", Didot, serif; }
+.book-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .9; }
+.book-thumb b, .book-thumb small { position: relative; background: rgba(244,240,234,.92); padding: 0 4px; border-radius: 3px; align-self: flex-start; }
+.book-thumb small { font: 400 10px/1.4 Jost, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #7b6a5f; }
+.book-thumb-cover { background: linear-gradient(160deg, #f4f0ea, #e7dccd); font-size: 19px; }
+.book-add { background: transparent; border: 1.5px dashed var(--line); box-shadow: none; color: var(--muted);
+  align-items: center; justify-content: center; text-align: center; font: 500 13px/1.4 var(--f-body); }
+.book-viewer { margin-top: 14px; }
+.book-viewer[hidden], .book-contents[hidden] { display: none; }
+/* Look Book page tabs (they replaced "← Contents" and the arrows); the active tab is a violet pill */
+.booknav { display: flex; gap: 6px; flex-wrap: wrap; background: rgba(255,255,255,.62); padding: 5px; border-radius: 999px;
+  width: max-content; max-width: 100%; box-shadow: var(--note-shadow); margin: 0 0 14px; box-sizing: border-box; }
+.booknav button { font: 500 14px var(--f-body); border: 0; background: transparent; color: var(--muted); padding: 8px 16px;
+  border-radius: 999px; cursor: pointer; box-shadow: none; text-shadow: none; }
+.booknav button.on { background: linear-gradient(180deg, #b78cff, #8a4fd6); color: #fff; box-shadow: 0 4px 10px rgba(138,79,214,.3); }
+.booknav button:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+@media (max-width: 600px) { .booknav { border-radius: 22px; } .booknav button { padding: 7px 12px; } }
+.book-pager { display: flex; gap: 6px; align-items: center; justify-content: center; margin: 0 0 10px; }
+.book-pager:empty { display: none; }
+.book-pager button { width: 8px; height: 8px; padding: 0; border: 0; border-radius: 50%; background: #d9c2ff; cursor: pointer; }
+.book-pager button.on { width: 20px; border-radius: 4px; background: #8a4fd6; }
+/* One row of same-size pill buttons under an outfit page (Renee, 2026-10-07: mixed sizes and a bare Delete link looked
+   untidy). Try it on me stays the blue one; Delete is a pill with red text. */
+.book-actions { display: flex; gap: 10px; justify-content: center; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.book-actions .gel { margin: 0; font-size: 13px; padding: 10px 16px; min-height: 36px; box-sizing: border-box; }
+.gel.danger { color: #c2416b; border-color: rgba(194,65,107,.35); box-shadow: inset 0 -3px 6px rgba(230,120,160,.22), 0 1px 0 #fff; }
+.book-page { touch-action: pan-y; }
+
+.bk { position: relative; max-width: 620px; margin: 0 auto; min-height: 560px; padding: 26px 24px 18px; border-radius: 6px;
+  background: #f4f0ea; color: #3a2a22; font: 400 14px/1.5 Jost, "DM Sans", sans-serif;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 18px 40px -18px rgba(40,30,60,.45); }
+.bk-kicker { font: 400 11px/1 Jost, sans-serif; letter-spacing: .3em; text-transform: uppercase; color: #7b6a5f; margin: 0; }
+.bk-hand { font: 600 24px/1.05 var(--f-hand); color: #3a2a22; transform: rotate(-4deg); margin: 0; }
+
+.bk-cover { display: flex; flex-direction: column; justify-content: space-between; gap: 22px; }
+.bk-cover-title { font: 700 clamp(48px, 13vw, 84px)/.95 "Bodoni Moda", Didot, serif; margin: 14px 0 0; letter-spacing: -.02em; color: #3a2a22; }
+.bk-cover-title i { font-weight: 500; }
+.bk-strip { display: flex; height: 70px; border-radius: 4px; overflow: hidden; margin-top: 22px; }
+.bk-strip span { flex: 1; }
+.bk-strip .cover-gradient { background: linear-gradient(90deg, #8ec5ff, #b49bff, #ff9ccf); }
+.bk-cover-line { align-self: flex-end; }
+.bk-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; border-top: 1.5px solid #3a2a22; padding-top: 12px; }
+.bk-meta b { display: block; font: 500 19px/1.15 "Bodoni Moda", serif; }
+.bk-meta small { font: 400 10px/1.3 Jost, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #7b6a5f; }
+
+.bk-head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1.5px solid #3a2a22; padding-bottom: 8px; margin-bottom: 12px; }
+.bk-head b { font: 700 32px/1 "Bodoni Moda", serif; }
+.bk-head span { font: 400 11px/1 Jost, sans-serif; letter-spacing: .26em; text-transform: uppercase; }
+.bk-about .sr-hero, .bk-about .sr-card { background: transparent; box-shadow: none; border-top: 1px solid #ddd3c6; border-radius: 0; color: #3a2a22; }
+.bk-about h2, .bk-about h3 { font-family: "Bodoni Moda", serif; color: #3a2a22; }
+
+/* Flat lay | On me: one segmented pill, both halves the same size */
+.bk-views { position: absolute; top: 14px; right: 14px; gap: 0; padding: 3px; border-radius: 999px; background: #fff;
+  border: 1px solid rgba(80,130,190,.3); box-shadow: 0 2px 8px rgba(19,50,79,.08); }
+.bk-views .chip { border: 0; background: transparent; box-shadow: none; min-width: 64px; text-align: center; }
+.bk-views .chip.on { background: linear-gradient(180deg, #d3b4ff 0%, #9b63e6 52%, #7a43c9 100%); }
+.bk-title { font: 700 clamp(36px, 10vw, 58px)/1 "Bodoni Moda", serif; margin: 0; letter-spacing: -.02em; color: #3a2a22; }
+.bk-sub { font: 400 11px/1 Jost, sans-serif; letter-spacing: .3em; text-transform: uppercase; margin: 6px 0 0; }
+.bk-motto { font: 300 13px/1.35 Jost, sans-serif; color: #7b6a5f; margin: 4px 0 0; }
+.bk-poster { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.9fr) minmax(0, 1fr); gap: 12px; margin-top: 16px; }
+.bk-col { display: flex; flex-direction: column; }
+.bk-pc { padding: 6px 0 8px; border-top: 1px solid #ddd3c6; }
+.bk-pc:first-child { border-top: 0; }
+.bk-pc img, .bk-pc .bp-none { display: block; width: 100%; aspect-ratio: 1; object-fit: contain; background: #fff; border-radius: 4px; }
+.bk-pc b { display: block; font: 500 11.5px/1.25 Jost, sans-serif; margin-top: 4px; }
+.bk-pc small { color: #7b6a5f; font-variant-numeric: tabular-nums; }
+.bk-hero { margin: 0; border-radius: 120px 120px 8px 8px; overflow: hidden; background: linear-gradient(180deg, #e7dfd3, #d9cfc1); }
+.bk-hero img { display: block; width: 100%; height: 100%; object-fit: cover; aspect-ratio: 9 / 16; }
+.bk-bottom { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 14px; }
+.bk-polaroid { margin: 0; width: 140px; flex: none; background: #fff; padding: 8px 8px 26px; transform: rotate(5deg); position: relative;
+  box-shadow: 0 4px 14px rgba(60,40,20,.25); }
+.bk-polaroid p { margin: 0; aspect-ratio: 1; display: flex; align-items: flex-end; padding: 8px; font: 400 11px/1.3 Jost, sans-serif;
+  color: #fff; background: linear-gradient(160deg, #5a6a7d, #26303c); overflow: hidden; }
+.bk-polaroid figcaption { position: absolute; left: 0; right: 0; bottom: 4px; text-align: center; font: 600 16px/1 var(--f-hand); color: #3a2a22; }
+.bk-dots { display: flex; gap: 5px; margin-top: 4px; }
+.bk-dots i { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+
+.bk-flat { background: #fff; }
+.bk-flat-title { font: italic 500 clamp(26px, 7vw, 38px)/1.1 "Bodoni Moda", serif; margin: 6px 0 0; color: #2b2b2b; }
+.bk-flat-why { margin: 8px 0 0 8px; font-size: 20px; }
+.bk-board { margin-top: 12px; background: transparent; box-shadow: none; }
+.bk-it { margin: 0; display: flex; flex-direction: column; align-items: center; }
+.bk-it img, .bk-it .bp-none { width: 100%; max-height: 220px; object-fit: contain; filter: drop-shadow(0 6px 8px rgba(0,0,0,.12)); }
+.bk-it figcaption { width: 100%; margin-top: 6px; text-align: center; }
+.bk-it .bk-dots { justify-content: center; }
+.bk-lab { font: italic 500 15px/1.15 "Bodoni Moda", serif; color: #2b2b2b; }
+.bk-lab small { display: block; font: 400 11px/1.6 Jost, sans-serif; font-style: normal; color: #8a8a8a; letter-spacing: .06em; }
+
+.bk-foot { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: center; margin-top: 16px;
+  padding-top: 10px; border-top: 1px solid #ddd3c6; font: 400 13px/1.4 Jost, sans-serif; font-variant-numeric: tabular-nums; }
+.bk-shop summary { cursor: pointer; text-decoration: underline; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; }
+.bk-shop[open] { flex-basis: 100%; }
+.bk .linklike { color: #3a2a22; }
+@media (max-width: 560px) {
+  .bk { padding: 20px 14px 14px; }
+  .bk-poster { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1fr); gap: 8px; }
+  .bk-polaroid { width: 110px; }
+}
+
+/* Look Book: Favourites, the lilac closet (approved 2026-10-06; design/favourites-spec.md) */
+.fav-closet { --h-a: #e9dcff; --h-b: #f4ecff; --h-c: #e3e6ff; --h-ink: #3b2563; --h-mute: #7a68a0;
+  --h-glass: rgba(255,255,255,.62); --h-accent: #8a4fd6; --h-soft: #c9adff;
+  position: relative; overflow: hidden; border-radius: 28px; padding: clamp(16px, 3vw, 32px);
+  background: linear-gradient(140deg, var(--h-a) 0%, var(--h-b) 50%, var(--h-c) 100%);
+  border: 1px solid rgba(255,255,255,.9); box-shadow: 0 20px 50px rgba(40,90,160,.12); }
+.fav-closet::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .8;
+  background-image: radial-gradient(circle, #fff 1.6px, transparent 1.8px), radial-gradient(circle, rgba(201,173,255,.6) 1.2px, transparent 1.4px);
+  background-size: 52px 52px, 26px 26px; background-position: 0 0, 13px 13px; }
+.fav-closet > * { position: relative; }
+.fav-closet .ht { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 6px 0 14px; }
+.fav-closet .ht h2 { font-family: var(--f-display); font-size: clamp(24px, 3.6vw, 36px); margin: 0; color: var(--h-ink); }
+.fav-closet .ht h2 em { font-family: var(--f-hand); font-style: normal; color: var(--h-accent); font-size: 1.25em; }
+.fav-closet .ht span { font-family: var(--f-hand); font-size: 22px; color: var(--h-mute); }
+.fav-closet .seg { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.fav-closet .seg button { font: 500 14px var(--f-body); border: 1px solid rgba(255,255,255,.95); background: var(--h-glass);
+  color: var(--h-ink); padding: 7px 13px; border-radius: 999px; cursor: pointer; }
+.fav-closet .seg button.on { background: linear-gradient(180deg, #b78cff, var(--h-accent)); color: #fff; border-color: transparent; }
+.fav-closet .seg button.off { opacity: .4; cursor: default; }
+.fav-closet .rail { margin-top: 30px; }
+.fav-closet .rail-h { display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px 8px; }
+.fav-closet .rail-h b { font-family: var(--f-hand); font-size: 28px; color: var(--h-accent); line-height: 1; }
+.fav-closet .rail-h i { font-style: normal; font: 600 12px var(--f-body); color: var(--h-mute); background: #fff; padding: 2px 8px; border-radius: 999px; }
+/* Silver chrome rail with short upright end stops */
+.fav-closet .bar { height: 10px; border-radius: 999px; position: relative;
+  background: linear-gradient(180deg, #fff 0%, #dfe7f3 35%, #a9b6c9 60%, #e9eef6 100%);
+  box-shadow: 0 4px 10px rgba(19,50,79,.18), inset 0 1px 0 #fff; }
+.fav-closet .bar::before, .fav-closet .bar::after { content: ""; position: absolute; top: -6px; width: 8px; height: 22px; border-radius: 4px;
+  background: linear-gradient(180deg, #fff 0%, #dfe7f3 35%, #a9b6c9 60%, #e9eef6 100%); }
+.fav-closet .bar::before { left: -2px; }
+.fav-closet .bar::after { right: -2px; }
+.fav-closet .hangers { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 18px; padding-inline: 8px; }
+.fav-closet .hang { display: grid; justify-items: center; transform-origin: top center; animation: sway 5s ease-in-out infinite; }
+.fav-closet .hang:nth-child(2n) { animation-delay: -2.5s; }
+.fav-closet .hang:nth-child(3n) { animation-delay: -1.2s; }
+@keyframes sway { 0%, 100% { transform: rotate(-1.4deg); } 50% { transform: rotate(1.4deg); } }
+.fav-closet .hook { width: 58px; height: 32px; }
+.fav-closet .tagcard { background: #fff; border-radius: 20px; padding: 10px; width: 100%; display: grid; gap: 8px; margin-top: -4px;
+  box-shadow: 0 12px 26px rgba(90,50,160,.14); border: 2px solid #fff; outline: 1px solid rgba(201,173,255,.5); box-sizing: border-box; }
+.fav-closet .art { background: #fff; border-radius: 14px; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; }
+.fav-closet .art img { width: 100%; height: 100%; object-fit: contain; }
+.fav-closet .art .bp-none { color: var(--h-mute); font-size: 13px; }
+.fav-closet .tagcard h4 { font: 500 14px/1.3 var(--f-body); margin: 0; color: var(--h-ink); }
+.fav-closet .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fav-closet .pricetag { font: 700 13px var(--f-display); background: linear-gradient(180deg, #c49dff, var(--h-accent)); color: #fff;
+  padding: 4px 12px 4px 16px; border-radius: 4px 999px 999px 4px; position: relative; }
+.fav-closet .pricetag::before { content: ""; position: absolute; left: 5px; top: 50%; width: 5px; height: 5px; border-radius: 50%;
+  background: #fff; transform: translateY(-50%); }
+.fav-closet .lnk { font: 500 12px var(--f-body); color: var(--h-accent); text-decoration: none; margin-right: 8px; }
+.fav-closet .x { border: 0; background: #f3ecff; color: var(--h-accent); border-radius: 50%; width: 28px; height: 28px; cursor: pointer; flex: none; }
+.fav-closet .empty { border: 2px dashed var(--h-soft); border-radius: 20px; min-height: 120px; display: grid; place-items: center; text-align: center;
+  color: var(--h-mute); font-family: var(--f-hand); font-size: 22px; padding: 14px; margin-top: 22px; background: rgba(255,255,255,.4); }
+@media (prefers-reduced-motion: reduce) { .fav-closet .hang { animation: none; } }
+
+/* My model (Profile, and the first try-on): the standing figure every try-on dresses */
+.model-card { margin-top: 26px; }
+.model-card h2 { margin: 0 0 4px; font-family: var(--f-display); }
+.model-shot { margin: 12px 0 8px; max-width: 240px; border-radius: 16px; overflow: hidden; background: #eef0f3;
+  box-shadow: 0 8px 20px rgba(19,50,79,.12); }
+.model-shot img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; }
+.model-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; }
+.model-note { margin: 4px 0 0; }
+.model-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+.model-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 14px;
+  border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, .7); }
+.model-choice h3 { margin: 0; font-size: 15px; }
+.model-choice p { margin: 0; flex: 1; }
+.model-links { margin: 10px 0 0; }
+@media (max-width: 600px) { .model-choices { grid-template-columns: 1fr; } }
+
+/* Flat-lay labels: "$54.50 · ASOS ↗" links to the piece in its shop */
+.shop-link { display: block; font: 400 11px/1.6 Jost, sans-serif; font-style: normal; letter-spacing: .06em; color: #8a8a8a;
+  text-decoration: none; white-space: nowrap; }
+.shop-link:hover, .shop-link:focus-visible { color: #2b2b2b; text-decoration: underline; }
+.flatlay:not(.bk-board) { padding: 22px 18px 18px; }
+.flatlay .bk-it { width: 100%; }
+
+/* My Look Book → Outfits: one shelf per season */
+.book-shelf { margin: 0 0 22px; }
+.book-shelf h3 { font: italic 500 22px/1 "Bodoni Moda", serif; margin: 6px 0 10px; display: flex; align-items: baseline; gap: 8px; }
+.book-shelf h3 small { font: 400 12px Jost, sans-serif; font-style: normal; color: var(--muted); }
+
+/* Lightbox: tap a try-on, a Daily Look hero or My model to see it full size */
+.tryon-shot img, .bk-hero img, .model-shot img, img.zoom { cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px;
+  background: rgba(20, 16, 34, .82); cursor: zoom-out; }
+.lightbox figure { margin: 0; max-width: 100%; max-height: 100%; }
+.lightbox img { display: block; max-width: min(100%, 1200px); max-height: calc(100vh - 32px); object-fit: contain;
+  border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,.5); cursor: default; }
+.lightbox-close { position: fixed; top: 14px; right: 14px; width: 44px; height: 44px; border-radius: 50%; border: 0;
+  background: rgba(255,255,255,.92); color: #1f2440; font-size: 20px; cursor: pointer; }
+
+/* Lookbook tab: an outfit's pieces in one row, equal cards, each linking to its shop (feedback #36) */
+.piece-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(130px, 190px); gap: 12px; margin: 8px 0 12px;
+  overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 4px; }
+.piece-cell { margin: 0; display: flex; flex-direction: column; gap: 6px; scroll-snap-align: start; min-width: 0; }
+.piece-img { aspect-ratio: 3 / 4; background: #fff; border-radius: 14px; display: grid; place-items: center; overflow: hidden;
+  box-shadow: 0 6px 16px rgba(18, 48, 90, .08); }
+.piece-img img { width: 100%; height: 100%; object-fit: contain; }
+.piece-cell figcaption { display: flex; flex-direction: column; gap: 2px; }
+.piece-name { font: 500 13px/1.3 var(--f-body); color: var(--ink); }
+.piece-cell .shop-link { white-space: normal; }
+@media (max-width: 600px) { .piece-row { grid-auto-columns: 42%; } }
+
+/* Fitting room: a sticky side panel on wide screens; the bottom bar stays on narrower ones (feedback #36) */
+@media (min-width: 1100px) {
+  body.room-open { padding-bottom: 0; }
+  body.room-open main { max-width: 1260px; padding-right: 220px; }
+  .room { left: auto; right: max(16px, calc((100vw - 1260px) / 2 + 16px)); top: 96px; bottom: auto; transform: none;
+    width: 188px; max-height: calc(100vh - 120px); flex-direction: column; align-items: stretch; gap: 10px; padding: 14px 12px; }
+  .room-actions { display: contents; }
+  .room-total { order: -2; font-size: 18px; text-align: center; }
+  .room-me { order: -1; align-self: center; }
+  .room-pieces { flex-direction: column; overflow-x: hidden; overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+  .room-piece { width: 100%; height: 120px; background: #fff; }
+  .room-piece img { object-fit: contain; }
+  .room-actions > button, .room-actions > .room-need { order: 1; width: 100%; text-align: center; }
+  .room-actions > button[data-room-clear] { order: 2; }
+}
+.model-face { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; font-size: 13px; }
+.model-face img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; }

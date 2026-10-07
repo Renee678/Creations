@@ -3,10 +3,14 @@
 import base64
 import json
 import re
+import struct
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import unquote, unquote_plus, urlparse, parse_qs
 
-from .conftest import LIVE_URL, photo
+import pytest
+
+from .conftest import LIVE_URL, photo, png
 
 from lookmate.catalog.service import BRANDS
 from lookmate.services.colours import NEUTRALS, family
@@ -70,7 +74,11 @@ def test_every_tab_opens_without_errors(page):
 def find_dupes(page, outfit_photo):
     looks = responses(page, r"/api/looks/\d+")
     page.locator("#file").set_input_files(outfit_photo)
-    page.locator("#results .item").first.wait_for()
+    page.locator("#find-btn").click()  # picking a photo only pins it (feedback batch 14)
+    # Stop at the page's own error message (AI failed, access code, too slow) instead of waiting out the timeout.
+    page.locator("#results .item, #status.error").first.wait_for()
+    error = page.locator("#status.error")
+    assert not error.is_visible(), f"Find dupes showed an error instead of results: {error.text_content()}"
     done = [r.json() for r in looks]
     return next(d for d in reversed(done) if d.get("status") == "done")["result"]
 
@@ -190,6 +198,8 @@ def test_tryon_uses_the_uploaded_full_body_photo(page):
     create_looks(page)
     page.locator("[data-room-all]").first.click()
     page.locator("#room [data-room-try]").click()
+    # Without a model, the first try-on offers to make one; skipped, it uses the uploaded photo.
+    page.locator("#tryon-room [data-model-skip]").click()
     page.wait_for_function("document.querySelector('#tryon-room') && document.querySelector('#tryon-room').textContent.includes('stubbed')")
 
     assert not pickers, "try-on asked for a photo again although a full-body photo was uploaded"
@@ -205,3 +215,952 @@ def test_tryon_uses_the_uploaded_full_body_photo(page):
             return Array.from(ctx.getImageData(img.width >> 1, img.height >> 1, 1, 1).data.slice(0, 3));
         }""", stored)
         assert b > r, f"try-on photo is the selfie (rgb {r},{g},{b}), not the full-body photo"
+
+
+def test_a_saved_outfit_becomes_a_look_book_page(page):
+    """2026-10-05: My Style is a Look Book. Save a Lookbook outfit, find its page, flip through, delete it."""
+    tab(page, "lookbook")
+    upload_me(page)
+    lb = create_looks(page)
+    first = next(o for s in lb["sections"] for o in s["outfits"])
+    save = page.locator("#lb-sections .save-outfit").first
+    assert save.inner_text().strip() == "♡ Save to My Style"
+    with page.expect_response(lambda r: r.url.endswith("/outfits") and r.request.method == "POST"):
+        save.click()
+    page.wait_for_function("document.querySelector('#lb-sections .save-outfit').textContent.includes('Saved')")
+
+    tab(page, "style")
+    # Feedback item 31: page tabs instead of "← Contents" and arrows. The book opens on its cover.
+    page.locator("#book-page .bk-cover").wait_for()
+    tabs = page.locator("#book-tabs button")
+    assert [t.inner_text().strip() for t in tabs.all()] == ["Cover", "About me", "Favourites", "Outfits · 1"]
+    assert page.locator("#book-tabs button.on").inner_text().strip() == "Cover"
+    assert page.locator("[data-book-step], [data-book-contents]").count() == 0, "no arrows or contents link"
+    for name, sel in (("About me", ".bk-about #style-report"), ("Favourites", ".fav-closet"), ("Cover", ".bk-cover")):
+        page.locator("#book-tabs button", has_text=name).click()
+        page.locator(f"#book-page {sel}").wait_for()
+        assert page.locator("#book-tabs button.on").inner_text().strip() == name
+
+    page.locator("#book-tabs button", has_text="Outfits").click()
+    look = page.locator("#book-contents .book-thumb-look")
+    look.wait_for()
+    assert look.count() == 1 and page.locator("#book-contents .book-thumb-cover").count() == 0, "the Outfits tab lists outfits"
+    look.click()
+    page.locator("#book-page .bk-look").wait_for()
+    assert page.locator("#book-tabs button.on").inner_text().strip().startswith("Outfits")
+    assert first["title"] in page.locator("#book-page").inner_text(), "the saved outfit's own page"
+    assert page.locator("#book-page .bk-it img, #book-page .bk-it .bp-none").count() == len(first["pieces"])
+
+    page.keyboard.press("ArrowLeft")  # arrow keys (and swipes) still turn the pages
+    page.locator("#book-page .fav-closet").wait_for()
+    page.keyboard.press("ArrowRight")
+    page.locator("#book-page .bk-look").wait_for()
+
+    # Coordinator, 2026-10-05: a page goes out as a 3:4 image for Xiaohongshu.
+    with page.expect_download() as dl:
+        page.locator("[data-book-image]").click()
+    png = Path(dl.value.path()).read_bytes()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n" and dl.value.suggested_filename.endswith(".png")
+    assert struct.unpack(">II", png[16:24]) == (1080, 1440), "a 3:4 portrait, the Xiaohongshu post shape"
+    assert page.locator("[data-book-image]").inner_text().strip() == "⤓ Save as image"
+
+    with page.expect_response(lambda r: "/outfits/" in r.url and r.request.method == "DELETE"):
+        page.locator("[data-book-delete]").click()
+    page.wait_for_function("!document.querySelector('#book-contents .book-thumb-look')")
+    assert page.locator("#book-tabs button.on").inner_text().strip() == "Outfits · 0"
+    assert not page.errors, page.errors
+
+
+def test_find_dupes_waits_for_the_button_and_clears_old_results(page):
+    """Feedback batch 14 #1: picking a photo doesn't start the search; "Find my dupes" does. A new photo clears
+    the old results at once, and moving the price range after results waits for the button too."""
+    posts, fetches = [], []
+    page.on("request", lambda r: posts.append(r.url) if r.method == "POST" and r.url.endswith("/api/looks") else None)
+    page.on("request", lambda r: fetches.append(r.url) if re.search(r"/api/looks/\d+", r.url) else None)
+    shots = outfit_photos()
+    first = shots[0]
+    # Live runs have one real photo: pick it again under another name, which is still a new pick.
+    second = shots[1] if len(shots) > 1 else {**first, "name": f"again-{first['name']}"}
+
+    page.locator("#file").set_input_files(first)
+    page.locator("#find-btn").wait_for()
+    assert page.locator("#price-find").is_visible(), "the price range is set before searching"
+    page.wait_for_timeout(800)
+    assert not posts and page.locator("#results").inner_html().strip() == "", "a photo alone must not start the search"
+
+    page.locator("#find-btn").click()
+    page.locator("#results .item").first.wait_for()
+    assert len(posts) == 1
+
+    page.locator("#file").set_input_files(second)
+    assert page.locator("#results .item").count() == 0, "old results go as soon as a new photo is picked"
+    page.wait_for_timeout(800)
+    assert len(posts) == 1, "the new photo waits for the button too"
+    page.locator("#find-btn").click()
+    page.locator("#results .item").first.wait_for()
+    assert len(posts) == 2
+
+    seen = len(fetches)
+    page.locator("#price-find .pr-max").fill("100")
+    page.locator("#price-find .pr-max").dispatch_event("change")
+    page.wait_for_timeout(500)
+    assert len(fetches) == seen, "moving the price doesn't re-run the search by itself"
+    with page.expect_request(lambda r: "price_max=100" in r.url):
+        page.locator("#find-btn").click()
+    page.locator("#results .item").first.wait_for()
+    assert not page.errors, page.errors
+
+
+def test_price_range_is_one_slider_filled_only_between_the_thumbs(page):
+    """Feedback batch 14 #2: at $0 the "from" slider showed a blue stretch left of its thumb. One track with two
+    thumbs now, filled only between them, on Find dupes and Lookbook alike."""
+    page.locator("#file").set_input_files(outfit_photos()[0])
+    for box in ("#price-find", "#price-lookbook"):
+        if box == "#price-lookbook":
+            tab(page, "lookbook")
+        b = page.locator(box)
+        assert b.locator(".pr-slider").count() == 1 and b.locator("input[type=range]").count() == 2
+        assert b.locator(".pr-min").evaluate("e => getComputedStyle(e).appearance") == "none", \
+            "the browser's own fill is off: it drew the stretch left of the low thumb"
+        for low, high in ((0, 60), (90, 210)):
+            b.locator(".pr-min").fill(str(low))
+            b.locator(".pr-min").dispatch_event("input")
+            b.locator(".pr-max").fill(str(high))
+            b.locator(".pr-max").dispatch_event("input")
+            # Where the browser draws each thumb's centre: half a thumb in from each end of the input.
+            box_ = b.locator(".pr-min").bounding_box()
+            thumb = 20  # style.css: .pr-slider thumbs are 20px wide
+            centre = lambda v: box_["x"] + thumb / 2 + (box_["width"] - thumb) * v / 300  # noqa: E731
+            fill = b.locator(".pr-fill").bounding_box()
+            assert abs(fill["x"] - centre(low)) < 2, f"nothing filled left of the low thumb (at ${low})"
+            assert abs(fill["x"] + fill["width"] - centre(high)) < 2, "and the fill ends at the high thumb"
+    assert not page.errors, page.errors
+
+
+def test_a_piece_saved_in_find_dupes_appears_in_its_my_style_folder(page):
+    """Feedback batch 14 #3/#4: "♡ Save to My Style" on a dupe puts it in My Style → Favourites, in its folder."""
+    from lookmate.api.style import FOLDERS, folder_of
+
+    pick = None
+    for shot in outfit_photos():
+        result = find_dupes(page, shot)
+        pick = next((p for s in result["sections"] for p in s["picks"] if p["category"] == "top"), None) \
+            or next((p for s in result["sections"] for p in s["picks"]), None)
+        if pick:
+            break
+    assert pick, "no dupes at all to save"
+    button = page.locator(f"#results button[data-save='{pick['id']}']").first
+    assert button.inner_text().strip() == "♡ Save to My Style"
+    with page.expect_response(lambda r: r.url.endswith("/saved") and r.request.method == "POST"):
+        button.click()
+    assert button.inner_text().strip() == "Saved ♥"
+
+    folder = folder_of(SimpleNamespace(**pick))
+    label = dict(FOLDERS)[folder]
+    tab(page, "style")
+    page.locator("#book-tabs button", has_text="Favourites").click()
+    section = page.locator(f"#book-page .fav-folder[data-folder='{folder}']")
+    section.wait_for()
+    assert label in section.locator(".rail-h").inner_text()
+    # Feedback item 31: the lilac closet. One silver rail per folder with pieces, each piece on a hook.
+    rails = page.locator("#book-page .fav-closet .rail")
+    counts = {r.get_attribute("data-folder"): r.locator(".hang").count() for r in rails.all()}
+    assert counts and all(counts.values()), f"a rail for every non-empty folder only: {counts}"
+    assert page.locator("#book-page .fav-closet .seg button.off").count() == 9 - 1 - len(counts), "empty folders dimmed"
+    assert section.locator(".hang .hook").count() == section.locator(".hang").count()
+    assert section.locator(".hang .pricetag").first.inner_text().startswith("$")
+    hang = section.locator(".hang").first
+    assert hang.evaluate("e => getComputedStyle(e).animationName") == "sway", "hangers sway"
+    page.emulate_media(reduced_motion="reduce")
+    assert hang.evaluate("e => getComputedStyle(e).animationName") == "none", "but not with reduced motion"
+    assert section.locator(f"[data-fav-remove='{pick['id']}']").count() == 1, f"saved piece is not under {label}"
+    assert section.locator("[data-room]").count() == 0, "no fitting-room button in Favourites (Renee)"
+    remove = section.locator(f"[data-fav-remove='{pick['id']}']")
+    assert remove.inner_text().strip() == "✕"
+    with page.expect_response(lambda r: "/saved/" in r.url and r.request.method == "DELETE"):
+        remove.click()
+    page.wait_for_function(f"!document.querySelector(\"[data-fav-remove='{pick['id']}']\")")
+    page.locator("#book-page .fav-closet .empty").wait_for()  # the only piece: the dashed "empty closet" hint
+    assert not page.errors, page.errors
+
+
+FLIP = {"spring": "autumn", "summer": "winter", "autumn": "spring", "winter": "summer"}
+
+
+def _season_chips(page, box):
+    chips = page.locator(f"{box} button[data-season]")
+    return [c.inner_text().strip() for c in chips.all()], page.locator(f"{box} button[data-season].on").get_attribute("data-season")
+
+
+def _check_four_seasons(page, expected):
+    tab(page, "trends")
+    page.locator("#trend-list .trend").first.wait_for()
+    labels, on = _season_chips(page, "#trend-seasons")
+    assert labels == ["Spring", "Summer", "Autumn", "Winter"], labels
+    assert on == expected
+    assert str(__import__("datetime").date.today().year) in page.locator("#trends-meta").inner_text()
+    for season in ("spring", "summer", "autumn", "winter"):
+        page.locator(f"#trend-seasons [data-season='{season}']").click()
+        page.locator("#trend-list .trend").first.wait_for()  # every season has trends, seed or researched
+
+    tab(page, "lookbook")
+    page.locator("#lb-seasons button[data-season]").first.wait_for()
+    labels, on = _season_chips(page, "#lb-seasons")
+    assert labels == ["Spring", "Summer", "Autumn", "Winter"] and on == expected
+    assert not page.errors, page.errors
+
+
+def test_trends_and_lookbook_offer_all_four_seasons(page):
+    """Feedback (Trends): Spring to Winter for this year, no "now"/"next"; the northern season preselected."""
+    from datetime import datetime, timezone
+
+    from lookmate.services.trends import season_of
+
+    _check_four_seasons(page, season_of(datetime.now(timezone.utc).month))
+
+
+@pytest.mark.timezone("Australia/Sydney")
+def test_a_southern_hemisphere_shopper_starts_on_their_own_season(page):
+    """Feedback (Trends): it's spring in Sydney when it's autumn in New York."""
+    from datetime import datetime, timezone
+
+    from lookmate.services.trends import season_of
+
+    _check_four_seasons(page, FLIP[season_of(datetime.now(timezone.utc).month)])
+
+
+def test_my_model_is_made_in_profile_and_dresses_every_try_on(page):
+    """Feedback #33: Profile -> My model: one full-body photo -> Create my model -> Save; try-ons then dress it.
+
+    Offline there is no Replicate token, so the photo is saved as it is, with a note (the fallback). The try-on
+    call is stubbed, so this never spends Replicate credit on the live site.
+    """
+    if LIVE_URL:
+        pytest.skip("creates and deletes a model on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    assert box.is_visible() and box.locator("[data-model-create]").count() == 0, "nothing to create before a photo"
+    # Feedback #37: an optional face close-up makes the face more like her; it goes with the full-body photo.
+    face = box.locator(".model-face")
+    assert "A clear photo of your face" in face.inner_text() and "optional" in face.inner_text()
+    with page.expect_file_chooser() as fc:
+        face.locator("[data-model-face-pick]").click()
+    fc.value.set_files(photo("selfie", RED))
+    face.locator("img").wait_for()
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    sent = []
+    page.route("**/api/users/*/model", lambda route: (sent.append(route.request.post_data_buffer or b""),
+                                                      route.continue_()))
+    box.locator("[data-model-create]").click()
+    box.locator(".model-shot img").wait_for()
+    page.unroute("**/api/users/*/model")
+    assert b'name="face"' in sent[0] and b'name="photo"' in sent[0], "both photos are sent"
+    assert "REPLICATE_API_TOKEN" in box.locator(".model-note").inner_text(), "the fallback says why"
+    assert box.locator("[data-model-original]").count() == 0, "a saved-as-is photo has no 'use original'"
+    with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):
+        box.locator("[data-model-save]").click()
+    box.locator("[data-model-delete]").wait_for()
+
+    # Saved on the server: a new visit on another device finds it.
+    page.reload()
+    tab(page, "profile")
+    box.locator("[data-model-delete]").wait_for()
+    image_url = box.locator(".model-shot img").get_attribute("src")
+    assert image_url.startswith("/api/body-models/")
+
+    # The fitting room dresses the model: no photo is asked for or sent.
+    sent = []
+    page.route("**/api/users/*/tryons", lambda route: (sent.append(route.request.post_data_buffer),
+               route.fulfill(status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"}))))
+    page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(
+        content_type="application/json", body=json.dumps({"id": "e2e-stub", "status": "failed", "error": "stubbed by e2e"})))
+    pickers = []
+    page.on("filechooser", lambda fc: pickers.append(fc))
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    assert page.locator("#room .room-me img").get_attribute("src") == image_url, "the tray shows My model"
+    page.locator("#room [data-room-try]").click()
+    page.wait_for_function("document.querySelector('#tryon-room') && document.querySelector('#tryon-room').textContent.includes('stubbed')")
+    assert not pickers and len(sent) == 1
+    assert b'name="photo"' not in sent[0], "with a saved model the server dresses it; no photo is uploaded"
+
+    # Delete my model: gone from the server too.
+    tab(page, "profile")
+    box.locator("[data-model-delete]").click()
+    box.locator("[data-model-pick]").wait_for()
+    assert page.request.get(image_url).status == 404
+    assert page.errors == []
+
+
+def test_skipped_at_sign_up_my_model_is_offered_in_the_fitting_room(page):
+    """Feedback #33: skipped at sign-up, the first try-on shows the same step; what's made is saved to Profile."""
+    if LIVE_URL:
+        pytest.skip("creates a model on the server; offline only")
+    page.route("**/api/users/*/tryons", lambda route: route.fulfill(
+        status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
+    page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(
+        content_type="application/json", body=json.dumps({"id": "e2e-stub", "status": "failed", "error": "stubbed by e2e"})))
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room [data-room-try]").click()
+    step = page.locator("#tryon-room .model-step")
+    with page.expect_file_chooser() as fc:
+        step.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    step.locator("[data-model-create]").click()
+    step.locator("[data-model-save]").click()
+    page.wait_for_function("document.querySelector('#tryon-room').textContent.includes('stubbed')")
+
+    tab(page, "profile")
+    page.locator("#my-model [data-model-delete]").wait_for()
+    assert page.locator("#my-model .model-shot img").get_attribute("src").startswith("/api/body-models/")
+
+
+def test_lookbook_pieces_link_to_shops_and_outfits_shelve_by_season(page):
+    """Feedback #34/#36/#39: a Lookbook outfit shows each piece once, as its shop card (price, shop links,
+    + fitting room) in one row, outer layer first, right under the title with Save and + whole outfit (no board,
+    no second "Shop each piece" list). My Look Book → Outfits files saved looks under season shelves."""
+    tab(page, "lookbook")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok) as resp:
+        page.locator("[data-lb-browse]").click()
+    first = next(o for s in resp.value.json()["sections"] for o in s["outfits"])
+    card = page.locator("#lb-sections .outfit").first
+    card.wait_for()
+    assert card.locator(".board, .flatlay, .piece-row, details").count() == 0, "each piece shows once"
+    cells = card.locator(".outfit-pieces .card")
+    assert cells.count() == len(first["pieces"])
+    for p in first["pieces"]:
+        assert card.locator(f'[data-room="{p["id"]}"]').count() == 1, "one + fitting room per piece"
+    assert card.locator(".item-head [data-room-all]").count() == 1 and card.locator(".item-head .save-outfit").count() == 1
+    boxes = [cells.nth(i).bounding_box() for i in range(cells.count())]
+    ys = [b["y"] for b in boxes]
+    assert max(ys) - min(ys) < 20, "one row (the cards are tilted a little, scrapbook style)"
+    assert [b["x"] for b in boxes] == sorted(b["x"] for b in boxes)
+    assert boxes[0]["y"] < card.locator(".item-head").bounding_box()["y"] + 200, "right under the title"
+    order = ["outerwear", "top", "dress", "bottom", "shoes", "bag", "accessory"]
+    shown = sorted(first["pieces"], key=lambda p: order.index(p["category"]) if p["category"] in order else 99)
+    for i, p in enumerate(shown):
+        cell = cells.nth(i)
+        assert cell.locator(".price").inner_text().strip() == f"${p['price']:.2f}"
+        links = cell.locator(".shop a")
+        assert links.count() >= 2 and all(a.get_attribute("href").startswith("https://") for a in links.all())
+        assert links.first.get_attribute("target") == "_blank"
+
+    # A single piece goes into the fitting room on its own.
+    cells.nth(0).locator("[data-room]").click()
+    page.locator("#room .room-piece").first.wait_for()
+    assert page.locator("#room .room-piece").count() == 1
+
+    saved = []
+    for _ in range(2):
+        saved.append(page.locator("#lb-seasons .chip.on").get_attribute("data-season"))
+        with page.expect_response(lambda r: r.url.endswith("/outfits") and r.request.method == "POST"):
+            page.locator("#lb-sections .save-outfit").first.click()
+        other = next(c for c in page.locator("#lb-seasons .chip").all() if c.get_attribute("data-season") not in saved)
+        with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok):
+            other.click()
+        page.locator("#lb-sections .outfit").first.wait_for()
+
+    tab(page, "style")
+    page.locator("#book-tabs button", has_text="Outfits").click()
+    page.locator("#book-contents .book-shelf").first.wait_for()
+    order = ["spring", "summer", "autumn", "winter"]
+    shelves = page.locator("#book-contents .book-shelf")
+    assert [s.get_attribute("data-shelf") for s in shelves.all()] == sorted(saved, key=order.index), \
+        "one shelf per season with outfits, in season order"
+    for s in shelves.all():
+        assert s.locator(".book-thumb-look").count() == 1
+    assert page.locator("#book-contents .book-add").count() == 1
+
+    # The saved look's flat-lay page has the same shop links.
+    shelves.first.locator(".book-thumb-look").click()
+    page.locator("#book-page .bk-flat .bk-lab a.shop-link").first.wait_for()
+    assert not page.errors, page.errors
+
+
+def test_try_on_and_my_model_pictures_open_full_size(page):
+    """Feedback #35: the try-on polaroid, the Daily Look hero and My model open full size; ✕, Esc or a click
+    outside closes it."""
+    if LIVE_URL:
+        pytest.skip("creates a model on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    box.locator("[data-model-create]").click()
+    with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):
+        box.locator("[data-model-save]").click()
+    shot = box.locator(".model-shot img")
+    shot.wait_for()
+    src = shot.get_attribute("src")
+
+    lightbox = page.locator("#lightbox")
+    for close in ("Escape", "button", "outside"):
+        shot.click()
+        lightbox.wait_for()
+        assert lightbox.locator("img").get_attribute("src") == src
+        lightbox.locator("img").click()  # a click on the picture itself keeps it open
+        assert lightbox.is_visible()
+        if close == "Escape":
+            page.keyboard.press("Escape")
+        elif close == "button":
+            lightbox.locator(".lightbox-close").click()
+        else:
+            page.mouse.click(5, 450)
+        lightbox.wait_for(state="detached")
+
+    # The try-on result ("you, in this look") opens the same way.
+    page.route("**/api/users/*/tryons", lambda route: route.fulfill(
+        status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
+    page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(content_type="application/json", body=json.dumps(
+        {"id": "e2e-stub", "status": "done", "image_url": src,
+         "result": {"rendered": True, "rendered_ids": []}})))
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room [data-room-try]").click()
+    result = page.locator("#tryon-room .tryon-shot:not(.rendering) img")
+    result.wait_for()
+    result.click()
+    lightbox.wait_for()
+    assert lightbox.locator("img").get_attribute("src") == src
+    page.keyboard.press("Escape")
+    lightbox.wait_for(state="detached")
+    assert page.errors == []
+
+
+
+def test_a_piece_without_a_photo_stops_the_try_on_and_the_face_note_needs_the_paste_back(page):
+    """Feedback #38: a garment is never drawn from words. The worker stops before the model with a message naming
+    the piece, and the page shows it with Try again. "Face kept from My model" shows only when the head was
+    really pasted back. The try-on API is stubbed, so nothing is spent, even on the live site."""
+    missing = ("We couldn't load the photo for Satin midi skirt, so we won't guess what it looks like. "
+               "Try again, or swap it for another piece.")
+    answers = [
+        {"status": "failed", "error": missing},
+        {"status": "done", "result": {"rendered": True, "rendered_ids": [], "head_pasted": True}},
+        {"status": "done", "result": {"rendered": True, "rendered_ids": [], "head_pasted": False,
+                                      "head_paste_skipped": "moved"}},
+    ]
+    shown = []
+    page.route("**/api/users/*/tryons", lambda route: route.fulfill(
+        status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
+
+    def answer(route):
+        shown.append(answers[min(len(shown), len(answers) - 1)])
+        route.fulfill(content_type="application/json", body=json.dumps(
+            {"id": "e2e-stub", "image_url": "/static/logo.svg", **shown[-1]}))
+
+    page.route("**/api/tryons/e2e-stub", answer)
+    tab(page, "lookbook")
+    upload_me(page)
+    create_looks(page)
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room [data-room-try]").click()
+    page.locator("#tryon-room [data-model-skip]").click()
+    error = page.locator("#tryon-room .status.error")
+    error.wait_for()
+    assert missing in error.inner_text(), "the message names the piece and says nothing was guessed"
+    assert page.locator("#tryon-room .tryon-shot:not(.rendering) img").count() == 0, "no picture"
+
+    error.locator("[data-tryon-retry]").click()
+    # Wait for the finished picture's note, not the "Usually ready in under a minute" one while it renders.
+    note = page.locator("#tryon-room .tryon-board + p", has_text="Rendered")
+    note.wait_for()
+    assert "Face kept from My model." in note.inner_text()
+    page.locator("#room [data-room-try]").click()
+    page.wait_for_function("() => { const p = document.querySelector('#tryon-room .tryon-board + p');"
+                           " return p && p.textContent.includes('Rendered') && !p.textContent.includes('Face kept'); }")
+    assert len(shown) == 3, "the third answer (head not pasted back) has no face note"
+    assert page.errors == []
+
+
+def test_the_browser_hands_shop_photos_to_the_server_when_a_piece_enters_the_fitting_room(page):
+    """Feedback #38: some shop CDNs refuse our server but not shoppers. Adding a piece to the tray fetches its photo
+    in the browser (CORS) and posts the bytes to the server's cache; a CORS refusal is only reported, and the
+    tray never waits for any of it. The shop CDN is stubbed: one piece allows CORS, the others don't."""
+    if LIVE_URL:
+        pytest.skip("rewrites the catalog photos; offline only")
+    from .conftest import png
+
+    picture = png(GREEN)
+
+    def with_cdn_photos(route):
+        data = route.fetch().json()
+
+        def walk(x):
+            if isinstance(x, dict):
+                if "image_url" in x and "id" in x:
+                    x["image_url"] = f"https://cdn.e2e.test/{x['id']}.png"
+                for v in x.values():
+                    walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(data)
+        route.fulfill(content_type="application/json", body=json.dumps(data))
+
+    allowed = []
+
+    def cdn(route):
+        # Playwright answers a stubbed request's CORS check itself, so a refusal is stubbed as what the page sees
+        # from one: a failed fetch (a TypeError, with no detail).
+        if allowed and route.request.url.endswith(f"/{allowed[0]}.png"):
+            route.fulfill(content_type="image/png", body=picture, headers={"Access-Control-Allow-Origin": "*"})
+        else:
+            route.abort("accessdenied")
+
+    posts = []
+    page.on("request", lambda r: posts.append(r) if re.search(r"/api/products/[^/]+/photo", r.url)
+            and r.method == "POST" else None)
+    page.route("**/lookbook?*", with_cdn_photos)
+    page.route("https://cdn.e2e.test/**", cdn)
+    tab(page, "lookbook")
+    upload_me(page)
+    looks = create_looks(page)
+    pieces = page.evaluate("Array.from(document.querySelectorAll('#lb-sections .outfit')[0]"
+                           ".querySelectorAll('[data-room]')).map((b) => b.dataset.room)")
+    allowed.append(pieces[0])
+    assert looks and len(pieces) > 1
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room .room-piece").first.wait_for()  # the tray is there at once, photos or not
+    deadline = 50
+    while len(posts) < len(pieces) and deadline:
+        page.wait_for_timeout(100)
+        deadline -= 1
+    uploaded = [r for r in posts if "blocked" not in r.url]
+    blocked = [r for r in posts if "blocked=true" in r.url]
+    assert len(uploaded) == 1 and f"/api/products/{pieces[0]}/photo" in uploaded[0].url
+    assert uploaded[0].post_data_buffer == picture, "the photo's own bytes"
+    assert len(blocked) == len(pieces) - 1, "every refused photo is reported, nothing more"
+    assert page.errors == []
+
+
+def test_no_photo_of_the_person_is_marked_unusable_in_the_lookbook(page):
+    """Feedback #40: try-on dresses My model, so Lookbook photos are for colours, style and likes. A real photo
+    of the person never gets a red "not usable" (even a seated, warm-lit one); only a photo with nobody in it
+    gets a gentle note. The analysis is stubbed with the checks Renee's photos got."""
+    if LIVE_URL:
+        pytest.skip("rewrites the analysis; offline only")
+    checks = [
+        {"framing": "upper_body", "good_for_colour": True, "good_for_tryon": False, "tip": "Great for your colours."},
+        {"framing": "full_body", "good_for_colour": False, "good_for_tryon": False,
+         "tip": "A lovely photo of your style; daylight would show your colours truest."},
+    ]
+
+    def with_checks(route):
+        res = route.fetch()
+        data = res.json()
+
+        def walk(x):
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    if k == "photo_checks" and v:
+                        x[k] = checks
+                    else:
+                        walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(data)
+        route.fulfill(response=res, body=json.dumps(data))
+
+    page.route(re.compile(r".*/api/users/\d+/lookbook.*"), with_checks)
+    tab(page, "lookbook")
+    upload_me(page)
+    captions = page.locator("#lookbook figcaption[id^=me-check-]")
+    page.wait_for_function("document.querySelectorAll('#lookbook figcaption[id^=me-check-].ok').length === 2")
+    text = " ".join(captions.all_inner_texts())
+    assert "not usable" not in text and "✗" not in text
+    assert page.locator("#lookbook figcaption.warn").count() == 0
+    first, second = captions.nth(0).inner_text().splitlines(), captions.nth(1).inner_text().splitlines()
+    assert first[:2] == ["Waist up", "✓ style + colours"], first
+    assert second[:2] == ["Full body", "✓ style"], "a seated, warm-lit full-body photo still counts for style"
+    assert "None of these photos" not in page.locator("#lookbook").inner_text()
+    assert page.errors == []
+
+
+def test_my_photo_as_it_is_and_the_try_on_says_who_drew_it_and_what_it_left_out(page):
+    """Feedback #41: Profile offers "Keep my photo" next to the studio version (the face stays exactly
+    hers); a try-on names the model that drew it and the pieces it didn't draw. The try-on is stubbed."""
+    if LIVE_URL:
+        pytest.skip("creates a model on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    as_is = box.locator("[data-model-original]", has_text="Use this photo")
+    as_is.wait_for()
+    # Renee (2026-10-06): two equal choice cards, each saying what it does, instead of a row of four buttons.
+    cards = box.locator(".model-choice")
+    assert cards.count() == 2
+    studio, keep = cards.nth(0), cards.nth(1)
+    assert "Studio version" in studio.inner_text() and "recommended" in studio.inner_text()
+    assert "face can differ" in studio.inner_text() and studio.locator("[data-model-create]").inner_text() == "Create my model"
+    assert "Keep my photo" in keep.inner_text() and "exactly yours" in keep.inner_text()
+    assert keep.locator("[data-model-original]").count() == 1
+    a, b = studio.bounding_box(), keep.bounding_box()
+    assert abs(a["y"] - b["y"]) < 2 and abs(a["width"] - b["width"]) < 2 and b["x"] > a["x"], "side by side, equal"
+    links = box.locator(".model-links")
+    assert links.locator("[data-model-pick]").inner_text() == "Choose another photo"
+    assert links.locator("[data-model-skip]").count() == box.locator("[data-model-skip]").count(), "skip is a small link"
+    assert links.bounding_box()["y"] > a["y"] + a["height"], "links below the cards"
+    page.set_viewport_size({"width": 390, "height": 844})
+    a, b = studio.bounding_box(), keep.bounding_box()
+    assert b["y"] >= a["y"] + a["height"] and page.evaluate("document.documentElement.scrollWidth <= innerWidth"), \
+        "stacked on phones"
+    page.set_viewport_size({"width": 1280, "height": 900})
+    sent = []
+    page.route("**/api/users/*/model", lambda route: (sent.append(route.request.post_data_buffer or b""),
+                                                      route.continue_()))
+    as_is.click()
+    box.locator(".model-shot img").wait_for()
+    page.unroute("**/api/users/*/model")
+    assert re.search(rb'name="original"\r\n\r\ntrue', sent[0]), "kept as it is, nothing generated"
+    assert "your own photo" in box.inner_text().lower()
+    with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):
+        box.locator("[data-model-save]").click()
+
+    page.route("**/api/users/*/tryons", lambda route: route.fulfill(
+        status=202, content_type="application/json", body=json.dumps({"id": "e2e-stub"})))
+    page.route("**/api/tryons/e2e-stub", lambda route: route.fulfill(content_type="application/json", body=json.dumps(
+        {"id": "e2e-stub", "status": "done", "image_url": "/static/logo.svg",
+         "result": {"rendered": True, "rendered_ids": [], "model": "fashn", "head_pasted": False}})))
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    page.locator("#room [data-room-try]").click()
+    note = page.locator("#tryon-room .tryon-board + p", has_text="Rendered")
+    note.wait_for()
+    text = note.inner_text()
+    assert "Rendered by FASHN." in text and "Not drawn by this model:" in text and "Face kept" not in text
+    assert page.errors == []
+
+
+def test_the_fitting_room_is_a_side_panel_on_wide_screens_and_a_bottom_bar_on_phones(page):
+    """Feedback #36: at 1100px and wider the fitting room docks beside the content without covering it."""
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    room = page.locator("#room")
+    room.wait_for()
+    tray, content = room.bounding_box(), page.locator("#lb-sections").bounding_box()
+    assert tray["height"] > tray["width"], "a vertical panel"
+    assert tray["x"] >= content["x"] + content["width"], "beside the content, not over it"
+    kids = [room.locator(sel).bounding_box()["y"] for sel in (".room-total", ".room-pieces", "[data-room-try]", "[data-room-clear]")]
+    assert kids == sorted(kids), "total, pieces, Try it on me, clear: top to bottom"
+    thumbs = room.locator(".room-piece")
+    assert thumbs.count() > 1 and thumbs.nth(1).bounding_box()["y"] > thumbs.nth(0).bounding_box()["y"], "stacked"
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    tray = room.bounding_box()
+    assert tray["width"] > tray["height"] and tray["y"] + tray["height"] > 844 - 40, "the bottom bar on a phone"
+
+
+def test_trying_the_same_outfit_again_draws_a_new_picture(page):
+    """Renee (2026-10-06): every click on "Try it on me" renders anew; a finished picture is never handed back."""
+    if LIVE_URL:
+        pytest.skip("runs real try-ons on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    box.locator("[data-model-original]").click()
+    box.locator(".model-shot img").wait_for()
+    with page.expect_response(lambda r: r.url.endswith("/save") and r.ok):
+        box.locator("[data-model-save]").click()
+
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    ids = []
+    for _ in range(2):
+        with page.expect_response(lambda r: r.url.endswith("/tryons") and r.request.method == "POST") as posted:
+            page.locator("#room [data-room-try]").click()
+        res = posted.value
+        assert res.status == 202, "a new render was queued, not an old one handed back"
+        ids.append(res.json()["id"])
+        page.wait_for_function("""(id) => fetch('/api/tryons/' + id).then(r => r.json()).then(t => t.status === 'done')""",
+                               arg=ids[-1], polling=500)
+        page.locator("#tryon-room .tryon-shot:not(.rendering)").first.wait_for()
+    assert ids[0] != ids[1]
+    assert page.errors == []
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_look_book_outfit_filters_start_at_the_left_edge(page, width):
+    """Renee (2026-10-06): the Season and Style chips in My Look Book → Outfits were centred. Each is a row with
+    its label in front, starting at the same left edge as the season heading and the cards, on phones too."""
+    page.set_viewport_size({"width": width, "height": 900})
+    tab(page, "lookbook")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok):
+        page.locator("[data-lb-browse]").click()
+    with page.expect_response(lambda r: r.url.endswith("/outfits") and r.request.method == "POST"):
+        page.locator("#lb-sections .save-outfit").first.click()
+    tab(page, "style")
+    page.locator("#book-tabs button", has_text="Outfits").click()
+    heading = page.locator("#book-contents .book-shelf h3").first
+    heading.wait_for()
+    left = heading.bounding_box()["x"]
+    rows = page.locator("#book-outfits .mo-filters .trend-filter")
+    assert [r.locator(".sr-label").inner_text().strip().lower() for r in rows.all()] == ["season", "style"]
+    labels = [r.locator(".sr-label").bounding_box()["x"] for r in rows.all()]
+    chips = [r.locator(".chip").first.bounding_box()["x"] for r in rows.all()]
+    assert all(abs(x - left) < 2 for x in labels), (labels, left)
+    assert abs(chips[0] - chips[1]) < 2, "both chip rows start at the same x"
+    assert chips[0] - left < 80, "chips sit right after the label, not centred"
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert not page.errors, page.errors
+
+
+def test_photos_uploaded_while_the_lookbook_is_still_opening_are_read(page):
+    """The Lookbook tab's first request could answer after new photos were uploaded; its old answer (no analysis)
+    was kept, so the photos' reading never showed. Held back here until the upload has gone out."""
+    held = []
+
+    def hold_first(route):
+        if held:
+            return route.continue_()
+        held.append((route, route.fetch()))
+
+    page.route("**/lookbook/setup", hold_first)
+    tab(page, "lookbook")
+    deadline = 50
+    while not held and deadline:
+        page.wait_for_timeout(100)
+        deadline -= 1
+    assert held, "the tab asked for its setup"
+    with page.expect_response(lambda r: r.url.endswith("/analyses") and r.request.method == "POST"):
+        page.locator("#me-files").set_input_files([photo("selfie", RED), photo("fullbody", BLUE)])
+    route, stale = held[0]
+    route.fulfill(response=stale)
+    page.wait_for_function("document.querySelector('#me-status').hidden && !!document.querySelector('#me-analysis .me-summary')")
+    assert not page.errors, page.errors
+
+
+def test_nothing_outside_the_price_range_is_ever_shown(page):
+    """Renee (2026-10-06): $0-$85 showed $190 jeans as "Above your price range: closest match". The range is a
+    hard filter on Find dupes and in the Lookbook; when it holds nothing, the page says so."""
+    low, high = 0, 10
+    b = page.locator("#price-find")
+    assert "outside the range" not in b.inner_text(), "no promise of pricier fill-ins"
+    page.locator("#file").set_input_files(outfit_photos()[0])
+    b.locator(".pr-min").fill(str(low))
+    b.locator(".pr-min").dispatch_event("change")
+    b.locator(".pr-max").fill(str(high))
+    b.locator(".pr-max").dispatch_event("change")
+    looks = responses(page, r"/api/looks/\d+")
+    page.locator("#find-btn").click()
+    page.locator("#results .item").first.wait_for()
+    result = next(d for d in reversed([r.json() for r in looks]) if d.get("status") == "done")["result"]
+    assert result["price_range"] == {"low": low, "high": high}
+    prices = [float(t.strip().lstrip("$")) for t in page.locator("#results .card .price").all_inner_texts()]
+    assert all(low <= x <= high for x in prices), prices
+    text = page.locator("#results").inner_text()
+    assert "price range: closest" not in text.lower() and "above your price" not in text.lower()
+    for s in result["sections"]:
+        assert all(low <= p["price"] <= high for p in s["picks"])
+        if not s["picks"] and not s["hidden"] and s["note"].startswith("Nothing in"):
+            assert s["note"] == f"Nothing in ${low}–${high} matches this piece. Widen the price range to see more."
+            assert s["note"] in text
+
+    tab(page, "lookbook")
+    lb_box = page.locator("#price-lookbook")
+    assert "outside the range" not in lb_box.inner_text()
+    lb_high = 15
+    for thumb, value in ((".pr-min", 0), (".pr-max", lb_high)):
+        lb_box.locator(thumb).fill(str(value))
+        lb_box.locator(thumb).dispatch_event("change")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok) as resp:
+        page.locator("[data-lb-browse]").click()
+    lb = resp.value.json()
+    pieces = [p for s in lb["sections"] for o in s["outfits"] for p in o["pieces"]]
+    assert lb["price_range"] == {"low": 0, "high": lb_high}
+    assert all(p["price"] <= lb_high for p in pieces), [p["price"] for p in pieces if p["price"] > lb_high]
+    notes = [o["missing_note"] for s in lb["sections"] for o in s["outfits"] if o["missing_note"]]
+    if not LIVE_URL:  # the offline catalog has no $0-$10 match for the outfit photo's second piece
+        assert any(s["note"].startswith("Nothing in") for s in result["sections"])
+        assert pieces and notes, "outfits keep what fits and say what the range left out"
+    if notes:
+        page.locator("#lb-sections .outfit-missing").first.wait_for()
+        assert page.locator("#lb-sections .outfit-missing").first.inner_text().startswith(f"Nothing in $0–${lb_high} for the ")
+    assert not page.errors, page.errors
+
+
+def test_the_profile_form_starts_at_a_50_dollar_budget(browser, base_url):
+    """Renee (2026-10-06): a new shopper's budget per item starts at $50, not $30."""
+    context = browser.new_context(base_url=base_url, service_workers="block")
+    pg = context.new_page()
+    pg.goto("/")
+    field = pg.locator("#profile-form [name=budget_per_item]")
+    field.wait_for()
+    assert field.input_value() == "50"
+    context.close()
+
+
+def test_the_default_price_range_is_the_budget_exactly(page):
+    """Renee (2026-10-06): with the hard filter, the default range is $0 up to the budget per item, not 1.5x."""
+    if LIVE_URL:
+        pytest.skip("the live profile's budget is whatever the tester saved")
+    page.locator("#file").set_input_files(outfit_photos()[0])
+    page.wait_for_function("document.querySelector('#price-find .pr-max').value === '50'")
+    result = find_dupes(page, outfit_photos()[0])
+    assert result["price_range"] == {"low": 0, "high": 50}
+    tab(page, "lookbook")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok) as resp:
+        page.locator("[data-lb-browse]").click()
+    assert resp.value.json()["price_range"] == {"low": 0, "high": 50}
+    assert not page.errors, page.errors
+
+
+def test_product_photos_open_full_size(page):
+    """Renee (2026-10-06): product photos are too small; every one opens in the lightbox, and the card's own
+    buttons and links keep working. Find dupes, the fitting-room tray (× still removes) and Trends.
+    The offline catalog has no photos, so pieces without one get the app's logo."""
+    def with_photos(route):
+        res = route.fetch()
+        data = res.json()
+
+        def walk(x):
+            if isinstance(x, dict):
+                if "id" in x and x.get("image_url") == "":
+                    x["image_url"] = "/static/logo.svg"
+                for v in x.values():
+                    walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+        walk(data)
+        route.fulfill(response=res, json=data)
+
+    for pattern in ("**/api/looks/*", "**/lookbook?*", "**/api/trends*"):
+        page.route(pattern, with_photos)
+    find_dupes(page, outfit_photos()[0])
+    card = page.locator("#results .card").first
+    photo_ = card.locator(".img img")
+    src = photo_.get_attribute("src")
+    photo_.click()
+    box = page.locator("#lightbox")
+    box.wait_for()
+    assert box.locator("img").get_attribute("src") == src
+    page.keyboard.press("Escape")
+    box.wait_for(state="detached")
+
+    tab(page, "lookbook")
+    page.locator("[data-lb-browse]").click()
+    page.locator("[data-room-all]").first.click()
+    tray = page.locator("#room .room-piece")
+    tray.first.wait_for()
+    n = tray.count()
+    tray.first.locator("img").click()
+    box.wait_for()
+    box.click(position={"x": 5, "y": 5})  # tap outside the picture
+    box.wait_for(state="detached")
+    assert tray.count() == n, "tapping the photo doesn't remove the piece"
+    tray.first.locator("i").click()
+    page.wait_for_function(f"document.querySelectorAll('#room .room-piece').length === {n - 1}")
+
+    tab(page, "trends")
+    img = page.locator("#trends .trend .card .img img").first
+    img.wait_for()
+    img.click()
+    box.wait_for()
+    assert box.locator("img").get_attribute("src") == img.get_attribute("src")
+    box.locator(".lightbox-close").click()
+    box.wait_for(state="detached")
+    assert not page.errors, page.errors
+
+
+def test_my_model_starts_over_from_new_photos_instead_of_regenerating(page):
+    """Renee (2026-10-07): "Try again" redrew the model from the same photo. She wants to upload a new full-body,
+    half-body or face photo and make a new one: the button goes back to the upload step instead."""
+    if LIVE_URL:
+        pytest.skip("creates a model on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    # Offline there is no image model: answer as a generated (studio) model would, without spending credit.
+    done = {"id": 987654, "status": "done", "generated": True, "note": None, "error": None,
+            "image_url": "data:image/png;base64," + base64.b64encode(png((180, 180, 180))).decode()}
+    page.route("**/api/users/*/model", lambda route: route.fulfill(status=202, content_type="application/json",
+                                                                   body=json.dumps(done)))
+    box.locator("[data-model-create]").click()
+    box.locator("[data-model-save]").wait_for()
+    page.unroute("**/api/users/*/model")
+    assert box.get_by_text("Try again").count() == 0, "no blind regenerate"
+    assert box.locator("[data-model-create]").count() == 0
+    restart = box.locator("[data-model-restart]")
+    assert restart.inner_text() == "Upload new photos"
+    assert box.locator("[data-model-original]").count() == 1, "a studio model can still go back to the photo"
+    restart.click()
+    assert box.locator("[data-model-save]").count() == 0 and box.locator(".model-shot").count() == 0
+    assert box.locator("[data-model-pick]").inner_text() == "Choose a full-body photo"
+    assert "A clear photo of your face" in box.locator(".model-face").inner_text(), "a new face photo can go too"
+    assert page.errors == []
+
+
+def test_a_flat_lay_of_a_top_and_trousers_stands_centred_without_arrows(page):
+    """Renee (2026-10-07): in My Look Book a top and trousers sat right of centre, beside an empty layers column, each
+    with a curved arrow pointing at its label. The board keeps only the columns something sits in; no arrows."""
+    sizes = page.evaluate("""() => {
+      const piece = (id, category) => ({ id, category, name: `${category} piece`, colour: "cream", price: 30,
+                                          image_url: "", shop: null });
+      const box = document.createElement("div");
+      box.style.width = "760px";
+      document.body.appendChild(box);
+      const measure = (pieces) => {
+        box.innerHTML = flatLayHtml(pieces, { book: true });
+        const board = box.querySelector(".board").getBoundingClientRect();
+        const figs = [...box.querySelectorAll(".bk-it")].map((f) => f.getBoundingClientRect());
+        return { columns: getComputedStyle(box.querySelector(".board")).gridTemplateColumns.split(" ").length,
+                 arrows: box.querySelectorAll(".bk-arrow, svg").length,
+                 offsets: figs.map((f) => Math.abs((f.left + f.width / 2) - (board.left + board.width / 2))),
+                 boardCentre: board.left + board.width / 2, boxCentre: box.getBoundingClientRect().left + 380 };
+      };
+      const two = measure([piece("t", "top"), piece("b", "bottom")]);
+      const full = measure([piece("o", "outerwear"), piece("t", "top"), piece("b", "bottom"), piece("g", "bag")]);
+      box.remove();
+      return { two, full };
+    }""")
+    two, full = sizes["two"], sizes["full"]
+    assert two["columns"] == 1 and two["arrows"] == 0
+    assert max(two["offsets"]) < 2, "the top and trousers stand in the middle of the board"
+    assert abs(two["boardCentre"] - two["boxCentre"]) < 2, "and the board in the middle of the page"
+    assert full["columns"] == 3 and full["arrows"] == 0, "a coat and a bag still get their side columns"
+    assert page.errors == []
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_look_book_page_buttons_are_one_row_of_same_size_pills(page, width):
+    """Renee (2026-10-07): under an outfit page, Rename, Try it on me, Save as image and Delete had different sizes and
+    Delete was a bare link. They are now pills of one height, in one row on a laptop, Delete included."""
+    page.set_viewport_size({"width": width, "height": 900})
+    tab(page, "lookbook")
+    with page.expect_response(lambda r: "/lookbook?" in r.url and r.ok):
+        page.locator("[data-lb-browse]").click()
+    with page.expect_response(lambda r: r.url.endswith("/outfits") and r.request.method == "POST"):
+        page.locator("#lb-sections .save-outfit").first.click()
+    tab(page, "style")
+    page.locator("#book-tabs button", has_text="Outfits").click()
+    page.locator("#book-contents .book-thumb-look").first.click()
+    buttons = page.locator("#book-actions button")
+    buttons.first.wait_for()
+    assert [b.inner_text().strip().split()[-1] for b in buttons.all()] == ["Rename", "me", "image", "Delete"]
+    boxes = [b.bounding_box() for b in buttons.all()]
+    assert max(b["height"] for b in boxes) - min(b["height"] for b in boxes) < 1, boxes
+    if width >= 1000:
+        assert max(b["y"] for b in boxes) - min(b["y"] for b in boxes) < 1, "one row"
+    for b in buttons.all():
+        style = b.evaluate("e => { const s = getComputedStyle(e); return [s.borderTopWidth, s.borderRadius]; }")
+        assert style[0] != "0px" and style[1] != "0px", "every button is a pill with an outline"
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert not page.errors, page.errors

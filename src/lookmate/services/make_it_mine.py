@@ -67,8 +67,8 @@ def make_it_mine(look_result: dict, catalog: Catalog, user: UserContext, analysi
         colour, why = adapt_colour(item["colour"], palette, season)
         target = family(colour)
         query = _recolour(f"{item['name']}. {item['search_query']}", item["colour"], colour)
-        found = (search_in_range(catalog, query, CANDIDATES, item["category"], price, exclude=used, any_price=False)
-                 or search_in_range(catalog, query, CANDIDATES, item["category"], price, any_price=False))
+        found = (search_in_range(catalog, query, CANDIDATES, item["category"], price, exclude=used)
+                 or search_in_range(catalog, query, CANDIDATES, item["category"], price))
         # The new colour is the point: keep pieces of that colour family when there are any.
         same = [c for c in found if target is None or _colour_family(c.product) == target]
         options = sorted((_scored(c, user, palette, style, item["name"], price) for c in (same or found)),

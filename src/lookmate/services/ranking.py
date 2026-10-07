@@ -42,7 +42,7 @@ STYLE_KEYWORDS = {
 @dataclass(frozen=True)
 class UserContext:
     body_shape: str = "unsure"
-    budget_per_item: float = 30.0
+    budget_per_item: float = 50.0
     style_weights: dict[str, float] = field(default_factory=dict)  # label -> 0..1 from profile + memory
 
 
@@ -96,7 +96,7 @@ def price_score(price: float, budget: float) -> float:
 
 
 def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, k: int = 4) -> list[RankedPick]:
-    target = Target(item.category, item.name, item.colour, item.details, item.fit)
+    target = Target.of(item)
     picks = []
     for c in candidates:
         p = c.product
@@ -110,7 +110,7 @@ def rank(item: DetectedItem, candidates: list[SearchResult], user: UserContext, 
         score = W_SIM * c.score + W_STYLE * s_style + W_FIT * s_fit + W_PRICE * s_price + W_COLOUR * s_colour
 
         reasons = []
-        if s_colour == 1.0 or item.colour.lower() in p.colour.lower():
+        if s_colour == 1.0:  # same family and shade: "blue" is not the same colour as "dark blue"
             reasons.append("Same colour")
         elif s_colour == 0.0 and target.colour:
             reasons.append("Different colour")

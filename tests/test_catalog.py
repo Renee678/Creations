@@ -337,3 +337,173 @@ def test_embeddings_are_cached_in_chunks_so_an_import_resumes(tmp_path, monkeypa
     again = importer._embed(rows, Counting(), tmp_path)
     assert Counting.calls == 5, "nothing re-embedded"
     assert (first == again).all()
+
+
+def test_a_catalog_import_runs_behind_a_site_that_already_serves(tmp_path, monkeypatch, fake_redis):
+    """2026-10-05: a redeploy that switched on Amazon took the site down for the whole import.
+
+    Now the API is up at once with the catalog it has (the seed catalog on a new database), imports on a
+    thread, swaps the new catalog in when it is complete, and the worker reloads it.
+    """
+    import threading
+    import time
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from lookmate import runtime as rtmod
+    from lookmate.catalog import importer
+    from lookmate.config import Settings
+
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    monkeypatch.setattr(rtmod, "engine", eng)
+    monkeypatch.setattr(rtmod, "SessionLocal", sessionmaker(eng))
+    _asos_csv(tmp_path / "asos.csv")
+    release = threading.Event()
+    monkeypatch.setattr(importer, "download_asos", lambda cache: (release.wait(10), tmp_path / "asos.csv")[1])
+    data_dir = Path(__file__).resolve().parents[1] / "data"
+    settings = Settings(catalog_source="asos", embedder="hash", data_dir=str(data_dir), catalog_size=50,
+                        database_url=f"sqlite:///{tmp_path}/cat.db")
+
+    api = rtmod.build_runtime(settings, redis_client=fake_redis)
+    assert api.catalog_import["running"], "the import runs behind the site"
+    assert api.catalog.products and all(i.startswith("seed-") for i in api.catalog.products), "seed meanwhile"
+    worker = rtmod.build_runtime(settings, redis_client=fake_redis, import_catalog=False)
+    assert not rtmod.reload_catalog_if_changed(worker), "nothing new yet"
+
+    release.set()
+    deadline = time.monotonic() + 10
+    while api.catalog_import["running"] and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not api.catalog_import["running"] and "error" not in api.catalog_import
+    assert api.catalog.products and all(i.startswith("asos-") for i in api.catalog.products), "swapped in when done"
+    assert rtmod.reload_catalog_if_changed(worker) and set(worker.catalog.products) == set(api.catalog.products)
+    assert not rtmod.reload_catalog_if_changed(worker), "loaded once"
+
+    again = rtmod.build_runtime(settings, redis_client=fake_redis)
+    assert not again.catalog_import["running"], "a restart with the same catalog imports nothing"
+
+
+def test_health_reports_a_background_catalog_import(client):
+    body = client.get("/healthz").json()
+    assert body["status"] == "ok" and body["catalog"]["products"] > 0 and body["catalog"]["running"] is False
+
+
+def test_on_the_server_a_separate_importer_process_imports_and_the_api_only_serves(tmp_path, monkeypatch, fake_redis):
+    """2026-10-06: the in-process bge import peaked at ~3 GB and the 4 GB server killed the API in a loop.
+
+    With CATALOG_IMPORT=external the API never imports (seed on a new database), the one-off importer
+    stores the catalog, and the API and worker swap it in when the importer announces it.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from lookmate import catalog_import
+    from lookmate import runtime as rtmod
+    from lookmate.catalog import importer
+    from lookmate.config import Settings
+
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    for mod in (rtmod, catalog_import):
+        monkeypatch.setattr(mod, "engine", eng)
+        monkeypatch.setattr(mod, "SessionLocal", sessionmaker(eng))
+    _asos_csv(tmp_path / "asos.csv")
+    downloads = []
+    monkeypatch.setattr(importer, "download_asos", lambda cache: (downloads.append(1), tmp_path / "asos.csv")[1])
+    settings = Settings(catalog_source="asos", embedder="hash", catalog_import="external", catalog_size=50,
+                        data_dir=str(Path(__file__).resolve().parents[1] / "data"))
+
+    api = rtmod.build_runtime(settings, redis_client=fake_redis)
+    assert not downloads and not api.catalog_import["running"], "the API never imports"
+    assert api.catalog_import["pending"] and all(i.startswith("seed-") for i in api.catalog.products)
+
+    assert catalog_import.run(settings, fake_redis) is True
+    assert rtmod.reload_catalog_if_changed(api) and not api.catalog_import["pending"]
+    assert all(i.startswith("asos-") for i in api.catalog.products)
+    assert catalog_import.run(settings, fake_redis) is False and len(downloads) == 1, "current: exits at once"
+
+
+def test_bge_embeds_in_small_batches_to_bound_memory(monkeypatch):
+    from lookmate.catalog import embedder as emb
+
+    seen = {}
+
+    class Model:
+        def embed(self, texts, batch_size=256):
+            seen["batch"] = batch_size
+            return [[1.0, 0.0] for _ in texts]
+
+    e = emb.BgeEmbedder.__new__(emb.BgeEmbedder)
+    e._model = Model()
+    assert e.embed_documents(["a", "b"]).shape == (2, 2) and seen["batch"] == emb.EMBED_BATCH <= 32
+
+
+def test_the_compose_importer_runs_apart_from_the_api_with_a_memory_cap():
+    import yaml
+
+    services = yaml.safe_load((Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text())["services"]
+    assert services["importer"]["command"] == ["python", "-m", "lookmate.catalog_import"]
+    assert services["importer"]["mem_limit"] and services["importer"]["restart"].startswith("on-failure")
+    for name in ("api", "worker"):
+        assert services[name]["environment"]["CATALOG_IMPORT"] == "external"
+    assert services["importer"]["mem_limit"] == "${IMPORTER_MEM_LIMIT:-1800m}"
+    deploy = (Path(__file__).resolve().parents[1] / "scripts" / "deploy.sh").read_text()
+    assert "set_default CATALOG_SOURCE asos,polyvore\n" in deploy
+    assert "bash scripts/memory_defaults.sh .env /proc/meminfo" in deploy
+    for name in ("api", "worker", "importer"):
+        assert services[name]["environment"]["CATALOG_SOURCE"] == "${CATALOG_SOURCE:-asos,polyvore}"
+
+
+@pytest.mark.parametrize("gb, env, expected", [
+    # The 4 GB box: Amazon goes back off and a 4g importer cap is dropped (compose's 1800m applies).
+    (3.8, "CATALOG_SOURCE=asos,polyvore,amazon\nIMPORTER_MEM_LIMIT=4g\n", "CATALOG_SOURCE=asos,polyvore\n"),
+    (3.8, "CATALOG_SOURCE=polyvore\n", "CATALOG_SOURCE=polyvore\n"),
+    # After a rescale to 8 GB: Amazon stays on and the importer may use 4g.
+    (7.7, "CATALOG_SOURCE=asos,polyvore,amazon\n", "CATALOG_SOURCE=asos,polyvore,amazon\nIMPORTER_MEM_LIMIT=4g\n"),
+    (7.7, "IMPORTER_MEM_LIMIT=6g\n", "IMPORTER_MEM_LIMIT=6g\n"),  # set by hand: kept
+])
+def test_deploy_sets_catalog_defaults_by_the_servers_memory(tmp_path, gb, env, expected):
+    import subprocess
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "memory_defaults.sh"
+    (tmp_path / ".env").write_text(env)
+    (tmp_path / "meminfo").write_text(f"MemTotal:       {int(gb * 1024 * 1024)} kB\nMemFree:  1000 kB\n")
+    subprocess.run(["bash", str(script), str(tmp_path / ".env"), str(tmp_path / "meminfo")], check=True,
+                   capture_output=True)
+    assert (tmp_path / ".env").read_text() == expected
+
+
+def test_the_gateway_resolves_the_api_at_request_time():
+    """A redeploy recreates the api container with a new IP; a static upstream kept the old one (502s)."""
+    conf = (Path(__file__).resolve().parents[1] / "gateway" / "nginx.conf").read_text()
+    assert "resolver 127.0.0.11 valid=10s" in conf, "Docker's DNS, re-asked every 10 s"
+    assert "upstream app" not in conf and "server api:8000" not in conf
+    assert "set $app http://api:8000;" in conf
+    passes = [line.strip() for line in conf.splitlines() if line.strip().startswith("proxy_pass")]
+    assert passes and all(p == "proxy_pass $app;" for p in passes)
+
+
+def test_over_long_text_is_cut_to_the_column_length_before_storing(tmp_path):
+    """The live import failed in Postgres on Amazon rows whose colour ran past 60 characters."""
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+
+    from lookmate.catalog import importer
+    from lookmate.db import Base
+    from lookmate.models import Product
+
+    eng = create_engine(f"sqlite:///{tmp_path}/cat.db")
+    Base.metadata.create_all(eng)
+    row = {"id": "amz-B0LONG", "name": "N" * 300, "product_type": "T" * 120, "category": "top",
+           "colour": "Black/White/Grey/Navy/Beige/Pink/Red/Green/Blue/Purple/Yellow/Brown", "pattern": "",
+           "section": "Amazon · " + "S" * 100, "description": "soft\x00 knit", "image_url": "https://x/" + "i" * 500,
+           "price": 9.99}
+    with Session(eng) as s:
+        assert importer._store(s, [row], HashEmbedder()) == 1
+        p = s.scalar(select(Product))
+    for col in Product.__table__.columns:
+        limit = getattr(col.type, "length", None)
+        if limit:
+            assert len(getattr(p, col.name)) <= limit, col.name
+    assert p.colour.startswith("Black/White") and p.price == 9.99
+    assert p.description == "soft knit"

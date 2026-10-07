@@ -1,5 +1,15 @@
 # Lookmate
 
+> **Try it live:** https://5-161-202-29.sslip.io, access code **`lookinggood`** (asked for on the first upload).
+> Best on a phone, where it can be added to the home screen as an app. To run it yourself, see
+> [Quick start](#quick-start); [Tests](#tests) covers setup and tests, and [AI_WORKFLOW.md](AI_WORKFLOW.md)
+> how it was built with AI.
+>
+> The live demo is shared and has daily limits across all visitors, reset at 00:00 UTC: 50 try-ons (drawing
+> "My model" counts as one) and 50 new photo analyses (re-uploading the same photo is free). When a limit is
+> reached the site says so; try again after the reset, or run it locally
+> and set your own limits in `.env`.
+
 Turn outfit inspiration from Xiaohongshu, TikTok or Instagram into **affordable look-alikes that suit you**.
 Upload a screenshot: the app identifies each garment, then finds cheaper alternatives in a product catalog,
 ranked by similarity, your style memory, your body shape and your budget, and explains every pick.
@@ -12,10 +22,32 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 | **Personal lookbook** | 1-3 photos of you → colour season, palette, face shape, hair and makeup ideas → complete outfits for this season (or the next) or per occasion (work, weekend, date night, party, vacation), curated by an AI stylist with a one-line "why it works" |
 | **Make it mine** | In the Lookbook, start from a vibe ("quiet luxury autumn") or an inspiration photo: each piece is rebuilt in your colours and budget, shown as "original → your version" with the reason (e.g. camel → charcoal for a cool winter) |
 | **Virtual try-on** | Mix pieces from any lookbook outfit in the fitting room and "Try it on me" renders them on your own full-body photo (Nano Banana on Replicate by default); without a token it shows a collage of you next to the pieces |
+| **My model** | In Profile (or at the first try-on), one full-body photo becomes a standing base figure of you: same face, skin tone, hair and real proportions, in a white tank, denim shorts and sneakers on a grey studio background. One Nano Banana Pro call (plain Nano Banana if Pro fails), told your height and weight and told not to slim or beautify; an optional face close-up makes the face more like you. It is saved on the server, so it works on every device, and every try-on dresses it. Without a Replicate token your photo is saved as it is |
 | **Outfit boards** | Every lookbook outfit is shown as a flat-lay board (each piece placed and labelled, Xiaohongshu style). Save it, or a mix from the fitting room, to **My outfits** in My Style, filtered by season and style |
 | **Style memory** | Every upload and save updates your style profile, which feeds back into ranking |
 | **Profile & fit** | Height, weight, age, body shape, preferred styles, budget → rule-based fit guidance |
 | **Trend radar** | A weekly job researches current styles (old money, coquette, …) with Claude web search and links each trend to catalog items |
+
+## Screenshots
+
+**My Look Book** (the heart of Lookmate): a personal style book you shop from. *About me* is your colour report: season, palette, colours to keep away from your face, hair and makeup, fit rules and the style DNA learned from what you upload and save. *Favourites* hang in a lilac closet by category. Every saved outfit gets its own page, as a flat lay or *On me* (a Daily Look poster with your try-on), and saves as a 1080x1440 image for Xiaohongshu. (Faces are covered with stickers here.)
+
+<img src="docs/images/look-book-daily-look.jpg" alt="Look Book outfit page, On me view: the two pieces with prices and shop links beside a try-on of the outfit; face covered by a cat sticker" width="460">
+<img src="docs/images/look-book-about-me.jpg" alt="Look Book About me: True (cool) winter, cool undertone, high contrast, palette swatches, colours to keep away from the face, hair, makeup, body and fit, style DNA" width="340">
+
+<img src="docs/images/look-book-favourites.jpg" alt="Look Book Favourites: saved tops, bottoms and outerwear hanging on silver rails in a lilac closet, each with price and shop links" width="520">
+
+**Personal lookbook**: up to three photos of you give your colour season and palette; outfits for each season (or occasion) are built from catalog pieces in your colours, styles and price range, and any mix goes into the fitting room to try on your model. (Faces are covered with stickers here.)
+
+<img src="docs/images/lookbook.jpg" alt="Lookbook tab: three uploaded photos, Bright winter palette, autumn outfits with prices and shop links, and a try-on in the fitting room; faces covered by cat stickers" width="520">
+
+**My model**: one full-body photo becomes a standing figure of you, with your face, skin tone and real proportions from your height and weight, in plain basics on a grey studio background. Every try-on dresses this figure. (The face is covered with a sticker here.)
+
+<img src="docs/images/my-model.jpg" alt="My model card in Profile: a generated full-body figure in a white tank and denim shorts, face covered by a cat sticker" width="520">
+
+**Find dupes**: one outfit photo becomes a section per piece, each with same-type, same-colour picks inside the price range, and a note when nothing in range matches.
+
+<img src="docs/images/find-dupes-results.jpg" alt="Find dupes results: tank tops and light blue jeans within $0-$50, with a note for pieces that have no match in range" width="520">
 
 ## Quick start
 
@@ -23,7 +55,7 @@ Requirements: Docker with Compose v2.
 
 ```bash
 cp .env.example .env          # optional: add ANTHROPIC_API_KEY for real image analysis
-docker compose up --build -d  # first boot downloads the ASOS + Polyvore catalogs (~480 MB) and embedding model
+docker compose up --build -d  # serves within a minute; the importer service fetches the full catalog meanwhile
 open http://localhost:8080
 ```
 
@@ -50,10 +82,17 @@ catalog on the next start.
 
 ```bash
 make install && make test        # unit + integration tests, offline (SQLite, fakeredis, fake LLM)
+make e2e                         # Playwright browser tests: one per bug found while clicking through the app
 ./scripts/smoke_test.sh          # end-to-end against a running stack, through the gateway
+python scripts/load_test.py --url https://5-161-202-29.sslip.io --clients 20 --seconds 30  # free endpoints only
 ```
 
+266 unit and integration tests and 34 browser tests pass offline, without API keys.
 CI (GitHub Actions) runs the test suite and boots the full Compose stack for the smoke test on every push.
+
+The load test calls only `/healthz` and the catalog search (embeddings), never Claude or try-on, and prints
+requests/s, p50/p95/p99 latency, errors and 429s as a Markdown table. The gateway allows 20 requests/s per IP
+(burst 40), so from one machine the 429 column shows the rate limiter doing its job.
 
 ## Architecture
 
@@ -93,7 +132,14 @@ browser ──► Nginx gateway ──► FastAPI (api) ──► Postgres  (use
   upper-body piece (or a dress), feeding each output into the next call; shoes, bags and accessories are pinned
   beside the picture instead. The job is queued like the others (retries, idempotent by photo + outfit, its own
   daily cost cap). The full-body photo is sent to the try-on service, dropped from Lookmate after rendering, and the
-  result has an unguessable id and a delete button.
+  result has an unguessable id and a delete button. "My model" is the one picture of the user Lookmate keeps:
+  the generated (or chosen) model image, saved with the profile so try-ons work on any device, with a
+  "Delete my model" button; the photo it was made from is dropped as soon as the job ends.
+- **A try-on on My model keeps the user's face.** In a full-body frame the face is a few dozen pixels and the image
+  model tends to redraw it as someone else. So a close-up of the head, cut from My model and upscaled, goes in as a
+  second reference image, and afterwards the model's own head is blended back onto the render with a feathered oval
+  (Pillow, deterministic) when the frames line up and nothing in the outfit sits on the head. The result records
+  `face_reference` and `head_pasted`.
 - **Image → text → vector search.** Claude describes each item in catalog language; search runs on text
   embeddings (BGE-small, computed locally with fastembed). No model training needed.
 - **Exact search in memory.** ~5k products × 384 dims is a few milliseconds with NumPy, so an ANN index
@@ -141,6 +187,12 @@ adds its own `AMAZON_MAX_ITEMS` on top:
   (`/dp/<asin>`). The filtered list is cached in `data/cache/amazon_rows_*.jsonl.gz`, and embeddings are
   cached in chunks in `data/cache/embeddings/`, so a failed or repeated import resumes instead of
   starting over.
+- Imports never take the site down. Under Compose a one-off `importer` service (`python -m
+  lookmate.catalog_import`, capped at 1.8 GB) imports the configured catalog while the API serves the one it
+  already has (the bundled seed catalog on a new database). Embedding runs in small batches, the new
+  catalog replaces the old one in a single transaction, and the API and worker reload it. `/healthz` shows
+  the product count and `"pending": true` until then; `docker compose logs -f importer` shows progress.
+  The one-process local mode imports on a background thread instead.
 - Product cards link to a SHEIN and an ASOS **search** for the piece, not to product pages: both datasets
   are snapshots and most product pages are gone. Nothing is scraped.
 - `CATALOG_SOURCE=hm` still loads the older [H&M dataset](https://huggingface.co/datasets/Qdrant/hm_ecommerce_products)
@@ -153,13 +205,19 @@ adds its own `AMAZON_MAX_ITEMS` on top:
 |---|---|---|
 | `ANTHROPIC_API_KEY` | empty | Enables Claude; empty uses the offline fake |
 | `LLM_MODEL` | `claude-opus-5-5` | Model for vision and trend research |
-| `CATALOG_SOURCE` | `asos,polyvore,amazon` (compose), `asos,polyvore` (local mode) | Comma-separated mix of `asos`, `polyvore`, `amazon`, `hm`, `seed` |
+| `CATALOG_SOURCE` | `asos,polyvore` (compose and local mode; add `amazon` on a server with more than 4 GB) | Comma-separated mix of `asos`, `polyvore`, `amazon`, `hm`, `seed` |
 | `EMBEDDER` | `bge` (compose) | `bge` or `hash` (offline lexical) |
 | `CATALOG_SIZE` | `5000` | Products from ASOS, Polyvore and H&M, split evenly across them |
 | `AMAZON_MAX_ITEMS` | `40000` | Products from the Amazon source, on top of `CATALOG_SIZE` |
-| `REPLICATE_API_TOKEN` | empty | Rendered try-on on Replicate; empty (and no FASHN key) shows a collage preview |
-| `TRYON_MODEL` | `google/nano-banana` | Replicate try-on model: Nano Banana (warm, one call per outfit) or `cuuupid/idm-vton` (cheaper, slow cold starts) |
-| `FASHN_API_KEY` | empty | Use FASHN's specialist try-on API instead (seconds per garment, about $0.075 an image) |
+| `IMPORTER_MEM_LIMIT` | `1800m` | Memory cap of the catalog importer. `scripts/deploy.sh` sets `4g` on a server with 6 GB or more; under 6 GB it keeps 1800m and turns Amazon off, since its import ran the 4 GB box out of memory |
+| `REPLICATE_API_TOKEN` | empty | Rendered try-on and "My model" on Replicate; empty (and no FASHN key) shows a collage preview, and My model keeps the uploaded photo |
+| `TRYON_MODEL` | `google/nano-banana` | Replicate try-on model: Nano Banana (warm, one call per outfit), `google/nano-banana-pro` (better at keeping the face, slower and dearer) or `cuuupid/idm-vton` (cheaper, slow cold starts) |
+| `MODEL_GEN_MODEL` | `google/nano-banana-pro` | Draws "My model" (once per user, so the better model): falls back to `google/nano-banana` if it fails |
+| `FASHN_API_KEY` | empty | Use FASHN's specialist try-on API instead (seconds per garment, about $0.075 an image). It dresses My model one garment at a time, bottom first; `TRYON_MODEL=fashn` means the same and needs this key. My model itself is still drawn on Replicate |
+| `FASHN_MODEL` | `tryon-max` | Clothes always go through FASHN tryon-v1.6, locked to their category (tops, bottoms, one-pieces), so each step puts on only that piece. With `tryon-max` the shoes then go on through Try-On Max; `tryon-v1.6` leaves shoes out. A try-on puts on every clothing layer in wearing order (dress, or bottom then top, a cropped top before the bottom; a jacket only over a dress or on its own, since a step replaces the whole upper body), and My model's head is pasted back |
+| `FASHN_MODE` | `quality` | Detail against speed for each FASHN clothing step: `quality` (closest to a real photo; a three-piece outfit takes about a minute, since steps run one after another), `balanced` (about 8 s a piece) or `performance` |
+| `SHOP_FETCH_IMPERSONATE` | `true` | Retry a shop photo the CDN refused as Chrome (curl_cffi, installed in the Docker image; skipped where it isn't installed). The worker log says which path loaded each photo |
+| `SHOP_FETCH_HTTP2` | `false` | Retry a shop photo the CDN refused over HTTP/2, which looks more like a browser to Akamai. Off until the server logs show it helps; the fitting room also hands over photos the shopper's browser loaded |
 | `DAILY_TRYON_LIMIT` | `30` | Global cap on rendered try-ons per UTC day; `0` disables it |
 | `ACCESS_CODE` | empty | If set, image uploads require this code (protects API credits on a public deployment) |
 | `DAILY_LOOK_LIMIT` | `200` | Global cap on new image analyses per UTC day; `0` disables it |

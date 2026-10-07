@@ -1,0 +1,69 @@
+image,category,subtype,colour,length,pattern,partial,notes
+picture1.jpg,top,shirt,greige,,no,no,"Oversized linen shirt, tucked in; two-piece set, not a dress"
+picture1.jpg,bottom,skirt,greige,maxi,no,no,"Wrap skirt with a front slit, asymmetric hem (midi at the front, maxi at the back)"
+picture1.jpg,bag,shoulder,cream,,no,no,Small structured handbag carried in the hand
+picture1.jpg,shoes,heels,nude,,no,no,Pointed slingback heels
+picture2.jpg,top,tank,white,,no,yes,Cropped cami cut off at the top edge
+picture2.jpg,bottom,trousers,grey,,no,no,"Grey marl wide-leg sweatpants with rope drawstrings"
+picture2.jpg,shoes,sneakers,cream,,no,yes,Chunky sneakers cut off at the bottom edge
+picture3.webp,top,knit,cream,,no,no,"Product flat lay: sweater with an attached scarf"
+picture3.webp,bottom,skirt,cream,maxi,no,no,"Product flat lay: pleated knit maxi skirt"
+picture4.webp,bottom,trousers,charcoal,,no,no,Pleated wide-leg tailored trousers
+picture4.webp,top,,white,,no,yes,"Only the hem shows, tucked in"
+picture4.webp,shoes,flats,black,,no,yes,"Loafers, only the toes show"
+picture4.webp,accessory,,black,,no,no,Thin belt
+picture5.webp,bottom,trousers,light blue,,yes,no,Pinstriped wide-leg trousers
+picture5.webp,shoes,heels,silver,,no,yes,Pointed toes only
+picture6.jpg,accessory,,brown,,no,no,"Baker boy cap; XHS screenshot, busy background"
+picture6.jpg,outerwear,jacket,camel,,no,no,Cropped oversized jacket
+picture6.jpg,top,shirt,blue,,yes,no,"Gingham shirt, white collar"
+picture6.jpg,bottom,skirt,black,mini,no,no,Pleated mini skirt (could read as navy)
+picture6.jpg,shoes,sneakers,grey,,no,no,Grey and white retro runners with white socks
+picture6.jpg,bag,,beige,,no,no,Canvas bag with brown trim on the shoulder
+picture7.png,top,knit,cream,,no,yes,Only the hem of the sweater shows
+picture7.png,bottom,skirt,ivory,maxi,no,no,Satin bias-cut maxi skirt (ivory reads as the cream family)
+picture7.png,bag,tote,tan,,no,no,Woven straw tote
+picture7.png,shoes,sandals,brown,,no,no,Strappy flat sandals
+picture8.png,top,cardigan,charcoal,,no,no,Fine-knit crew-neck cardigan
+picture9.webp,top,cardigan,cream,,no,no,"Product shot: crew-neck cardigan, dark buttons"
+picture10.webp,bottom,skirt,brown,midi,yes,no,"Plaid (brown and blue) skirt, handkerchief hem"
+picture10.webp,top,tank,black,,no,yes,Only the hem shows
+picture10.webp,shoes,boots,black,,no,yes,Knee boots at the bottom edge
+picture11.webp,top,knit,grey,,no,no,Short-sleeve knit tucked in
+picture11.webp,bottom,trousers,black,,no,yes,Cut off below the hips
+picture11.webp,accessory,,black,,no,no,Belt with a gold buckle
+picture12.webp,top,tank,cream,,no,no,Asymmetric sleeveless top
+picture12.webp,bottom,trousers,cream,,no,no,Wide-leg trousers
+picture12.webp,shoes,flats,beige,,no,no,
+picture12.webp,bag,,cream,,no,yes,"Small bag at the left edge, partly hidden"
+picture13.webp,top,shirt,camel,,no,no,Silky shirt (could read as brown)
+picture13.webp,bottom,trousers,beige,,no,yes,Only the waistband shows
+picture13.webp,accessory,,black,,no,yes,Belt
+picture14.webp,top,tank,grey,,no,no,Light grey marl rib tank
+picture14.webp,bottom,trousers,cream,,no,no,Pleated wide-leg trousers
+picture14.webp,shoes,sneakers,white,,no,yes,Mostly hidden under the hem
+picture15.webp,top,tank,olive,,no,no,"Ruffled halter top; matching set, not a jumpsuit"
+picture15.webp,bottom,trousers,olive,,no,no,Wide-leg trousers
+picture15.webp,shoes,sandals,brown,,no,yes,
+picture16.webp,outerwear,blazer,brown,,no,no,Oversized blazer; matching suit
+picture16.webp,bottom,trousers,brown,,no,no,Pleated wide-leg trousers
+picture16.webp,top,,black,,no,yes,"Bralette under the blazer, barely visible"
+picture17.webp,top,knit,light blue,,no,no,Fine knit top with wide short sleeves
+picture17.webp,bottom,jeans,white,,no,yes,Only the waistband shows
+picture18.webp,top,shirt,sage,,yes,no,Gingham peplum blouse with puff sleeves (a blouse counts as shirt)
+picture18.webp,bottom,trousers,olive,,no,no,Wide-leg twill trousers
+picture18.webp,shoes,sneakers,white,,no,yes,
+picture19.webp,top,tank,white,,no,no,Rib racer tank
+picture19.webp,bottom,jeans,light blue,,no,no,Straight-leg jeans
+picture19.webp,shoes,sandals,black,,no,no,Thong sandals
+picture20.webp,top,shirt,white,,no,yes,"Crinkle top with lace V-neck and frill sleeves; only the shoulders show (could be a dress)"
+picture21.webp,top,tee,red,,no,no,Mock-neck cap-sleeve top
+picture21.webp,bottom,jeans,blue,,no,yes,Only the waistband shows
+picture22.webp,dress,dress,grey,mini,yes,no,"Snakeskin print (blue-grey on white), long sleeves, ruffled skirt"
+picture22.webp,accessory,,black,,no,no,Wide wrap belt
+picture22.webp,shoes,boots,black,,no,yes,
+picture23.webp,outerwear,gilet,cream,,no,no,Fleece gilet
+picture23.webp,outerwear,jacket,olive,,no,no,Shirt jacket under the gilet
+picture23.webp,top,shirt,light blue,,no,no,Shirt hanging below the jacket
+picture23.webp,bottom,jeans,grey,,no,yes,Dark washed denim (could read as blue)
+picture24.webp,top,hoodie,taupe,,yes,no,"Product flat lay: heart-print sweatshirt (a sweatshirt counts as hoodie); kids' size"

@@ -11,6 +11,7 @@ services:
 
   api:
     build: .
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false
@@ -18,9 +19,10 @@ services:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
       # ASOS + Polyvore + Amazon catalog (real photos) + semantic embeddings by default; set to seed/hash for a fully offline run.
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
+      CATALOG_IMPORT: external  # the importer service below does it; the API only serves
     volumes:
       - catalog-cache:/app/data/cache
     depends_on:
@@ -32,11 +34,12 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
       interval: 5s
       timeout: 3s
-      retries: 480  # first boot streams the catalogs and embeds ~50k products (cached after that)
+      retries: 120  # healthy once it serves (the seed catalog on a new database); see /healthz for the catalog
       start_period: 20s
 
   worker:
     build: .
+    restart: unless-stopped
     command: ["python", "-m", "lookmate.worker"]
     env_file:
       - path: .env
@@ -44,7 +47,31 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
       REDIS_URL: redis://redis:6379/0
-      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore,amazon}
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
+      EMBEDDER: ${EMBEDDER:-bge}
+      FASTEMBED_CACHE_PATH: /app/data/cache/models
+      CATALOG_IMPORT: external
+    volumes:
+      - catalog-cache:/app/data/cache
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # One-off: imports the configured catalog if the stored one differs, then exits. Its own process with a
+  # memory cap (IMPORTER_MEM_LIMIT), so an import can only ever kill itself, never the site. Downloads and
+  # embedded chunks are cached, so a restart resumes. `docker compose logs -f importer` shows progress.
+  importer:
+    build: .
+    command: ["python", "-m", "lookmate.catalog_import"]
+    restart: on-failure:5
+    mem_limit: ${IMPORTER_MEM_LIMIT:-1800m}  # deploy.sh sets 4g on a server with 6 GB or more
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://lookmate:lookmate@postgres:5432/lookmate
+      REDIS_URL: redis://redis:6379/0
+      CATALOG_SOURCE: ${CATALOG_SOURCE:-asos,polyvore}
       EMBEDDER: ${EMBEDDER:-bge}
       FASTEMBED_CACHE_PATH: /app/data/cache/models
     volumes:

@@ -1,131 +1,150 @@
 # AI Workflow
 
-> Draft written with Claude Code from the development log; sections marked **TODO(Renee)** need first-hand notes before submission.
+> By Renee. I own the idea, the product and every decision in it; Claude Code was my engineering partner.
+
+## In short
+
+- **My idea:** after researching and brainstorming with Claude, I decided to build a personal Look Book you
+  shop from, not another search by picture or by item: a personal reference that tells you which colours,
+  hairstyles and trends suit you, and keeps the outfits you love.
+- **My part, as product owner and AI engineer:**
+  - *System design:* from Claude's options I chose the architecture: an async Redis job queue and worker so
+    slow model calls never block a request, deterministic retrieval and scoring with the LLM limited to
+    perception and curation behind a schema, and one Compose stack that degrades gracefully without keys.
+  - *Model selection:* I compared try-on models (Nano Banana, IDM-VTON, FASHN) on my own photos, picked FASHN
+    in quality mode and Nano Banana Pro for My model, and judged every generated image.
+  - *Environment and deployment:* I set up the API keys and runtime parameters (models, modes, daily quotas,
+    access code), provisioned the Hetzner server and deployed and redeployed the stack with HTTPS.
+  - *Evaluation and QA:* I built and labelled the test set (49 photos, 68 hand-labelled pieces), ran it on
+    the live server, tested every feature by hand, and turned each bug into a regression test.
+  - *Product:* which features to build or cut, and the visual style of the Look Book.
+- **Claude Code's part:** it proposed options with a recommendation and wrote the code and tests; I reviewed it.
+  My rules live in `CLAUDE.md` (a test with every change, no keys in tracked files), and tests enforce them.
+- **How it is validated:** 300 automated tests, an evaluation on my labelled photos against 45,000 real
+  products (91% of dupes right), and a rule that AI output is never trusted raw.
 
 ## What the project does
 
-Lookmate turns outfit inspiration from social media into affordable look-alikes. A user uploads
-a screenshot from Xiaohongshu, TikTok or Instagram. A vision model breaks the outfit into items, and the
-app finds cheaper alternatives in a product catalog. Results are ranked by similarity, the user's body
-shape, budget and a style memory that learns from every upload and save. A weekly job researches current
-trends (old money, coquette, clean girl …) and links each one to catalog items.
-
-Under the hood: an Nginx API gateway (rate limits, upload cap, request IDs), a FastAPI service, a reliable
-Redis job queue with a worker (at-least-once delivery, idempotent handlers, backoff retries, crash
-recovery), Postgres, and an in-memory vector index. It runs with one `docker compose up`, with or without
-an API key.
+Lookmate is an AI fashion advisor. Its heart is **My Look Book**: selfies give your colour season, palette, hair
+and makeup ideas; outfits you love become pages (a flat lay, or "On me" via virtual try-on) you shop from.
+**Find dupes** turns an outfit screenshot into cheaper look-alikes ranked by similarity, body, budget and style.
 
 ## Why this project
 
-- **Relevant to SHEIN.** SHEIN's model depends on turning fast-moving demand into orders. Social platforms
-  create the demand, but the step from "I like this look" to "I bought something like it" is
-  broken. Price-led "dupe" culture on Xiaohongshu fits SHEIN's low-price positioning.
-- **Not just photo search.** Taobao's photo search and SHEIN's own Camera Search already find *identical* items. This
-  project focuses on what they don't do: personalisation (body shape, budget, learned style), explanations
-  for each pick, and trend context.
-- **Real system-design and SRE content.** Slow, costly LLM calls behind a public endpoint force decisions
-  about async processing, retries, idempotency, rate limiting, privacy and graceful degradation.
-- **I would use it myself.** **TODO(Renee):** one or two sentences in your own words.
+- **I would use it myself.** Especially My Style: I can gather every outfit I love into sets and keep them in
+  one little book of my own, and whenever I find something new I like, I just add it in.
+- **Relevant to SHEIN.** Social platforms create demand, but the step from "I like this look" to "I bought
+  something like it" is broken. Price-led "dupe" culture on Xiaohongshu fits SHEIN's low-price positioning.
+- **Not just photo search.** Taobao's and SHEIN's own Camera Search find *identical* items. I wanted what they
+  don't offer: personalisation (colours, body, budget, learned style), a reason for each pick, and a keepsake.
 
-We got here through research rather than picking the first idea. The first candidate was a flash-sale
-system. Market research showed hundreds of GitHub flash-sale projects, many already load-tested with k6,
-and a crowded LLM-gateway space (LiteLLM, GPTCache). That led us to pivot to a product with a clearer gap
-(see `docs/market-research.zh.md` and `docs/product-plan.zh.md`, written in Chinese during planning; the plan later changed — e.g. no React, and the front end is plain JS).
+## Tools, models and infrastructure
 
-## AI tools and models
+I built a working demo by combining hosted AI services and standard infrastructure, not by training models
+(and no other AI coding assistant).
 
 | Tool | Used for |
 |---|---|
-| **Claude Code** (cloud sessions in a Claude Project), model Claude Opus 5.5 | Primary development interface: market research, product plan, architecture, implementation, tests, debugging, docs, commits |
-| Claude Code web search | Competitor and dataset research, checking API details |
-| Headless Chromium driven by Claude Code | Screenshot-based UI review |
-| **Inside the app:** Claude (`claude-opus-5-5`) via the Anthropic SDK | Outfit image → structured items (`messages.parse` with a Pydantic schema); weekly trend research with the web search tool; the lookbook stylist, which picks each outfit from pre-scored candidates |
+| **Claude Code** (cloud sessions in a Claude Project), model Claude Opus 5.5 | My development partner: research with web search, options, code, tests, debugging, docs, commits |
+| **Anthropic API** (Claude Opus 5.5, in the app) | Photo → structured items (Pydantic schema), colour analysis, weekly trend research with web search, the lookbook stylist |
+| **FASHN API** (tryon-v1.6 for clothes, Try-On Max for shoes) | Virtual try-on on My model, one garment per call |
+| **Replicate** (Google Nano Banana Pro) | Drawing "My model" once per user from one full-body photo; Nano Banana as the try-on fallback |
+| **BAAI bge-small-en-v1.5** (fastembed, on CPU) | Text embeddings for catalog search, no GPU and no API call |
+| **Docker Compose** | One command runs Nginx, FastAPI, the worker, Redis 7 and Postgres 16, with or without API keys |
+| **Hetzner Cloud** (CPX21, Ashburn) + Caddy | The live demo server; Caddy adds HTTPS; deployed from my Windows PC with one script |
+| **GitHub Actions**, pytest, Playwright | CI runs every test and boots the full stack for a smoke test on each push |
 
-No other AI coding assistant (Copilot, Cursor) was used.
+## Data: finding, comparing and choosing it
 
-## How AI fit into the workflow
+Most public fashion datasets have real prices *or* usable photos, not both. With Claude I compared candidates
+against three criteria (women's fashion, a price, a photo good enough for try-on) and changed course when one failed:
 
-1. **Research before code.** Claude read the assessment PDF and mapped each requirement to the idea. It
-   surveyed existing products and open-source projects and wrote a market research report and a one-page
-   product/architecture plan. I reviewed and redirected it twice (flash sale → combined idea → dupe finder)
-   before any code was written.
-2. **I own the product decisions; Claude proposes options.** For each fork (plugin vs web app, React vs
-   server-rendered, scraping vs search APIs), Claude laid out trade-offs with a recommendation and I chose.
-3. **Small, verified increments.** Each step was: write the module and its tests, run `pytest`, commit.
-   The history shows the order: scaffold → catalog/search → profiles → async pipeline → style memory →
-   trends → front end/CI.
-4. **Verification beyond unit tests.** Claude ran the whole stack with Docker Compose, executed an
-   end-to-end smoke test through the gateway (which also asserts that rate limiting returns `429`), and drove the UI
-   in headless Chromium to review screenshots.
-5. **Guardrails in the repo.** `CLAUDE.md` records project rules for Claude Code (no keys in tracked files,
-   tests with every change, retrieval and scoring deterministic). Tests enforce the rules that matter.
+| Dataset | Result | Why |
+|---|---|---|
+| H&M e-commerce (Qdrant, with vectors) | dropped | my first choice; its image bucket had been deleted, so no photos |
+| ASOS e-commerce (UniqueData) | 2,500 kept | real prices and CDN photos; rows repeat per size, so deduplicated per SKU |
+| Polyvore (Marqo, 1 of 6 shards) | 2,500 kept | designer pieces with photos; no prices, so a deterministic designer-band price |
+| Amazon Reviews 2023 (UCSD), clothing metadata | 40,000 kept | real prices and photos; filtered from about 7.2 million listings |
+
+The import is a small data pipeline: it streams Amazon's gzipped file without storing it, filters by category
+path and exclusion words, deduplicates, embeds in cached chunks so a crash resumes, runs in a memory-capped
+process, and swaps the new catalog in one transaction while the site keeps serving the old one.
 
 ## Where AI significantly helped
 
-**1. Market research changed the project.** Within one session Claude compared the flash-sale idea with
-existing GitHub projects and commercial LLM gateways and found that both halves were already crowded.
-It also pointed out that SHEIN already ships Camera Search, which pushed the design towards
-personalisation and explanations rather than plain visual search. Doing this survey by hand would have
-taken most of a day; here it took under an hour and directly shaped the scope.
+**1. Research that changed my direction.** My first idea was a flash-sale system. In under an hour Claude's
+market research found hundreds of load-tested GitHub projects like it, and that SHEIN already ships Camera
+Search, so I pivoted to personalisation and explanations (`docs/market-research.zh.md`, in Chinese).
 
-**2. Designing the failure modes.** Claude proposed the reliable-queue design (atomic `BLMOVE` into a
-per-worker processing list, delayed retries in a sorted set, recovery on startup). It also wrote tests for
-each failure path: transient LLM errors retried with backoff, permanent errors failing fast, duplicate
-delivery being harmless, and a crashed worker's jobs being recovered. These are the cases that usually get
-skipped under time pressure.
+**2. Designing the failure modes.** Claude proposed the reliable queue (atomic `BLMOVE` into a per-worker list,
+delayed retries in a sorted set, recovery on startup) and wrote a test for each failure path: transient errors
+retried, permanent ones failing fast, duplicate delivery harmless, a crashed worker's jobs recovered.
+
+**3. Options to choose from, so I could decide fast.** At each fork Claude gave two or three options with their
+consequences and a recommendation. When try-on drew a blazer over a jumper as one V-neck knit, Claude found why
+(each step replaces the whole upper body) and offered three fixes; I chose "skip the jacket" in one step.
 
 ## Where AI output needed correction or validation
 
-**1. An overconfident claim, corrected by research.** Early on, Claude said typical flash-sale projects
-"only claim no overselling and have no load-test evidence". When it actually checked GitHub, several
-recent projects did have k6 load tests and reconciliation. The research report states this correction
-explicitly, and the project direction changed because of it. **Lesson:** treat AI claims about "what
-exists" as hypotheses until they are checked against sources.
+**1. Rules alone had no taste.** Testing the first, fully rule-based lookbook, I got a bright green satin blazer
+with bright blue trousers labelled "quiet luxury": nothing judged the whole outfit. I chose two layers:
+stricter unit-tested rules (one accent per outfit), then Claude as a stylist picking among the top 5 scored
+candidates per slot, validated, cached and capped, with the scorer's picks as the fallback. The rules held in every run: no colour to avoid, no outfit with two
+bright pieces.
 
-**2. A leaked API key.** While setting up the project I pasted my real Anthropic key into `.env.example`
-(a tracked file) and pushed it. Claude spotted the commit, had me revoke the key, restored the template
-and added `tests/test_no_secrets.py`. That test fails CI if any tracked file contains an Anthropic key.
-History was not rewritten (the assessment forbids it), so revoking the key is the actual fix.
+**2. My eyes find the error, AI finds the cause.** With hosted models and no labelled data to train on, the AI
+could not tell that a picture looked wrong; I could. I sent a screenshot, Claude traced the cause and fixed it
+with a rule and a test: a frayed band under a cropped cardigan was My model's shorts left at the waist; "no
+light blue jeans" was a shade rule rejecting plain "blue"; a blurred neckline was our own face paste-back.
 
-**3. Bugs found by running the system, not by reading code.**
-- Tests passed individually but failed together: the in-memory SQLite database was shared across tests.
-  It was fixed with a per-test cleanup fixture.
-- The first UI screenshots showed the navigation tabs and a raw file input on the onboarding page. The
-  generated CSS (`display: block/flex`) overrode the HTML `hidden` attribute, and a global
-  `[hidden] { display: none !important }` fixed it.
-- Results showed the same garment in four colours, crowding out other designs. A `diversify()` step and a
-  test were added so colour variants only fill leftover slots.
-
-**4. Unverified API usage.** Trend research combines structured output with the server-side web search
-tool. This could not be exercised without an API key in the development sandbox, so the code falls back to
-the last good batch or to seed data on any failure. **TODO(Renee):** record the result of the first real
-run with your key (works / needed changes).
-
-**5. Rules alone had no taste.** The first lookbook was fully rule-based: fixed outfit formulas, each slot
-filled by vector search and a score, the LLM only reading my photos. Testing it, I got a "Quiet luxury
-spring" outfit (in autumn) that paired a bright green satin blazer with bright blue faux-leather trousers.
-Claude traced it to the code: slots were filled independently, nothing judged the outfit as a whole, a
-"navy trousers" search matched bright blue, and blue still counted as "in my palette". The fix has two
-layers. Deterministic rules got stricter (one accent per outfit; neutral slots accept only true neutrals and
-reject words like neon or metallic; muted styles reject loud pieces; the current season comes first), and
-these are unit-tested with the exact failing case. On top, Claude now acts as a stylist: it sees the top 5
-scored candidates per slot plus a written definition of each style, picks the most cohesive combination and
-says why in one line. Its answer is validated (an id that wasn't offered keeps the scorer's pick), cached,
-capped per day, and on any error the scorer's picks stand. The project rule in `CLAUDE.md` changed from
-"the LLM only perceives" to "retrieval and scoring stay deterministic; Claude curates the final outfit from
-scored candidates, with a deterministic fallback". **TODO(Renee):** compare a few outfits with and without
-the stylist on the live server.
+**3. Green tests, missing data.** Results felt thin while I tested. On submission day I asked why the live
+catalog showed 5,000 products, not 45,000: one over-long Amazon field made Postgres reject the whole import,
+while the SQLite tests never check lengths. Claude reproduced it on a real Postgres and fixed it the same hour.
 
 ## How generated code was evaluated
 
-- **Tests as the contract.** Over 40 unit and integration tests run fully offline (SQLite, fakeredis, a
-  deterministic fake vision model), covering ranking, fit rules, the queue's failure modes, idempotent
-  uploads, style memory, trends and input validation.
-- **End-to-end smoke test** (`scripts/smoke_test.sh`) against the real Compose stack: Postgres, Redis,
-  worker and gateway. CI runs it on every push.
-- **LLM output is never trusted raw.** The vision model must return a Pydantic schema. Anything
-  downstream depends only on validated fields, and refusals or invalid output become explicit failures.
-- **Deterministic where possible.** Prices, fit guidance, ranking and the style profile are rule-based, so
-  their behaviour can be tested exactly. The LLM perceives (photos, trends) and, for lookbooks, only
-  chooses among candidates the rules already scored, with a rule-based fallback.
-- **TODO(Renee):** results of the image evaluation set (category recall, look-alike relevance) once it has run.
+- **Tests as the contract.** 266 unit and integration tests run offline (SQLite, fakeredis, a fake vision
+  model): ranking, fit and colour rules, the queue's failure modes, idempotent uploads, style memory, try-on
+  steps. 34 Playwright browser tests replay every bug I reported. A smoke test boots the full Compose stack in
+  CI; `scripts/load_test.py` measures latency and the gateway's rate limiting.
+- **AI output is never trusted raw.** Vision output must match a Pydantic schema; the stylist may only choose
+  candidates the rules already scored; a try-on never draws a garment it has no real photo of.
+- **Evaluation on my own photos** (I labelled them; live server, real catalog; `scripts/run_eval.py`,
+  `scripts/run_lookbook_eval.py`, tables in `evals/`):
+  - *Find dupes, 24 photos, 68 hand-labelled pieces, run on both catalogs:*
+
+    | Metric | 5,000 products | 45,000 products |
+    |---|---|---|
+    | Pieces found (category recall) | 100% | 99% (one pair of trousers missed) |
+    | Dupes with the right type, colour, length and pattern | 88% (90 of 102) | 91% (precision@5, 134 picks) |
+    | Latency per photo (perception + search) | 5-7 s | median 6.4 s, p95 11.6 s |
+
+    The bigger catalog showed a third more dupes, more of them right, none outside the price range. Most mistakes
+    are garment type (tank tops as "halter"); 30% of pieces have no dupe in range, shown as a note, not a guess.
+  - *Lookbook, 25 photos of me, run on both catalogs:*
+
+    | Metric | 5,000 products | 45,000 products |
+    |---|---|---|
+    | Same colour season (winter) / sub-season (cool winter) | 84% / 44% | 80% / 32% |
+    | Outfits the AI stylist approved | 93% of 75 | 75% of 75 |
+    | Pieces in a colour to avoid / outfits with two bright pieces | 0 of 165 / 0 of 70 | 0 of 206 / 0 of 56 |
+    | Time per photo, median / p95 | 26.8 s / 29.8 s | 27.4 s / 35.0 s |
+
+    The season ignores the catalog, so it is the control. The colour rules held, but the stylist approved fewer
+    outfits, most likely because many Amazon listings lack a colour and have keyword-stuffed titles that the
+    scorer ranks and the stylist rejects. More data was not automatically better data: clean it next.
+  - *What the numbers missed:* clicking through, I found bugs the labels didn't cover (jeans by wash name, a
+    bracelet returning earrings), each fixed with a test; `lookmate.why_no_dupes` shows which rule rejects what.
+
+## What I learned, and what I would do next
+
+- **AI is a tool that turns ideas into working software faster and better, but people steer it.** It gave me
+  wings: more done in less time, faster iterations, models chosen on evidence. The direction, the architecture,
+  the environment and its permissions, and which result is right stayed human work (on a real product, a team's).
+- **Next.** In two days I chose accuracy over speed; with more time I would work on three things:
+  - *Latency:* a try-on takes about a minute; a real product needs under 10 s. Benchmark faster models and
+    modes on the same photos, run non-overlapping garment steps in parallel, cache, and show a quick preview.
+  - *My model from the user's data first:* the image model is told height and weight but still follows the
+    photo. Measurements should take priority, with the figure checked against them before it is saved.
+  - *Measurable try-on quality:* paired photos (really wearing a garment vs its try-on) to score image against
+    image instead of only by eye, and a labelled set well beyond 49 photos.

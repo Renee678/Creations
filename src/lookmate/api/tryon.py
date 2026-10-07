@@ -1,6 +1,7 @@
 """Virtual try-on: "try this outfit on me" from the Lookbook."""
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timezone
 
@@ -15,13 +16,14 @@ from ..config import get_settings
 from ..db import get_db
 from ..llm.client import ALLOWED_MEDIA_TYPES, LLMError
 from ..models import TryOn
-from ..tryon.client import REGIONS, TRYON_STAGE
-from ..tryon.garments import prefetch
+from ..tryon.client import REGIONS, TRYON_STAGE, tryon_quota_key
+from ..tryon.garments import BROWSER_PHOTO_MAX_BYTES, fetch_shop_photo, prefetch, store_browser_photo
 from ..worker import tryon_job
 from .looks import require_access_code
 from .profiles import get_user_or_404
 
 router = APIRouter(tags=["try-on"])
+log = logging.getLogger(__name__)
 
 MAX_PIECES = 6
 
@@ -38,7 +40,7 @@ def take_tryon_quota(redis_client, limit: int) -> bool:
     """Each rendered try-on costs real money on Replicate, so it has its own daily cap."""
     if limit <= 0:
         return True
-    key = f"quota:tryons:{datetime.now(timezone.utc):%Y-%m-%d}"
+    key = tryon_quota_key()
     used = redis_client.incr(key)
     if used == 1:
         redis_client.expire(key, 2 * 24 * 3600)
@@ -80,7 +82,7 @@ async def check_tryon_photo(
 async def create_tryon(
     user_id: int,
     request: Request,
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(None),
     product_ids: str = Form(...),
     x_access_code: str = Header(default=""),
     db: Session = Depends(get_db),
@@ -99,28 +101,41 @@ async def create_tryon(
     if not any(rt.catalog.products[i].category in REGIONS for i in ids):
         raise HTTPException(400, "nothing to try on: pick a top, bottom, dress or jacket")
 
-    if photo.content_type not in ALLOWED_MEDIA_TYPES - {"image/gif"}:
-        raise HTTPException(415, "use a JPEG, PNG or WebP photo")
-    data = await photo.read(settings.max_upload_bytes + 1)
-    if len(data) > settings.max_upload_bytes:
-        raise HTTPException(413, "image too large (max 8 MB)")
-    if not data:
-        raise HTTPException(400, "empty image")
+    # "My model" is the person whenever the user has saved one; a photo is only needed without it.
+    from .body_model import saved_model  # imported here: body_model imports this module
 
-    # Idempotent: the same photo and outfit return the existing try-on instead of paying again.
+    model = saved_model(db, user_id)
+    if model is not None:
+        data, media_type = model.result_image, model.result_media_type or "image/jpeg"
+    elif photo is None:
+        raise HTTPException(400, "add a full-body photo, or create My model in Profile")
+    else:
+        if photo.content_type not in ALLOWED_MEDIA_TYPES - {"image/gif"}:
+            raise HTTPException(415, "use a JPEG, PNG or WebP photo")
+        data, media_type = await photo.read(settings.max_upload_bytes + 1), photo.content_type
+        if len(data) > settings.max_upload_bytes:
+            raise HTTPException(413, "image too large (max 8 MB)")
+        if not data:
+            raise HTTPException(400, "empty image")
+
+    # Every click draws a new picture. Only a double submit is absorbed: while the same photo and outfit
+    # are still queued or rendering, that running try-on is returned instead of paying twice.
     key = hashlib.sha256(hashlib.sha256(data).digest() + ",".join(ids).encode()).hexdigest()
     existing = db.scalar(select(TryOn).where(TryOn.user_id == user_id, TryOn.request_sha256 == key))
-    if existing is not None and existing.status != "failed":
+    if existing is not None and existing.status in ("queued", "processing"):
         return JSONResponse(tryon_out(existing) | {"deduplicated": True}, status_code=200)
-    if existing is not None:  # a failed try-on is retried, not handed back
+    if existing is not None and existing.status == "failed":  # a failed try-on is retried, not handed back
         db.delete(existing)
+        db.flush()
+    elif existing is not None:  # a finished picture stays where it is, but gives up the key to the new render
+        existing.request_sha256 = hashlib.sha256(f"{key}:{existing.id}".encode()).hexdigest()
         db.flush()
 
     if rt.tryon.renders and not take_tryon_quota(rt.redis, settings.daily_tryon_limit):
         raise HTTPException(429, "Today's try-on quota is used up. Please come back tomorrow.")
 
     rec = TryOn(id=secrets.token_hex(16), user_id=user_id, request_sha256=key, product_ids=ids,
-                media_type=photo.content_type, photo=data)
+                media_type=media_type, photo=data, from_model=model is not None)
     db.add(rec)
     db.commit()
     rt.tryon_queue.enqueue(tryon_job(rec.id))
@@ -153,6 +168,55 @@ def prefetch_photos(body: PrefetchIn, request: Request, background: BackgroundTa
     if rt.tryon.renders and products:
         background.add_task(prefetch, products, rt.data_dir)
     return {"queued": len(products) if rt.tryon.renders else 0}
+
+
+@router.get("/api/products/{product_id}/photo")
+async def product_photo(product_id: str, request: Request) -> Response:
+    """A shop photo from our own origin, so a Look Book page can be drawn into a saved image.
+
+    Browsers refuse to export a canvas holding another site's picture; this serves the catalog photo
+    through the same disk cache the try-on uses. Only catalog pieces are served, never arbitrary URLs.
+    """
+    rt = request.app.state.runtime
+    product = rt.catalog.products.get(product_id)
+    if product is None or not product.image_url.startswith("https://"):
+        raise HTTPException(404, "no shop photo for this piece")
+    data, media_type = await run_in_threadpool(fetch_shop_photo, product.image_url, rt.data_dir)
+    if data is None:
+        raise HTTPException(404, "the shop photo could not be loaded")
+    return Response(data, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@router.post("/api/products/{product_id}/photo")
+async def upload_product_photo(product_id: str, request: Request, blocked: bool = False,
+                               x_access_code: str = Header(default="")) -> dict:
+    """The shop photo as the shopper's browser loaded it, when the shop's CDN refuses our server.
+
+    The fitting room fetches each piece's photo in the browser and posts the bytes here; they go into the
+    cache the try-on reads, under that piece's photo URL. `blocked=true` (no body) only records that the
+    browser couldn't read it either. An upload never replaces a photo already cached.
+    """
+    rt = request.app.state.runtime
+    require_access_code(x_access_code)
+    product = rt.catalog.products.get(product_id)
+    if product is None or not product.image_url.startswith("https://"):
+        raise HTTPException(404, "no shop photo for this piece")
+    if blocked:
+        log.info("shop photo for %s: browser fetch blocked by CORS: %s", product_id, product.image_url)
+        return {"status": "blocked"}
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > BROWSER_PHOTO_MAX_BYTES:
+        raise HTTPException(413, "photo too large")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > BROWSER_PHOTO_MAX_BYTES:
+            raise HTTPException(413, "photo too large")
+    status = await run_in_threadpool(store_browser_photo, product.image_url, rt.data_dir, bytes(data))
+    log.info("shop photo for %s from the browser: %s", product_id, status)
+    if status == "rejected":
+        raise HTTPException(415, "not a usable product photo")
+    return {"status": status}
 
 
 @router.get("/api/tryons/{tryon_id}/image")

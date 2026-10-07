@@ -1,4 +1,4 @@
-"""The soft price range shared by Find dupes and the Lookbook."""
+"""The price range shared by Find dupes and the Lookbook: a hard filter."""
 
 import numpy as np
 
@@ -7,18 +7,15 @@ from lookmate.services.price_range import PriceRange, search_in_range
 
 
 def test_range_defaults_to_the_budget_and_orders_its_ends():
-    assert PriceRange.from_params(None, None, 30) == PriceRange(0, 45)
+    assert PriceRange.from_params(None, None, 30) == PriceRange(0, 30), "Renee: the range equals the budget"
+    assert PriceRange.from_params(None, None, 50) == PriceRange(0, 50)
     assert PriceRange.from_params(80, 20, 30) == PriceRange(20, 80)
 
 
-def test_widening_steps_and_labels():
-    r = PriceRange(20, 40)
-    assert r.steps() == [(20, 40), (10, 60), (5, 120), (None, None)]
-    assert r.steps(any_price=False) == [(20, 40), (10, 60), (5, 120)]
-    assert r.note(30) is None
-    assert r.note(55) == "A bit above your price range"
-    assert r.note(200).startswith("Above your price range")
-    assert r.note(5) == "Below your price range"
+def test_the_empty_range_note_names_the_range():
+    r = PriceRange(0, 85)
+    assert r.label() == "$0–$85"
+    assert r.empty_note() == "Nothing in $0–$85 matches this piece. Widen the price range to see more."
 
 
 def test_index_filters_by_minimum_price():
@@ -27,31 +24,9 @@ def test_index_filters_by_minimum_price():
     assert {h.product_id for h in idx.search(q, k=5, min_price=10, max_price=50)} == {"b"}
 
 
-def test_search_widens_only_as_far_as_needed(runtime):
+def test_search_never_leaves_the_range(runtime):
+    """Renee (2026-10-06): nothing outside the slider's range is ever shown, not even as a closest match."""
     coats = sorted(p.price for p in runtime.catalog.products.values() if p.category == "outerwear")
-    cheapest = coats[0]
-    # Nothing at all under a tenth of the cheapest coat: the search still answers, from a wider step.
-    res = search_in_range(runtime.catalog, "coat", 10, "outerwear", PriceRange(0, cheapest / 10))
-    assert res, "never comes back empty"
-    # Outfits stop at 3x: no pick beats a wildly overpriced one.
-    assert search_in_range(runtime.catalog, "coat", 10, "outerwear", PriceRange(0, cheapest / 10), any_price=False) == []
-    # A range that holds coats returns only those.
-    res = search_in_range(runtime.catalog, "coat", 10, "outerwear", PriceRange(0, coats[-1]))
-    assert all(r.product.price <= coats[-1] for r in res)
-
-
-def test_a_finished_look_can_be_re_picked_for_another_range(client, runtime, user):
-    from lookmate.worker import process_look
-
-    png = b"\x89PNG\r\n\x1a\n" + b"range-look"
-    look_id = client.post("/api/looks", data={"user_id": user["id"]},
-                          files={"image": ("l.png", png, "image/png")}).json()["id"]
-    assert process_look(runtime, int(runtime.queue.reserve(timeout_s=0.1))) == "done"
-    calls = []
-    runtime.llm.analyze_look = lambda *a: calls.append(a)  # re-picking must not call the model
-
-    cheap = client.get(f"/api/looks/{look_id}", params={"price_min": 0, "price_max": 15}).json()["result"]
-    assert cheap["price_range"] == {"low": 0, "high": 15} and not calls
-    for section in cheap["sections"]:
-        for p in section["picks"]:
-            assert p["price"] <= 15 or any("price range" in r for r in p["reasons"])
+    assert search_in_range(runtime.catalog, "coat", 10, "outerwear", PriceRange(0, coats[0] / 10)) == []
+    res = search_in_range(runtime.catalog, "coat", 10, "outerwear", PriceRange(coats[0], coats[len(coats) // 2]))
+    assert res and all(coats[0] <= r.product.price <= coats[len(coats) // 2] for r in res)

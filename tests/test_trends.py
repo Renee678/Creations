@@ -37,7 +37,27 @@ def test_offline_refresh_uses_seed_and_api_serves_examples(client):
         assert kinds == set(body["kinds"]), f"{season} has every kind: pieces, bags and shoes, beauty, colours"
     for t in body["trends"]:
         assert t["colours"] and t["fit"] is None, "no fit verdict without a user"
-        assert bool(t["examples"]) == (t["kind"] != "beauty"), "shoppable trends link to products; makeup doesn't"
+        if t["kind"] == "beauty":
+            assert not t["examples"], "makeup doesn't link to products"
+        elif t["kind"] != "colour":  # a colour card stays empty rather than show the wrong colour
+            assert t["examples"], "shoppable trends link to products"
+
+
+def test_colour_trend_cards_show_clothes_in_the_trend_colours(client):
+    """Renee (2026-10-07): the aqua card showed beige and blush dresses; the tomato-red card grey and python bags."""
+    from lookmate.services.colours import families
+    from lookmate.services.match import colour_family
+
+    with SessionLocal() as s:
+        trends.refresh(s, None, DATA)
+    body = client.get("/api/trends").json()
+    colour_cards = [t for t in body["trends"] if t["kind"] == "colour"]
+    assert colour_cards
+    for t in colour_cards:
+        wanted = families([c["name"] for c in t["colours"]])
+        for p in t["examples"]:
+            assert p["category"] in ("top", "bottom", "dress", "outerwear"), (t["label"], p["name"])
+            assert colour_family(p["colour"], p["name"]) in wanted, (t["label"], p["name"], p["colour"])
 
 
 def test_researched_trends_replace_seed(client):
@@ -45,7 +65,10 @@ def test_researched_trends_replace_seed(client):
         trends.refresh(s, None, DATA)
         trends.refresh(s, FakeResearcher([ITEM]), DATA)
     body = client.get("/api/trends").json()
-    assert body["origin"] == "web" and [t["label"] for t in body["trends"]] == ["Old money"]
+    assert body["origin"] == "web" and body["trends"][0]["label"] == "Old money"
+    researched = body["trends"][0]["season"]
+    assert [t["label"] for t in body["trends"] if t["season"] == researched] == ["Old money"], "seed gone for that season"
+    assert {t["season"] for t in body["trends"]} == set(trends.SEASONS), "seasons not researched yet come from the seed"
 
 
 def test_failed_research_keeps_last_good_batch(client):
@@ -149,3 +172,19 @@ def test_research_searches_first_then_structures_without_tools():
     (first, search), (second, structure) = calls
     assert first == "create" and search["tools"][0]["name"] == "web_search" and "output_format" not in search
     assert second == "parse" and "tools" not in structure and "https://example.com" in structure["messages"][0]["content"]
+
+
+def test_every_season_has_trends_when_research_covered_two(client, runtime):
+    """Trends offers all four seasons; research covers two, the seed fills the others instead of an empty page."""
+    from lookmate.db import SessionLocal
+    from lookmate.services.trends import load_seed, store_batch
+
+    researched = [t for t in load_seed(runtime.data_dir) if t.season in ("autumn", "winter")]
+    with SessionLocal() as s:
+        store_batch(s, researched, "claude")
+    body = client.get("/api/trends").json()
+    assert body["seasons"] == ["spring", "summer", "autumn", "winter"] and body["year"] >= 2026
+    by_season = {}
+    for t in body["trends"]:
+        by_season.setdefault(t["season"], set()).add(t.get("label"))
+    assert all(by_season.get(s) for s in body["seasons"]), "no season is empty"

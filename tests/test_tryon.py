@@ -1,12 +1,14 @@
-import time
 """Virtual try-on: request -> queue -> worker -> image, with the collage preview when no model is set."""
 
+import base64
 import json
+import time
+from dataclasses import replace
 
 import httpx
 import pytest
 
-from lookmate.tryon.client import FashnTryOn, Garment, PreviewTryOn, ReplicateTryOn, TryOnError, make_tryon, plan_steps
+from lookmate.tryon.client import REGIONS, FashnTryOn, Garment, PreviewTryOn, ReplicateTryOn, TryOnError, make_tryon, plan_steps
 from lookmate.worker import process_job
 
 PHOTO = b"\xff\xd8\xff\xe0" + b"full-body-photo"
@@ -15,7 +17,8 @@ PHOTO = b"\xff\xd8\xff\xe0" + b"full-body-photo"
 def pick(runtime, *categories):
     by_cat = {}
     for p in runtime.catalog.products.values():
-        by_cat.setdefault(p.category, p.id)
+        if "crop" not in f"{p.name} {p.description}".lower():  # a cropped top changes the wearing order
+            by_cat.setdefault(p.category, p.id)
     return [by_cat[c] for c in categories]
 
 
@@ -68,14 +71,18 @@ def test_without_a_model_the_photo_comes_back_for_a_collage(client, runtime, use
 
 
 def test_an_outfit_is_rendered_bottom_first_then_the_upper_piece(client, runtime, user, renderer):
+    """Feedback #41: every clothing layer the model can draw is put on; shoes only where the model can. A jacket
+    over a top is left off (Renee, 2026-10-07): one step replaces the whole upper body, so a blazer over a jumper
+    came back as neither. It is pinned beside the picture instead."""
     ids = pick(runtime, "top", "bottom", "outerwear", "shoes")
     tryon_id = request_tryon(client, user["id"], ids).json()["id"]
     assert run_next_job(runtime) == "done"
 
     out = client.get(f"/api/tryons/{tryon_id}").json()
     assert renderer.calls == ["lower_body", "upper_body"]
-    assert out["result"]["rendered"] is True and out["result"]["rendered_ids"] == [ids[1], ids[2]]
-    assert client.get(out["image_url"]).content == PHOTO + b"|lower_body|upper_body", "each step builds on the last"
+    assert out["result"]["rendered"] is True and out["result"]["rendered_ids"] == [ids[1], ids[0]]
+    assert client.get(out["image_url"]).content == PHOTO + b"|lower_body|upper_body", \
+        "each step builds on the last"
 
 
 def test_the_photo_is_dropped_after_the_job(client, runtime, user, renderer):
@@ -88,12 +95,28 @@ def test_the_photo_is_dropped_after_the_job(client, runtime, user, renderer):
         assert s.get(TryOn, tryon_id).photo is None
 
 
-def test_same_photo_and_outfit_is_not_paid_for_twice(client, runtime, user, renderer):
+def test_a_double_click_while_rendering_is_not_paid_for_twice(client, runtime, user, renderer):
     ids = pick(runtime, "dress")
     first = request_tryon(client, user["id"], ids)
     second = request_tryon(client, user["id"], ids)
     assert second.status_code == 200 and second.json()["id"] == first.json()["id"]
     assert runtime.tryon_queue.depth()["ready"] == 1
+
+
+def test_trying_the_same_outfit_again_draws_a_new_picture(client, runtime, user, renderer):
+    """Renee: every click on "Try it on me" renders anew; a finished picture is never handed back."""
+    ids = pick(runtime, "dress")
+    first = request_tryon(client, user["id"], ids).json()["id"]
+    assert run_next_job(runtime) == "done"
+
+    again = request_tryon(client, user["id"], ids)
+    assert again.status_code == 202 and again.json()["deduplicated"] is False
+    second = again.json()["id"]
+    assert second != first
+    assert run_next_job(runtime) == "done"
+    assert len(renderer.calls) == 2, "two renders"
+    assert client.get(f"/api/tryons/{first}").json()["status"] == "done", "the earlier picture is kept"
+    assert client.get(f"/api/tryons/{second}").json()["status"] == "done"
 
 
 def test_busy_model_is_retried(client, runtime, user, renderer, monkeypatch):
@@ -141,8 +164,12 @@ def test_user_can_delete_a_tryon(client, runtime, user):
 
 def test_plan_steps():
     piece = lambda c: {"category": c}  # noqa: E731
-    assert plan_steps([piece("dress"), piece("outerwear"), piece("shoes")]) == [piece("dress")]
-    assert plan_steps([piece("top"), piece("bottom")]) == [piece("bottom"), piece("top")]
+    # Renee's outfit: the jacket used to be dropped when a dress-like piece was in it.
+    assert plan_steps([piece("dress"), piece("outerwear"), piece("shoes")]) == [piece("dress"), piece("outerwear")]
+    assert plan_steps([piece("outerwear"), piece("top"), piece("bottom")]) == [piece("bottom"), piece("top")], \
+        "no jacket over a top: the step would replace the top"
+    assert plan_steps([piece("outerwear"), piece("bottom")]) == [piece("bottom"), piece("outerwear")]
+    assert plan_steps([piece("dress"), piece("shoes"), piece("bag")], ("shoes",)) == [piece("dress"), piece("shoes")]
     assert plan_steps([piece("shoes"), piece("bag")]) == []
     assert PreviewTryOn().dress(b"x", "image/png", None) == (b"x", "image/png")
 
@@ -226,34 +253,101 @@ def test_a_shop_photo_is_fetched_once_then_read_from_disk(tmp_path):
     from lookmate.tryon.garments import garment_for, prefetch
 
     tries = []
+    jpg = b"\xff\xd8\xff\xe0jpg"
 
     def cdn(req):
         tries.append(req.extensions["timeout"]["read"])
-        return httpx.Response(200, content=b"jpg", headers={"content-type": "image/jpeg"})
+        return httpx.Response(200, content=jpg, headers={"content-type": "image/jpeg"})
 
     p = ProductView("asos-2", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/y/1-2", 20)
     http = httpx.Client(transport=httpx.MockTransport(cdn))
     g = garment_for(p, tmp_path, http=http)
-    assert g.image == b"jpg" and tries[0] <= 6, "one short try, not a long wait"
-    assert garment_for(p, tmp_path, http=http).image == b"jpg" and len(tries) == 1, "the second time comes from disk"
+    assert g.image == jpg and tries[0] <= 10, "one try within the outfit's budget, not a long wait"
+    assert garment_for(p, tmp_path, http=http).image == jpg and len(tries) == 1, "the second time comes from disk"
 
     q = ProductView("asos-3", "Midi skirt", "Skirts", "bottom", "white", "", "https://images.asos-media.com/products/z/1", 20)
     prefetch([q], tmp_path, http=http)
     assert garment_for(q, tmp_path, http=httpx.Client(transport=httpx.MockTransport(
-        lambda r: (_ for _ in ()).throw(AssertionError("should be cached"))))).image == b"jpg"
+        lambda r: (_ for _ in ()).throw(AssertionError("should be cached"))))).image == jpg
 
 
-def test_garment_photos_load_together_and_a_straggler_is_described(client, runtime, user, monkeypatch):
+def test_a_shop_photo_is_read_by_its_bytes_not_its_header(tmp_path, caplog):
+    """A CDN can label a JPEG "image/jpg" or "binary/octet-stream", or send a format the models don't read."""
+    import io as _io
+
+    from PIL import Image
+
+    from lookmate.tryon.garments import fetch_shop_photo
+
+    png, gif = _io.BytesIO(), _io.BytesIO()
+    Image.new("RGB", (4, 4), (200, 0, 0)).save(png, "PNG")
+    Image.new("RGB", (4, 4), (200, 0, 0)).save(gif, "GIF")
+
+    def serve(body, ctype="binary/octet-stream"):
+        return httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=body, headers={"content-type": ctype})))
+
+    assert fetch_shop_photo("https://cdn/a.png", tmp_path, serve(png.getvalue()))[1] == "image/png"
+    data, media_type = fetch_shop_photo("https://cdn/b.gif", tmp_path, serve(gif.getvalue(), "image/gif"))
+    assert media_type == "image/jpeg" and data[:3] == b"\xff\xd8\xff", "re-encoded for the try-on model"
+    assert fetch_shop_photo("https://cdn/c", tmp_path, serve(b"<html>blocked</html>", "text/html"))[0] is None
+    refused = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(403)))
+    assert fetch_shop_photo("https://cdn/d.jpg", tmp_path, refused)[0] is None
+    assert "shop photo not loaded (httpx refused (403))" in caplog.text, "the server log says why a photo didn't load"
+
+
+def test_a_photo_prefetched_while_the_try_on_waited_is_used(client, runtime, user, monkeypatch, tmp_path):
+    """The fitting room's prefetch can land after the try-on stopped waiting for its own fetch."""
     import threading
 
     from lookmate import worker
-    from lookmate.tryon.client import TRYON_STAGE
+    from lookmate.tryon.garments import _cached
 
-    class Outfit:
+    jpg = b"\xff\xd8\xff\xe0shop"
+    release = threading.Event()
+    seen = []
+
+    class WholeOutfit:
         name, renders, whole_outfit = "nano-banana", True, True
 
         def dress_outfit(self, person, media_type, garments):
-            self.seen = garments
+            seen.extend(garments)
+            return b"dressed", "image/jpeg"
+
+    dress_id = pick(runtime, "dress")[0]
+    dress = runtime.catalog.products[dress_id]
+    url = "https://images.asos-media.com/products/slow/1"
+    monkeypatch.setitem(runtime.catalog.products, dress_id, replace(dress, image_url=url))
+
+    def slow(p, data_dir):
+        path = _cached(data_dir, url)  # meanwhile, the API's prefetch writes the photo to the shared cache
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"image/jpeg\n" + jpg)
+        release.wait(2)
+        raise AssertionError("never reached in time")
+
+    monkeypatch.setattr(runtime, "data_dir", tmp_path)
+    monkeypatch.setattr(runtime, "tryon", WholeOutfit())
+    monkeypatch.setattr(worker, "garment_for", slow)
+    monkeypatch.setattr(worker, "GARMENT_BUDGET_S", 0.2)
+    request_tryon(client, user["id"], [dress_id])
+    run_next_job(runtime)
+    release.set()
+    assert seen and seen[0].image == jpg, "the cached photo, not a description"
+
+
+def test_garment_photos_load_together_and_a_missing_one_stops_the_try_on(client, runtime, user, monkeypatch):
+    """Feedback #38: a piece whose photo can't be had is never drawn from its description. The try-on stops
+    before the model is called (nothing is paid), with a message naming the piece."""
+    import threading
+
+    from lookmate import worker
+
+    class Outfit:
+        name, renders, whole_outfit = "nano-banana", True, True
+        calls = 0
+
+        def dress_outfit(self, person, media_type, garments):
+            self.calls += 1
             return b"out", "image/jpeg"
 
     release = threading.Event()
@@ -267,16 +361,53 @@ def test_garment_photos_load_together_and_a_straggler_is_described(client, runti
     monkeypatch.setattr(runtime, "tryon", model)
     monkeypatch.setattr(worker, "garment_for", slow_or_fast)
     monkeypatch.setattr(worker, "GARMENT_BUDGET_S", 0.3)
+    monkeypatch.setattr(worker.get_settings(), "daily_tryon_limit", 5)
     ids = pick(runtime, "top", "bottom")
     tid = request_tryon(client, user["id"], ids).json()["id"]
+    from lookmate.tryon.client import tryon_quota_key
+
+    assert int(runtime.redis.get(tryon_quota_key())) == 1
     t0 = time.monotonic()
-    assert worker.process_tryon(runtime, tid) == "done"
+    assert worker.process_tryon(runtime, tid) == "failed"
     release.set()
     assert time.monotonic() - t0 < 2, "photos load in parallel within one budget"
-    result = client.get(f"/api/tryons/{tid}").json()["result"]
-    assert len(result["described_ids"]) == 1 and set(result["timings_ms"]) == {"fetch_ms", "model_ms"}
-    assert [g.image for g in model.seen].count(None) == 1, "the stalled piece is drawn from its description"
-    assert runtime.redis.get(TRYON_STAGE.format(tid)) is None
+    out = client.get(f"/api/tryons/{tid}").json()
+    bottom = runtime.catalog.products[ids[1]].name
+    assert out["error"] == (f"We couldn't load the photo for {bottom}, so we won't guess what it looks like. "
+                            "Try again, or swap it for another piece.")
+    assert model.calls == 0, "no model call is paid for"
+    assert int(runtime.redis.get(tryon_quota_key())) == 0, "and it doesn't count against today's try-ons"
+
+
+def test_a_photo_that_failed_to_load_also_stops_the_try_on(client, runtime, user, monkeypatch):
+    from lookmate import worker
+
+    class Outfit:
+        name, renders, whole_outfit = "nano-banana", True, True
+
+        def dress_outfit(self, person, media_type, garments):
+            raise AssertionError("never called")
+
+    ids = pick(runtime, "top", "bottom", "shoes")
+    monkeypatch.setattr(runtime, "tryon", Outfit())
+    monkeypatch.setattr(worker, "garment_for", lambda p, d: Garment(None if p.category != "top" else b"img",
+                                                                    "image/jpeg", "upper_body", p.name, url="https://x"))
+    tid = request_tryon(client, user["id"], ids).json()["id"]
+    assert worker.process_tryon(runtime, tid) == "failed"
+    names = [runtime.catalog.products[i].name for i in ids[1:]]
+    assert client.get(f"/api/tryons/{tid}").json()["error"].startswith(
+        f"We couldn't load the photo for {names[0]} and {names[1]}, so"), "shoes and accessories too"
+
+
+def test_a_provider_that_loads_urls_itself_gets_the_url(client, runtime, user, renderer, monkeypatch):
+    """FASHN and IDM-VTON take a garment by URL: a photo we couldn't fetch is still a photo for them."""
+    monkeypatch.setattr(renderer, "fetches_urls", True, raising=False)
+    monkeypatch.setattr("lookmate.worker.garment_for",
+                        lambda p, d: Garment(None, "image/jpeg", "dresses", p.name, url="https://cdn/dress.jpg"))
+    seen = []
+    monkeypatch.setattr(renderer, "dress", lambda person, mt, g: (seen.append(g.url), (person, mt))[1])
+    tryon_id = request_tryon(client, user["id"], pick(runtime, "dress")).json()["id"]
+    assert run_next_job(runtime) == "done" and seen == ["https://cdn/dress.jpg"]
 
 
 def test_shop_photo_falls_back_to_its_url_when_the_cdn_stalls():
@@ -324,12 +455,15 @@ def test_the_worker_serves_tryons_on_a_separate_thread(runtime, monkeypatch):
     from lookmate import worker
 
     served = []
-    monkeypatch.setattr(worker, "_serve", lambda rt, stop, trends: served.append((rt.queue, trends)))
+    shared = []
+    monkeypatch.setattr(worker, "_serve", lambda rt, stop, trends, shares=(): (
+        served.append((rt.queue, trends)), shared.extend(shares)))
     worker.run_forever(runtime, threading.Event())
     for t in threading.enumerate():
         if t.name == "tryon-worker":
             t.join(timeout=2)
     assert (runtime.queue, True) in served and (runtime.tryon_queue, False) in served
+    assert [r.queue for r in shared] == [runtime.tryon_queue], "a reloaded catalog reaches the try-on thread too"
 
 
 def test_an_old_tryon_on_the_shared_queue_is_handed_over(client, runtime, user, monkeypatch):
@@ -387,7 +521,7 @@ def fashn_stub(statuses, seen):
 def test_fashn_client_renders_a_garment(monkeypatch):
     monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
     seen = []
-    out = FashnTryOn("key", http=fashn_stub(["in_queue", "processing", "completed"], seen)).dress(
+    out = FashnTryOn("key", "tryon-v1.6", http=fashn_stub(["in_queue", "processing", "completed"], seen)).dress(
         b"person", "image/jpeg", Garment(None, "image/jpeg", "lower_body", "jeans", url="https://img/jeans.jpg"))
     assert out == (b"JPEGDATA", "image/jpeg")
     body = next(s for s in seen if isinstance(s, dict))
@@ -395,6 +529,25 @@ def test_fashn_client_renders_a_garment(monkeypatch):
     assert body["inputs"]["garment_image"] == "https://img/jeans.jpg"
     assert body["inputs"]["model_image"].startswith("data:image/jpeg;base64,")
     assert ("POST", "/v1/run", "Bearer key") in seen
+
+
+def test_fashn_draws_clothes_in_the_configured_mode_on_its_default_segmentation_free_fit(monkeypatch):
+    """Renee (2026-10-07): a cardigan laid over a baggy hoodie kept the hoodie's collar, a wider waist and a
+    blurred hand. Clothes are segmented out first and rendered in quality mode; shoes are left as they were."""
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    seen = []
+    tryon = FashnTryOn("key", http=fashn_stub(["completed", "completed"], seen))
+    tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "upper_body", "cardigan"))
+    tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "shoes", "sneakers"))
+    clothes, shoes = [s["inputs"] for s in seen if isinstance(s, dict)]
+    assert "segmentation_free" not in clothes and clothes["mode"] == "quality", \
+        "quality by default: the closest to a real photo, worth the wait (Renee); FASHN_MODE can trade it for speed"
+    seen.clear()
+    FashnTryOn("key", http=fashn_stub(["completed"], seen), mode="balanced").dress(
+        b"person", "image/jpeg", Garment(b"g", "image/jpeg", "lower_body", "trousers"))
+    assert [s["inputs"]["mode"] for s in seen if isinstance(s, dict)] == ["balanced"]
+    assert make_tryon("", "", "fa-key", fashn_mode="performance").mode == "performance"
+    assert "segmentation_free" not in shoes and shoes["generation_mode"] == "balanced"
 
 
 def test_fashn_failure_is_explained(monkeypatch):
@@ -433,13 +586,16 @@ def test_nano_banana_dresses_the_whole_outfit_in_one_call(monkeypatch):
     nano = NanoBananaTryOn("token", http=httpx.Client(transport=httpx.MockTransport(handler)))
     out = nano.dress_outfit(b"me", "image/jpeg", [
         Garment(b"t", "image/jpeg", "upper_body", "white satin blouse"),
-        Garment(None, "image/jpeg", "accessory", "black ballet flats", url="https://img/flats.jpg")])
+        Garment(b"f", "image/jpeg", "accessory", "black ballet flats")])
     assert out == (b"JPG", "image/jpeg")
     body = next(s for s in seen if isinstance(s, dict))["input"]
-    # A photo we couldn't fetch isn't passed on as a URL (the CDN stalls the model too): it's described in words.
-    assert len(body["image_input"]) == 2 and not any(i.startswith("https://") for i in body["image_input"])
-    assert "shown in the other images: white satin blouse, and" in body["prompt"]
-    assert "no photo, as described: black ballet flats" in body["prompt"]
+    assert len(body["image_input"]) == 3 and not any(i.startswith("https://") for i in body["image_input"])
+    assert "shown in the other images: white satin blouse; black ballet flats" in body["prompt"]
+    assert "described" not in body["prompt"], "nothing is drawn from words"
+    calls = len(seen)
+    with pytest.raises(TryOnError):  # a piece without a photo never reaches the model
+        nano.dress_outfit(b"me", "image/jpeg", [Garment(None, "image/jpeg", "accessory", "flats", url="https://img/f.jpg")])
+    assert len(seen) == calls
     assert not any(p == "/v1/models/google/nano-banana" for _, p in [x for x in seen if isinstance(x, tuple)]), \
         "official models need no version lookup"
 
@@ -456,15 +612,14 @@ def test_a_whole_outfit_model_renders_shoes_too(client, runtime, user, monkeypat
 
     monkeypatch.setattr(runtime, "tryon", WholeOutfit())
     monkeypatch.setattr("lookmate.worker.garment_for",
-                        lambda p, data_dir: Garment(None if p.category == "shoes" else b"img", "image/jpeg",
+                        lambda p, data_dir: Garment(b"img", "image/jpeg",
                                                     {"shoes": "accessory"}.get(p.category, "upper_body"), p.name))
     ids = pick(runtime, "top", "bottom", "shoes")
     tryon_id = request_tryon(client, user["id"], ids).json()["id"]
     assert run_next_job(runtime) == "done"
     assert len(calls) == 1 and "accessory" in calls[0], "one call, shoes included"
     result = client.get(f"/api/tryons/{tryon_id}").json()["result"]
-    assert result["rendered_ids"] == ids
-    assert result["described_ids"] == [ids[2]], "the shoes' photo wouldn't load, so they were drawn from words"
+    assert result["rendered_ids"] == ids and "described_ids" not in result
 
 
 def test_a_try_on_photo_is_checked_before_it_is_used(client, runtime, user, monkeypatch):
@@ -489,7 +644,7 @@ def test_a_busy_model_is_retried_but_a_refusal_is_not(monkeypatch):
     assert not TRANSIENT.search("CUDA out of memory") and not TRANSIENT.search("Input image flagged as sensitive")
 
 
-def test_a_shop_photo_the_model_cant_read_is_described_instead():
+def test_a_shop_photo_the_model_cant_read_is_not_sent():
     from lookmate.catalog.service import ProductView
     from lookmate.tryon.garments import BROWSER_HEADERS, garment_for
 
@@ -498,7 +653,7 @@ def test_a_shop_photo_the_model_cant_read_is_described_instead():
         lambda req: httpx.Response(200, content=b"avif", headers={"content-type": "image/avif"})))
     p = ProductView("asos-3", "Wrap top", "Tops", "top", "white", "", "https://images.asos-media.com/products/z/1-2", 20)
     g = garment_for(p, None, http=avif)
-    assert g.image is None and g.description, "drawn from its description rather than sent as AVIF"
+    assert g.image is None, "never sent as AVIF; the try-on then stops and names the piece"
 
 
 def test_fitting_room_pieces_are_prefetched_and_the_stage_is_shown(client, runtime, user, renderer, monkeypatch):
@@ -518,3 +673,203 @@ def test_fitting_room_pieces_are_prefetched_and_the_stage_is_shown(client, runti
         s.commit()
     runtime.redis.set(TRYON_STAGE.format(tid), "fetching")
     assert client.get(f"/api/tryons/{tid}").json()["stage"] == "fetching"
+
+
+def test_fashn_dresses_my_model_layer_by_layer_with_shoes(client, runtime, user, monkeypatch):
+    """Feedback #38/#41/#42: with FASHN_API_KEY a try-on uses the saved My model as the person and dresses one
+    piece per call in wearing order, each on the picture the last call returned: bottom, top, the jacket over
+    it, then shoes. Every clothing step is locked to its category on tryon-v1.6 (Try-On Max copied the other
+    clothes in an on-model photo); only the shoes go through Try-On Max. A bag isn't drawn."""
+    from lookmate import worker
+    from tests.test_body_model import create
+
+    assert make_tryon("", "fashn", "fa-key").name == "fashn"
+    assert make_tryon("", "fashn", "fa-key").model == "tryon-max", "the default keeps the face and does shoes"
+    assert make_tryon("", "", "fa-key", "tryon-v1.6").extra_steps == ()
+    assert make_tryon("rep-token", "FASHN").name == "nano-banana", "no FASHN key: the Replicate default"
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    runs, outputs = [], iter([b"after-bottom", b"after-top", b"after-shoes"])
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/v1/run":
+            body = json.loads(req.content)
+            runs.append(body["inputs"] | {"model_name": body["model_name"]})
+            return httpx.Response(200, json={"id": f"f{len(runs)}", "error": None})
+        if req.url.path.startswith("/v1/status/"):
+            return httpx.Response(200, json={"status": "completed", "output": [f"https://cdn.fashn.ai/{req.url.path[-2:]}.jpg"]})
+        return httpx.Response(200, content=next(outputs), headers={"content-type": "image/jpeg"})
+
+    monkeypatch.setattr(runtime, "tryon", FashnTryOn("fa-key", http=httpx.Client(transport=httpx.MockTransport(handler))))
+    monkeypatch.setattr(worker, "garment_for", lambda p, data_dir: Garment(
+        f"photo:{p.category}".encode(), "image/jpeg", REGIONS.get(p.category, "accessory"), p.name,
+        url="https://images.asos-media.com/products/x/1" if p.category == "top" else None))
+    my_model = b"\xff\xd8\xff\xe0my-saved-model"
+    monkeypatch.setattr(runtime, "model_maker", None)  # keeps the uploaded picture as My model
+    saved = create(client, user["id"], photo=my_model).json()
+    client.post(f"/api/body-models/{saved['id']}/save")
+
+    ids = pick(runtime, "outerwear", "top", "bottom", "shoes", "bag")
+    tid = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(ids)}).json()["id"]
+    assert run_next_job(runtime) == "done"
+    assert [r["model_name"] for r in runs] == ["tryon-v1.6"] * 2 + ["tryon-max"], "Max for the shoes only"
+    assert [r.get("category") for r in runs] == ["bottoms", "tops", None], "each step puts on its piece only"
+    assert [r.get("garment_photo_type") for r in runs] == ["auto", "model", None], "ASOS shoots on a model"
+    pieces = [base64.b64decode((r.get("garment_image") or r["product_image"]).split(",", 1)[1]) for r in runs]
+    assert pieces == [b"photo:bottom", b"photo:top", b"photo:shoes"], "wearing order, no jacket over the top, no bag"
+    model_images = [base64.b64decode(r["model_image"].split(",", 1)[1]) for r in runs]
+    assert model_images == [my_model, b"after-bottom", b"after-top"]
+    out = client.get(f"/api/tryons/{tid}").json()
+    assert out["result"]["model"] == "fashn" and out["result"]["rendered_ids"] == [ids[2], ids[1], ids[3]]
+    assert out["result"]["head_paste_skipped"] == "unreadable", "the paste-back was tried on the FASHN path too"
+    assert client.get(out["image_url"]).content == b"after-shoes"
+
+
+def test_a_refused_shop_photo_is_retried_over_http2_only_when_switched_on(monkeypatch, tmp_path, caplog):
+    """SHOP_FETCH_HTTP2: Akamai may refuse httpx's HTTP/1.1 fingerprint; an HTTP/2 retry looks more like Chrome."""
+    import logging
+
+    from lookmate.config import get_settings
+    from lookmate.tryon import garments
+
+    url = "https://images.asos-media.com/products/h2/1"
+    tried = []
+    h1 = httpx.Client(transport=httpx.MockTransport(lambda req: (tried.append("h1"), httpx.Response(403))[1]))
+    h2 = httpx.Client(transport=httpx.MockTransport(
+        lambda req: (tried.append("h2"), httpx.Response(200, content=b"\xff\xd8\xffjpg"))[1]))
+    monkeypatch.setattr(garments, "_http2_client", lambda: h2)
+
+    assert garments.fetch_shop_photo(url, tmp_path, h1) == (None, "image/jpeg") and tried == ["h1"], "off by default"
+    monkeypatch.setattr(get_settings(), "shop_fetch_http2", True)
+    with caplog.at_level(logging.WARNING, logger="lookmate.tryon.garments"):
+        assert garments.fetch_shop_photo(url, tmp_path, h1) == (b"\xff\xd8\xffjpg", "image/jpeg")
+    assert tried == ["h1", "h1", "h2"] and "loaded via httpx-http2 after httpx refused (403)" in caplog.text
+    assert garments.cached_photo(url, tmp_path)[0] == b"\xff\xd8\xffjpg", "cached for the try-on"
+
+
+def test_the_http2_client_can_be_built():
+    from lookmate.tryon.garments import _http2_client
+
+    assert _http2_client() is _http2_client()  # h2 is installed with httpx[http2]
+
+
+class FakeChrome:
+    """Stands in for curl_cffi.requests: answers as the CDN would answer Chrome."""
+
+    def __init__(self, status=200, content=b"\xff\xd8\xffchrome", error=None):
+        self.status, self.content, self.error, self.calls = status, content, error, []
+
+    def get(self, url, **kw):
+        self.calls.append(kw)
+        if self.error:
+            raise self.error
+        return type("R", (), {"status_code": self.status, "content": self.content,
+                              "headers": {"content-type": "image/jpeg"}})()
+
+
+def test_a_shop_photo_the_cdn_refuses_is_fetched_as_chrome(monkeypatch, tmp_path, caplog):
+    """Feedback #38: Akamai resets httpx (HTTP/2 INTERNAL_ERROR) and tarpits HTTP/1.1. When curl_cffi is installed
+    (the Docker image), a failed fetch is retried with Chrome's fingerprint, within a hard timeout."""
+    import logging
+
+    from lookmate.tryon import garments
+
+    url = "https://images.asos-media.com/products/chrome/1"
+    reads = []
+    h1 = httpx.Client(transport=httpx.MockTransport(
+        lambda req: (reads.append(req.extensions["timeout"]["read"]), httpx.Response(403))[1]))
+    chrome = FakeChrome()
+    monkeypatch.setattr(garments, "_impersonator", lambda: chrome)
+    with caplog.at_level(logging.INFO, logger="lookmate.tryon.garments"):
+        assert garments.fetch_shop_photo(url, tmp_path, h1) == (b"\xff\xd8\xffchrome", "image/jpeg")
+    assert chrome.calls[0]["impersonate"] == "chrome" and chrome.calls[0]["timeout"] <= 8
+    assert reads == [garments.HTTPX_READ_WITH_RETRY_S], "a tarpit can't hold the first try past the budget"
+    assert "shop photo loaded via curl_cffi after httpx refused (403)" in caplog.text, "the log says which path won"
+    assert garments.cached_photo(url, tmp_path)[0] == b"\xff\xd8\xffchrome"
+
+    caplog.clear()
+    monkeypatch.setattr(garments, "_impersonator", lambda: FakeChrome(error=TimeoutError("tarpit")))
+    with caplog.at_level(logging.INFO, logger="lookmate.tryon.garments"):
+        assert garments.fetch_shop_photo(url + "x", tmp_path, h1) == (None, "image/jpeg")
+    assert "httpx refused (403); curl_cffi not loaded (TimeoutError)" in caplog.text
+    monkeypatch.setattr(garments, "_impersonator", lambda: FakeChrome(status=403))
+    assert garments.fetch_shop_photo(url + "y", tmp_path, h1) == (None, "image/jpeg")
+
+    ok = httpx.Client(transport=httpx.MockTransport(lambda req: httpx.Response(200, content=b"\xff\xd8\xffplain")))
+    with caplog.at_level(logging.INFO, logger="lookmate.tryon.garments"):
+        garments.fetch_shop_photo(url + "z", tmp_path, ok)
+    assert "shop photo loaded via httpx:" in caplog.text
+
+
+def test_impersonation_is_used_only_when_installed_and_switched_on(monkeypatch):
+    import builtins
+    import sys
+
+    from lookmate.config import get_settings
+    from lookmate.tryon.garments import _impersonator
+
+    assert _impersonator() is None, "tests switch it off (SHOP_FETCH_IMPERSONATE=false)"
+    monkeypatch.setattr(get_settings(), "shop_fetch_impersonate", True)
+    real_import = builtins.__import__
+
+    def no_curl_cffi(name, *a, **k):
+        if name.startswith("curl_cffi"):
+            raise ImportError(name)
+        return real_import(name, *a, **k)
+
+    monkeypatch.delitem(sys.modules, "curl_cffi", raising=False)
+    monkeypatch.delitem(sys.modules, "curl_cffi.requests", raising=False)
+    monkeypatch.setattr(builtins, "__import__", no_curl_cffi)
+    assert _impersonator() is None, "not installed: the plain fetch only, nothing breaks"
+
+
+def test_fashn_locks_a_dress_to_one_pieces():
+    seen = []
+    import lookmate.tryon.client as c
+
+    c_sleep, c.time.sleep = c.time.sleep, lambda s: None
+    try:
+        FashnTryOn("key", http=fashn_stub(["completed"], seen)).dress(
+            b"p", "image/jpeg", Garment(b"g", "image/jpeg", "dresses", "black ribbed dress"))
+    finally:
+        c.time.sleep = c_sleep
+    body = next(x for x in seen if isinstance(x, dict))
+    assert body["model_name"] == "tryon-v1.6" and body["inputs"]["category"] == "one-pieces"
+
+
+def test_open_layered_tops_have_the_base_clothes_taken_off_first(monkeypatch):
+    """Renee (2026-10-07): a ribbed cami with a bolero, laid over My model's own tank top, showed the tank top
+    through the opening and a seam under the arm. Open or two-in-one tops are put on with the base clothes
+    segmented out; everything else keeps FASHN's segmentation-free fit."""
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    seen = []
+    tryon = FashnTryOn("key", http=fashn_stub(["completed"] * 4, seen))
+    for region, name in [("upper_body", "COLLUSION Plus bolero detail ribbed cami in white"),
+                         ("upper_body", "Satin kimono jacket"),
+                         ("upper_body", "Fine knit cropped cardigan in cream"),
+                         ("lower_body", "Layered tulle skirt")]:
+        tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", region, name))
+    flags = [s["inputs"].get("segmentation_free") for s in seen if isinstance(s, dict)]
+    assert flags == [False, False, None, None], "only open or two-in-one tops; a cropped cardigan keeps the default"
+
+
+def test_a_cropped_top_goes_on_before_the_bottom():
+    """Renee (2026-10-07): under a cropped blue cardigan the try-on showed a blurry fringed band, left over from My
+    model's denim shorts, between the hem and the trousers. With a cropped top the trousers go on last."""
+    from types import SimpleNamespace
+
+    def piece(c, name="Plain piece"):
+        return {"category": c, "product": SimpleNamespace(name=name, product_type=c)}
+
+    top, bottom, coat = piece("top", "ASOS DESIGN cropped cardigan in blue"), piece("bottom"), piece("outerwear")
+    assert plan_steps([top, bottom, coat]) == [top, bottom]
+    jacket = piece("outerwear", "Crop denim jacket")
+    assert plan_steps([bottom, jacket]) == [jacket, bottom]
+    long_top = piece("top", "Longline knitted jumper")
+    assert plan_steps([long_top, bottom]) == [bottom, long_top], "other tops still go over the waistband"
+    assert plan_steps([piece("top", "Microcrop tee"), bottom])[0] == bottom, "whole words only"
+    knit = {"category": "top", "product": SimpleNamespace(name="Cardigan with jewel buttons in blue", product_type="Cardigans",
+                                                          description="V-neck. Button placket. Cropped length. Regular fit")}
+    assert plan_steps([bottom, knit]) == [knit, bottom], "the shop's details say cropped"
+    styled = {"category": "top", "product": SimpleNamespace(name="Fitted tee", product_type="T-shirts",
+                                                            description="Style it with cropped jeans")}
+    assert plan_steps([bottom, styled]) == [bottom, styled], "styling tips don't count"

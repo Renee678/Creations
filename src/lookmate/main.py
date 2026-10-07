@@ -8,10 +8,10 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api import analysis, looks, profiles, style, trends, tryon
+from .api import analysis, body_model, looks, profiles, style, trends, tryon
 from .catalog.importer import IMAGE_ROUTE
 from .config import get_settings
-from .runtime import Runtime, build_runtime
+from .runtime import Runtime, build_runtime, watch_catalog
 from .services.vocab import BODY_SHAPES, STYLES
 from .worker import run_forever
 
@@ -27,6 +27,8 @@ async def lifespan(app: FastAPI):
     stop = threading.Event()
     if settings.inline_worker:
         threading.Thread(target=run_forever, args=(app.state.runtime, stop), daemon=True, name="worker").start()
+    elif settings.catalog_import == "external":
+        threading.Thread(target=watch_catalog, args=(app.state.runtime, stop), daemon=True, name="catalog-watch").start()
     yield
     stop.set()
 
@@ -49,6 +51,7 @@ app.include_router(style.router)
 app.include_router(trends.router)
 app.include_router(analysis.router)
 app.include_router(tryon.router)
+app.include_router(body_model.router)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -75,8 +78,10 @@ def vocab() -> dict:
 
 
 @app.get("/healthz")
-def healthz() -> dict:
-    return {"status": "ok"}
+def healthz(request: Request) -> dict:
+    # Healthy as soon as it serves; a catalog import still running in the background is reported, not waited on.
+    rt = request.app.state.runtime
+    return {"status": "ok", "catalog": {"products": len(rt.catalog.index), **rt.catalog_import}}
 
 
 @app.get("/api/search")

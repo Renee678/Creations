@@ -20,8 +20,17 @@ class DetectedItem(BaseModel):
     details: list[str] = Field(description="Distinguishing details in English: neckline, sleeves, fabric, pattern")
     style_tags: list[str] = Field(description="Style labels from the allowed vocabulary")
     search_query: str = Field(description="One English sentence describing the item for a product search engine")
+    sleeve: Literal["sleeveless", "short", "long"] | None = Field(
+        default=None, description="Sleeve length as seen in the photo (cap and elbow sleeves are short); null if "
+        "the item has no sleeves to judge (trousers, shoes, bags)")
+    warmth: Literal["summer", "all-season", "winter"] | None = Field(
+        default=None, description="Which weather the piece is made for, judged from the photo: summer (thin jersey, "
+        "linen, cap sleeves, straps), winter (chunky, cable or roll-neck knit, wool, fleece, padding) or all-season")
     estimated_original_price_usd: float | None = Field(
         default=None, description="Rough retail price of the item as pictured if it looks designer/premium, else null"
+    )
+    partial: bool = Field(
+        default=False, description="True if less than about half of the item is in frame, e.g. cut off at the edge"
     )
 
 
@@ -118,7 +127,7 @@ class StyledOutfit(BaseModel):
     index: int = Field(description="The outfit's index from the request")
     picks: list[str] = Field(description="Exactly one candidate id per slot, in slot order")
     approved: bool = Field(description="True only if this outfit looks cohesive and true to its style")
-    why: str = Field(description="If approved: one short sentence, addressed to the client, on why it works. "
+    why: str = Field(description="If approved: one short, casual sentence (12 words or fewer), addressed to the client, on why it works. "
                                  "If not: what clashes")
 
 

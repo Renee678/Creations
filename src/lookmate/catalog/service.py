@@ -57,6 +57,9 @@ def shop_query(name: str, colour: str = "") -> str:
     return text if not colour or any(w in text.split() for w in colour.split()) else f"{colour} {text}"
 
 
+WHITE_BACKGROUND_SOURCES = ("pv-", "amz-")
+
+
 @dataclass(frozen=True)
 class ProductView:
     id: str
@@ -83,8 +86,24 @@ class ProductView:
             links["amazon"] = f"https://www.amazon.com/dp/{quote(self.id.removeprefix('amz-'))}"
         return links
 
+    @property
+    def white_background(self) -> bool:
+        """Polyvore and Amazon photos are packshots on white; ASOS shows the piece on a model."""
+        return self.id.startswith(WHITE_BACKGROUND_SOURCES)
+
+    def shop(self) -> dict[str, str]:
+        """Where the label on a flat lay links: the shop this piece came from (a search there when the
+        dataset's product page is long gone; Polyvore closed, so its pieces are searched on SHEIN)."""
+        links = self.shop_links()
+        if "amazon" in links:
+            return {"name": "Amazon", "url": links["amazon"]}
+        if self.id.startswith("asos-"):
+            return {"name": "ASOS", "url": links["asos"]}
+        return {"name": "SHEIN", "url": links["shein"]}
+
     def to_dict(self) -> dict:
-        return asdict(self) | {"shop_links": self.shop_links()}
+        return asdict(self) | {"shop_links": self.shop_links(), "shop": self.shop(),
+                               "white_background": self.white_background}
 
 
 @dataclass(frozen=True)
@@ -93,8 +112,30 @@ class SearchResult:
     score: float
 
 
+def _base_name(p: ProductView) -> str:
+    """The piece without its colour: 'ASOS DESIGN midi skirt in black' and '... in red' share it."""
+    from ..services.colours import colour_word
+
+    name = re.sub(r"\s+in\s+[a-z][a-z \-]{1,30}$", "", p.name.lower())
+    word = colour_word(name)
+    if word:
+        name = re.sub(rf"\b{re.escape(word)}\b", "", name)
+    return f"{p.category}|{re.sub(r'[^a-z0-9]+', ' ', name).strip()}"
+
+
 class Catalog:
     """Read-only catalog held in memory: product metadata plus the vector index."""
+
+    _variants: dict[str, list[ProductView]] | None = None
+
+    def colour_variants(self, product: ProductView) -> list[ProductView]:
+        """The same piece in other colours, when the catalog lists them as separate products."""
+        if self._variants is None:
+            groups: dict[str, list[ProductView]] = {}
+            for p in self.products.values():
+                groups.setdefault(_base_name(p), []).append(p)
+            self._variants = groups
+        return [p for p in self._variants.get(_base_name(product), []) if p.id != product.id]
 
     def __init__(self, products: list[ProductView], index: VectorIndex, embedder: Embedder):
         self.products = {p.id: p for p in products}

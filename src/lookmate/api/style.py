@@ -1,19 +1,22 @@
 import hashlib
+import re
 from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import SavedOutfit
+from ..models import Look, SavedOutfit, StyleEvent, TryOn
+from ..services.colours import family
 from ..services.body import guide_for
 from ..services.lookbook import latest_analysis
 from ..services.ranking import STYLE_KEYWORDS
 from ..services.style_memory import record_saved, style_counts, user_context
+from ..services.stylist import short_why
 from ..services.trends import SEASONS, season_of
 from ..services.vocab import BODY_SHAPES, STYLES, style_name
 from .profiles import get_user_or_404
@@ -35,6 +38,57 @@ def save_product(user_id: int, body: SaveIn, request: Request, db: Session = Dep
     record_saved(db, user_id, product, body.style_tags)
     db.commit()
     return {"saved": body.product_id}
+
+
+# ---------- favourites: single saved pieces, in folders by what they are ----------
+
+FOLDERS = [("tops", "Tops"), ("bottoms", "Bottoms"), ("dresses", "Dresses"), ("outerwear", "Outerwear"),
+           ("shoes", "Shoes"), ("bags", "Bags"), ("hats", "Hats"), ("accessories", "Accessories")]
+_FOLDER_OF = {"top": "tops", "bottom": "bottoms", "dress": "dresses", "outerwear": "outerwear",
+              "shoes": "shoes", "bag": "bags", "accessory": "accessories"}
+_HAT = re.compile(r"\b(hats?|caps?|beanies?|berets?|fedoras?|bucket hat|baseball cap|visors?|headwear)\b", re.I)
+
+
+def folder_of(product) -> str:
+    """The Favourites folder a piece goes in: its category, with hats split out of accessories."""
+    folder = _FOLDER_OF.get(product.category, "accessories")
+    if folder == "accessories" and _HAT.search(f"{product.product_type} {product.name}"):
+        return "hats"
+    return folder
+
+
+def _favourite_events(db: Session, user_id: int) -> list[StyleEvent]:
+    events = db.scalars(select(StyleEvent).where(StyleEvent.user_id == user_id, StyleEvent.kind == "saved")
+                        .order_by(StyleEvent.id.desc())).all()
+    return [e for e in events if e.attributes.get("product_id") and not e.attributes.get("from_outfit")]
+
+
+@router.get("/saved")
+def list_favourites(user_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
+    """Saved single pieces, newest first, one folder per kind of piece (empty folders included, count 0)."""
+    get_user_or_404(db, user_id)
+    catalog = request.app.state.runtime.catalog
+    items: dict[str, list] = {f: [] for f, _ in FOLDERS}
+    seen: set[str] = set()
+    for e in _favourite_events(db, user_id):
+        pid = e.attributes["product_id"]
+        product = catalog.products.get(pid)
+        if product is None or pid in seen:
+            continue
+        seen.add(pid)
+        items[folder_of(product)].append(product.to_dict())
+    return {"total": len(seen), "folders": [{"id": f, "label": label, "count": len(items[f]), "items": items[f]}
+                                            for f, label in FOLDERS]}
+
+
+@router.delete("/saved/{product_id}", status_code=204)
+def remove_favourite(user_id: int, product_id: str, db: Session = Depends(get_db)) -> Response:
+    get_user_or_404(db, user_id)
+    for e in _favourite_events(db, user_id):
+        if e.attributes["product_id"] == product_id:
+            db.delete(e)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/style")
@@ -84,13 +138,58 @@ class OutfitIn(BaseModel):
     season: Season | None = None
     style_id: str | None = None
     source: Literal["lookbook", "mine", "fitting_room"] = "lookbook"
+    why: str | None = Field(default=None, max_length=300)        # the stylist's line, for the book page
+    occasion: Literal["work", "weekend", "date", "party", "travel"] | None = None
+    inspo_look_id: int | None = None                             # Make it mine: the look it started from
 
 
-def outfit_out(o: SavedOutfit, catalog) -> dict:
-    pieces = [catalog.products[i].to_dict() for i in o.product_ids if i in catalog.products]
+class OutfitRename(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+
+
+def palette_dots(product, catalog, palette: dict[str, str]) -> list[dict]:
+    """Other colours of this piece that are in the user's palette: display only, empty when none match."""
+    own = family(product.colour) or family(product.name)
+    dots, seen = [], {own}
+    for v in catalog.colour_variants(product):
+        fam = family(v.colour) or family(v.name)
+        if fam in palette and fam not in seen:
+            seen.add(fam)
+            dots.append({"id": v.id, "colour": v.colour or fam, "hex": palette[fam]})
+    return dots[:5]
+
+
+def latest_tryon(db: Session, user_id: int, product_ids: list[str]) -> str | None:
+    """The newest finished try-on of exactly this set of pieces: the outfit page's "On me" photo."""
+    wanted = sorted(product_ids)
+    rows = db.scalars(select(TryOn).where(TryOn.user_id == user_id, TryOn.status == "done")
+                      .order_by(TryOn.created_at.desc()))
+    rec = next((t for t in rows if sorted(t.product_ids) == wanted and t.result_image), None)
+    return f"/api/tryons/{rec.id}/image" if rec else None
+
+
+def outfit_out(o: SavedOutfit, catalog, db: Session | None = None, palette: dict[str, str] | None = None) -> dict:
+    products = [catalog.products[i] for i in o.product_ids if i in catalog.products]
+    pieces = [p.to_dict() | ({"palette_dots": palette_dots(p, catalog, palette)} if palette else {}) for p in products]
+    inspo = db.get(Look, o.inspo_look_id) if db is not None and o.inspo_look_id else None
+    inspo = inspo if inspo is not None and inspo.user_id == o.user_id else None  # only the user's own looks
     return {"id": o.id, "title": o.title, "season": o.season, "style_id": o.style_id,
             "style": STYLES.get(o.style_id, o.style_id), "source": o.source, "pieces": pieces,
-            "total_price": round(sum(p["price"] for p in pieces), 2), "created_at": o.created_at.isoformat()}
+            "total_price": round(sum(p["price"] for p in pieces), 2), "created_at": o.created_at.isoformat(),
+            "why": short_why(o.why), "occasion": o.occasion,
+            "inspo": {"id": inspo.id, "vibe": (inspo.result or {}).get("vibe", "")} if inspo else None,
+            "tryon_image": latest_tryon(db, o.user_id, o.product_ids) if db is not None else None}
+
+
+def _palette(db: Session, user_id: int) -> dict[str, str]:
+    """Colour family -> the hex the user's analysis gave it, for the colours that suit them."""
+    rec = latest_analysis(db, user_id)
+    out: dict[str, str] = {}
+    for c in ((rec.result or {}).get("best_colours", []) if rec else []):
+        fam = family(c.get("name", ""))
+        if fam and fam not in out:
+            out[fam] = c.get("hex", "#cccccc")
+    return out
 
 
 def guess_style(products, fallback: str) -> str:
@@ -118,10 +217,11 @@ def save_outfit(user_id: int, body: OutfitIn, request: Request, db: Session = De
     season = body.season or season_of(datetime.now(timezone.utc).month)
     title = body.title.strip() or f"{STYLES[style]} {season}"
     outfit = SavedOutfit(user_id=user_id, title=title, product_ids=ids, pieces_key=key, season=season,
-                         style_id=style, source=body.source)
+                         style_id=style, source=body.source, why=(body.why or "").strip() or None,
+                         occasion=body.occasion, inspo_look_id=body.inspo_look_id)
     db.add(outfit)
-    for p in products:  # each piece also teaches the style memory, like a single save
-        record_saved(db, user_id, p, [style])
+    for p in products:  # each piece also teaches the style memory, like a single save (but isn't a favourite)
+        record_saved(db, user_id, p, [style], from_outfit=True)
     db.commit()
     return JSONResponse(outfit_out(outfit, catalog), status_code=201)
 
@@ -134,12 +234,25 @@ def list_outfits(user_id: int, request: Request, season: Season | None = None,
     rows = list(db.scalars(select(SavedOutfit).where(SavedOutfit.user_id == user_id)
                            .order_by(SavedOutfit.created_at.desc(), SavedOutfit.id.desc())))
     shown = [o for o in rows if (season is None or o.season == season) and (style is None or o.style_id == style)]
+    palette = _palette(db, user_id)
     return {
-        "outfits": [outfit_out(o, catalog) for o in shown],
+        "outfits": [outfit_out(o, catalog, db, palette) for o in shown],
         "seasons": [s for s in SEASONS if any(o.season == s for o in rows)],
         "styles": [{"id": s, "label": STYLES.get(s, s)} for s in dict.fromkeys(o.style_id for o in rows)],
         "total": len(rows),
+        "this_season": sum(o.season == season_of(datetime.now(timezone.utc).month) for o in rows),
     }
+
+
+@router.patch("/outfits/{outfit_id}")
+def rename_outfit(user_id: int, outfit_id: int, body: OutfitRename, request: Request,
+                  db: Session = Depends(get_db)) -> dict:
+    outfit = db.get(SavedOutfit, outfit_id)
+    if outfit is None or outfit.user_id != user_id:
+        raise HTTPException(404, "outfit not found")
+    outfit.title = body.title.strip()
+    db.commit()
+    return outfit_out(outfit, request.app.state.runtime.catalog, db)
 
 
 @router.delete("/outfits/{outfit_id}", status_code=204)

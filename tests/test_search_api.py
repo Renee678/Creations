@@ -103,8 +103,9 @@ def test_lookbook_waits_for_create_my_looks(client, user):
 
 def test_my_style_is_a_report_and_trends_filter_by_season_and_style(client):
     page = client.get("/").text
-    assert 'id="style-report"' in page and 'id="trend-seasons"' in page and 'id="trend-styles"' in page
+    assert 'id="trend-seasons"' in page and 'id="trend-styles"' in page
     app_js = client.get("/static/app.js").text
+    assert '<div id="style-report">' in app_js, "the report is page 2 of the Look Book"
     assert "Your colour season" in app_js and "Your style DNA" in app_js
     assert "See your full report" in app_js, "the Lookbook links to the report instead of repeating it"
     assert "/api/trends${userId ? `?user_id=${userId}`" in app_js, "trends are fetched with the user, for fit verdicts"
@@ -139,7 +140,7 @@ def test_new_photos_hide_the_old_lookbook_until_they_are_read(client):
 def test_lookbook_offers_this_season_and_shows_the_stylists_line(client):
     app_js = client.get("/static/app.js").text
     assert 'id="lb-seasons"' in client.get("/").text
-    assert "chip(lb.current_season, \"now\") + chip(lb.next_season, \"next\")" in app_js
+    assert "ALL_SEASONS.map(" in app_js.split("function renderSeasonChips")[1], "all four seasons, no now/next"
     assert "outfit-why" in app_js.split("function outfitCard")[1].split("\n}\n")[0]
 
 
@@ -156,9 +157,10 @@ def test_outfits_show_as_boards_and_can_be_saved_to_my_style(client):
     assert 'id="my-outfits"' in html and 'id="mo-seasons"' in html and 'id="mo-styles"' in html
     app_js = client.get("/static/app.js").text
     card = app_js.split("function outfitCard")[1].split("\n}\n")[0]
-    assert "boardHtml(o.pieces)" in card and "saveButton(" in card, "a lookbook outfit is a board you can save"
+    assert "productCard(p" in card and "saveButton(" in card, "a lookbook outfit is a row of shop cards you can save"
+    assert "pieceRowHtml" not in card and "<details" not in card, "each piece shows once"
     assert 'source: "fitting_room"' in app_js, "a mix from the fitting room can be saved too"
-    assert "loadMyOutfits()" in app_js
+    assert "loadBook()" in app_js and "♡ Save to My Style" in app_js
 
 
 def test_find_dupes_says_when_it_shows_fewer_or_relaxed_matches(client):

@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Lookmate · Your style buddy</title>
+  <!-- Product photos are hot-linked from store CDNs; Amazon's resets connections that carry our site as Referer -->
+  <meta name="referrer" content="no-referrer">
   <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
   <!-- Installable app (PWA): Add to Home Screen on iPhone Safari or Android Chrome -->
   <link rel="manifest" href="/static/manifest.webmanifest">
@@ -60,10 +62,18 @@
           <legend>Styles you like (pick any)</legend>
           <div id="style-options" class="chips"></div>
         </fieldset>
-        <label>Budget per item (USD) <input name="budget_per_item" type="number" min="5" max="1000" value="30" required></label>
+        <label>Budget per item (USD) <input name="budget_per_item" type="number" min="5" max="1000" value="50" required></label>
         <button type="submit" class="primary">Save</button>
         <p id="profile-msg" class="muted"></p>
       </form>
+      <div id="my-model" class="note-card model-card" hidden><span class="tape"></span>
+        <h2>My model</h2>
+        <p class="muted">One full-body photo becomes you, standing front-on in plain basics on a grey studio
+          background. The fitting room dresses this model, so every try-on starts from the same picture of you.</p>
+        <div class="model-step" data-where="profile"></div>
+      </div>
+      <input id="model-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+      <input id="model-face-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
     </section>
 
     <!-- Find look-alikes -->
@@ -90,15 +100,20 @@
           <div class="caption">today's inspo ♡</div>
         </div>
       </div>
-      <div id="status" class="status" hidden></div>
       <div class="price-range" id="price-find">
         <span class="pr-label">Price per item</span>
-        <label>from <input type="range" class="pr-min" min="0" max="300" step="5" aria-label="Lowest price"></label>
-        <label>to <input type="range" class="pr-max" min="5" max="300" step="5" aria-label="Highest price"></label>
+        <div class="pr-slider">
+          <div class="pr-track"><div class="pr-fill"></div></div>
+          <input type="range" class="pr-min" min="0" max="300" step="5" aria-label="Lowest price">
+          <input type="range" class="pr-max" min="0" max="300" step="5" aria-label="Highest price">
+        </div>
         <output class="pr-out"></output>
         <button type="button" class="linklike pr-reset">reset to my budget</button>
-        <span class="muted small">Close matches just outside the range fill any gaps, labelled.</span>
       </div>
+      <div class="find-go" id="find-go" hidden>
+        <button type="button" id="find-btn" class="gel primary big-btn">Find my dupes ✦</button>
+      </div>
+      <div id="status" class="status" hidden></div>
       <div id="results"></div>
     </section>
 
@@ -146,11 +161,13 @@
       </div>
       <div class="price-range" id="price-lookbook">
         <span class="pr-label">Price per item</span>
-        <label>from <input type="range" class="pr-min" min="0" max="300" step="5" aria-label="Lowest price"></label>
-        <label>to <input type="range" class="pr-max" min="5" max="300" step="5" aria-label="Highest price"></label>
+        <div class="pr-slider">
+          <div class="pr-track"><div class="pr-fill"></div></div>
+          <input type="range" class="pr-min" min="0" max="300" step="5" aria-label="Lowest price">
+          <input type="range" class="pr-max" min="0" max="300" step="5" aria-label="Highest price">
+        </div>
         <output class="pr-out"></output>
         <button type="button" class="linklike pr-reset">reset to my budget</button>
-        <span class="muted small">Close matches just outside the range fill any gaps, labelled.</span>
       </div>
       <input id="tryon-file" type="file" accept="image/jpeg,image/png,image/webp" hidden>
       <p class="muted small room-hint">Tip: tap <strong>+ fitting room</strong> on any piece to mix a top from one outfit with trousers or shoes from another, then try them on together.</p>
@@ -160,12 +177,22 @@
 
     <!-- My style: the personal report (colours, face, fit, style DNA) -->
     <section id="style" class="panel" hidden>
-      <h1>My style <span class="hand">report</span></h1>
-      <div id="style-report"></div>
+      <h1>My <span class="hand">Look Book</span></h1>
+      <p class="muted">Your cover, your colour report, your favourite pieces, then a page for every outfit you saved. Swipe or use the arrow keys to turn the pages.</p>
       <div id="my-outfits" class="my-outfits">
-        <h2>My outfits <span class="hand">saved looks</span></h2>
-        <div class="trend-filter"><div id="mo-seasons" class="chips"></div><div id="mo-styles" class="chips"></div></div>
-        <div id="mo-list" class="mo-list"></div>
+        <nav id="book-tabs" class="booknav" aria-label="Look Book pages"></nav>
+        <div id="book-outfits" hidden>
+          <div class="mo-filters">
+            <div class="trend-filter"><span class="sr-label">Season</span><div id="mo-seasons" class="chips"></div></div>
+            <div class="trend-filter"><span class="sr-label">Style</span><div id="mo-styles" class="chips"></div></div>
+          </div>
+          <div id="book-contents" class="book-contents"></div>
+        </div>
+        <div id="book-viewer" class="book-viewer" hidden>
+          <span id="book-pager" class="book-pager"></span>
+          <div id="book-page" class="book-page"></div>
+          <div id="book-actions" class="book-actions"></div>
+        </div>
       </div>
     </section>
 

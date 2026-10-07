@@ -20,9 +20,13 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 [[ "$STATUS" == done ]] || { echo "look ended as $STATUS"; exit 1; }
-PICKS=$(curl -fsS "$BASE/api/looks/$LOOK_ID" | json '["result"]["sections"][0]["picks"].__len__()')
-echo "== look done, first item has $PICKS picks"
-(( PICKS > 0 ))
+# Dupes are strict (same type, colour and length): a piece may have no match, but then it says so in a note.
+EXPLAINED=$(curl -fsS "$BASE/api/looks/$LOOK_ID" | json '["result"]["sections"]' | python3 -c "
+import ast, sys
+sections = ast.literal_eval(sys.stdin.read())
+print(int(bool(sections) and all(s['picks'] or s.get('note') for s in sections)))")
+echo "== look done: every piece has picks or a note ($EXPLAINED)"
+(( EXPLAINED == 1 ))
 
 TRENDS=$(curl -fsS "$BASE/api/trends" | json '["trends"].__len__()')
 echo "== $TRENDS trends"
