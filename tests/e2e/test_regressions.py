@@ -10,7 +10,7 @@ from urllib.parse import unquote, unquote_plus, urlparse, parse_qs
 
 import pytest
 
-from .conftest import LIVE_URL, photo
+from .conftest import LIVE_URL, photo, png
 
 from lookmate.catalog.service import BRANDS
 from lookmate.services.colours import NEUTRALS, family
@@ -1076,3 +1076,33 @@ def test_product_photos_open_full_size(page):
     box.locator(".lightbox-close").click()
     box.wait_for(state="detached")
     assert not page.errors, page.errors
+
+
+def test_my_model_starts_over_from_new_photos_instead_of_regenerating(page):
+    """Renee (2026-10-07): "Try again" redrew the model from the same photo. She wants to upload a new full-body,
+    half-body or face photo and make a new one: the button goes back to the upload step instead."""
+    if LIVE_URL:
+        pytest.skip("creates a model on the server; offline only")
+    tab(page, "profile")
+    box = page.locator("#my-model")
+    with page.expect_file_chooser() as fc:
+        box.locator("[data-model-pick]").click()
+    fc.value.set_files(photo("fullbody", BLUE))
+    # Offline there is no image model: answer as a generated (studio) model would, without spending credit.
+    done = {"id": 987654, "status": "done", "generated": True, "note": None, "error": None,
+            "image_url": "data:image/png;base64," + base64.b64encode(png((180, 180, 180))).decode()}
+    page.route("**/api/users/*/model", lambda route: route.fulfill(status=202, content_type="application/json",
+                                                                   body=json.dumps(done)))
+    box.locator("[data-model-create]").click()
+    box.locator("[data-model-save]").wait_for()
+    page.unroute("**/api/users/*/model")
+    assert box.get_by_text("Try again").count() == 0, "no blind regenerate"
+    assert box.locator("[data-model-create]").count() == 0
+    restart = box.locator("[data-model-restart]")
+    assert restart.inner_text() == "Upload new photos"
+    assert box.locator("[data-model-original]").count() == 1, "a studio model can still go back to the photo"
+    restart.click()
+    assert box.locator("[data-model-save]").count() == 0 and box.locator(".model-shot").count() == 0
+    assert box.locator("[data-model-pick]").inner_text() == "Choose a full-body photo"
+    assert "A clear photo of your face" in box.locator(".model-face").inner_text(), "a new face photo can go too"
+    assert page.errors == []

@@ -111,15 +111,15 @@ function modelHtml(where) {
   }
   if (d && d.status === "failed") {
     return `<p class="status error">${esc(d.error || "Couldn't create your model.")}</p>
-      <div class="model-actions"><button type="button" class="gel primary" data-model-create>Try again</button>
+      <div class="model-actions"><button type="button" class="gel primary" data-model-restart>Upload new photos</button>
       <button type="button" class="linklike" data-model-original>Use my original photo instead</button> ${skip}</div>`;
   }
   if (d && d.status === "done") {
     return `<figure class="model-shot"><img src="${esc(d.image_url)}" alt="Your model"></figure>
       ${d.note ? `<p class="muted small model-note">${esc(d.note)}</p>` : ""}
       <div class="model-actions"><button type="button" class="gel primary" data-model-save>Save</button>
-      ${d.generated ? `<button type="button" class="gel" data-model-create>Try again</button>
-      <button type="button" class="linklike" data-model-original>Use my original photo instead</button>` : ""}</div>`;
+      <button type="button" class="gel" data-model-restart>Upload new photos</button>
+      ${d.generated ? `<button type="button" class="linklike" data-model-original>Use my original photo instead</button>` : ""}</div>`;
   }
   if (myModel && !modelFile) {
     return `<figure class="model-shot"><img src="${esc(myModel.image_url)}" alt="My model"></figure>
@@ -178,7 +178,7 @@ async function createModel(original = false) {
 }
 
 async function onModelClick(e) {
-  const b = e.target.closest("[data-model-pick], [data-model-face-pick], [data-model-face-clear], [data-model-create], [data-model-original], [data-model-save], [data-model-delete], [data-model-skip]");
+  const b = e.target.closest("[data-model-pick], [data-model-face-pick], [data-model-face-clear], [data-model-create], [data-model-original], [data-model-restart], [data-model-save], [data-model-delete], [data-model-skip]");
   if (!b) return;
   const d = b.dataset;
   if ("modelPick" in d) return $("#model-file").click();
@@ -186,6 +186,11 @@ async function onModelClick(e) {
   if ("modelFaceClear" in d) { modelFace = null; return renderModel(); }
   if ("modelCreate" in d) return createModel(false);
   if ("modelOriginal" in d) return createModel(true);
+  if ("modelRestart" in d) {
+    // Back to the upload step: pick a new full-body photo and, optionally, a new face close-up.
+    modelDraft = null; modelFile = null; modelFace = null; modelErr = "";
+    return renderModel();
+  }
   if ("modelDelete" in d) {
     await api(`/api/users/${userId}/model`, { method: "DELETE" }).catch(() => {});
     myModel = null; renderModel(); renderRoom();
