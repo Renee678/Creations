@@ -326,10 +326,12 @@ class FashnTryOn:
             # Clothes go through tryon-v1.6, locked to the piece's category: Try-On Max has no category, and
             # from an on-model shop photo it copied the model's other clothes (a cardigan came back as the
             # skirt worn with it). ASOS photos are on a model; others are left to FASHN to tell.
+            # The person's own clothes are segmented out first: laid over a baggy hoodie, a cardigan kept the
+            # hoodie's collar and a wider waist (Renee). "quality" draws hands and details better, a few seconds slower.
             body = {"model_name": FASHN_CLOTHES, "inputs": {
                 "model_image": _data_uri(person, media_type), "garment_image": product,
                 "category": FASHN_CATEGORIES[garment.region], "garment_photo_type": _photo_type(garment),
-                "mode": "balanced", "output_format": "jpeg"}}
+                "segmentation_free": False, "mode": "quality", "output_format": "jpeg"}}
         else:  # shoes: a packshot, which Try-On Max puts on as it is
             body = {"model_name": FASHN_MAX, "inputs": {
                 "model_image": _data_uri(person, media_type), "product_image": product,

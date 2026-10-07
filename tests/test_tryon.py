@@ -527,6 +527,19 @@ def test_fashn_client_renders_a_garment(monkeypatch):
     assert ("POST", "/v1/run", "Bearer key") in seen
 
 
+def test_fashn_takes_off_the_persons_own_clothes_first_and_draws_in_quality(monkeypatch):
+    """Renee (2026-10-07): a cardigan laid over a baggy hoodie kept the hoodie's collar, a wider waist and a
+    blurred hand. Clothes are segmented out first and rendered in quality mode; shoes are left as they were."""
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    seen = []
+    tryon = FashnTryOn("key", http=fashn_stub(["completed", "completed"], seen))
+    tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "upper_body", "cardigan"))
+    tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", "shoes", "sneakers"))
+    clothes, shoes = [s["inputs"] for s in seen if isinstance(s, dict)]
+    assert clothes["segmentation_free"] is False and clothes["mode"] == "quality"
+    assert "segmentation_free" not in shoes and shoes["generation_mode"] == "balanced"
+
+
 def test_fashn_failure_is_explained(monkeypatch):
     monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
     with pytest.raises(TryOnError, match="Couldn't find a person"):
