@@ -152,3 +152,11 @@ of 75 outfits, and across 165 pieces none was in a colour to avoid and no outfit
     script. On my photos the try-on copied the shop model's skin and jeans waistband into the gaps of a
     cropped cardigan, and My model came out wider than my profile and added glasses; prompts and settings
     were changed for each, and "Use my original photo" stays as the most faithful option.
+  - *Which model does what, and the speed trade-off:* Claude reads photos, researches trends and curates
+    outfits; FASHN dresses the person, one garment per call (tryon-v1.6 for clothes, Try-On Max for shoes);
+    Nano Banana Pro on Replicate draws "My model" once per user. FASHN was chosen over Nano Banana and
+    IDM-VTON for try-on because it kept the person closest to real. Garments go on one after another, so
+    the detail setting multiplies: "quality" draws hands and fabric most realistically but takes close to a
+    minute for a three-piece outfit, "balanced" about half that. The deployed demo keeps "quality"
+    (`FASHN_MODE` in `.env`): for a fitting room, a result that looks like you is worth the wait, and the
+    screen shows a running timer while it works.
