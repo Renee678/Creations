@@ -4,11 +4,15 @@
 
 ## In short
 
-- **My idea:** a personal Look Book you shop from, not just another photo search. I chose the topic, set the
-  direction twice after research, and decided every trade-off, from the core feature to what to leave out.
-- **How I worked with AI:** I designed and decided; Claude Code proposed options, wrote code and tests, and
-  ran the tools. I tested every feature on the live site, reviewed each change before it stayed in, and turned
-  what I found into fixes with regression tests.
+- **My idea:** a personal Look Book you shop from, not just another photo search. I chose the topic and set
+  the direction twice after research.
+- **My part:** product direction, architecture and feature decisions, and the look and feel. From Claude's options I
+  chose the shape of the system (an async job queue so slow AI calls never block a page, plain JS over React,
+  one Compose stack that also runs without keys) and which features to build or cut. I set the visual style (the
+  Xiaohongshu-style flat lays, the Look Book pages, the lilac Favourites closet) and judged every result.
+- **Claude Code's part:** it proposed options with a recommendation, wrote the code and tests, and ran the
+  tools. I reviewed each change, tested every feature on the live site, and turned what I found into fixes
+  with regression tests.
 - **How it is validated:** about 300 automated tests, an evaluation on my own photos with real numbers, and
   a rule that AI output is never trusted raw.
 
@@ -54,8 +58,10 @@ No other AI coding assistant (Copilot, Cursor) was used.
 
 1. **Research before code.** I gave Claude the assessment and my idea; it surveyed products and open-source
    projects and drafted a market report and plan. I redirected it twice before any code was written.
-2. **I decide, Claude builds.** At each fork Claude laid out options with a recommendation; I chose. Then
-   Claude wrote the module and its tests, ran `pytest` and committed in small steps.
+2. **I decide, Claude builds.** At each fork Claude laid out options with a recommendation; I chose the
+   architecture, the features and the design. Then Claude wrote the module and its tests, ran `pytest` and
+   committed in small steps. Design went the same way: Claude drew mockups, I picked and refined them over
+   several rounds (the Favourites closet took six) until they looked right to me.
 3. **I was the tester and reviewer.** I used every feature on the live site and on my phone, judged the
    results by eye, and reported what was wrong with screenshots. Every bug became a fix plus a regression test
    (unit, or Playwright in `tests/e2e/test_regressions.py`), and I checked each fix live before moving on.
@@ -126,3 +132,10 @@ chin. My judgement found the problems; Claude made the fixes fast, and the tests
     "quality" mode takes close to a minute per outfit, worth it for a fitting room, with a timer on screen.
     Known limits stay visible: a jacket over a top isn't drawn; it is pinned beside the picture and the
     caption says so.
+
+## What I learned, and what I would do next
+
+- **AI made building cheap, so judgement became the bottleneck.** The hard parts were deciding what the product
+  is, which result looks right and which claim to doubt. That is where I spent my time.
+- **Next:** label more photos so the evaluation covers more garment types, measure whether users keep coming
+  back to their Look Book, and add a try-on model that can layer a jacket over a top.
