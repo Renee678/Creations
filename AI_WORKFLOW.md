@@ -145,8 +145,11 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
 
 ## What I learned, and what I would do next
 
-- **AI made building cheap, so judgement became the bottleneck.** The hard parts were deciding what the product
-  is, which result looks right and which claim to doubt. That is where I spent my time.
+- **AI is a tool that turns ideas into working software faster and better, but people steer it.** It gave me
+  wings: more done in less time, faster iterations, and models chosen on evidence rather than guesswork. The
+  direction, the architecture, the environment and its permissions, and the call on which result is right
+  stayed human work, and on a real product that means a team. With building this cheap, judgement became the
+  bottleneck, and that is where I spent my time.
 - **Next.** In two days I chose accuracy over speed; with more time I would work on three things:
   - *Latency:* a try-on takes about a minute; a real product needs under 10 s. Benchmark faster models and
     modes on the same photos, run non-overlapping garment steps in parallel, cache, and show a quick preview.
