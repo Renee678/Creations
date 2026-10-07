@@ -147,5 +147,10 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
 
 - **AI made building cheap, so judgement became the bottleneck.** The hard parts were deciding what the product
   is, which result looks right and which claim to doubt. That is where I spent my time.
-- **Next:** label more photos so the evaluation covers more garment types, measure whether users keep coming
-  back to their Look Book, and add a try-on model that can layer a jacket over a top.
+- **Next.** In two days I chose accuracy over speed; with more time I would work on three things:
+  - *Latency:* a try-on takes about a minute; a real product needs under 10 s. Benchmark faster models and
+    modes on the same photos, run non-overlapping garment steps in parallel, cache, and show a quick preview.
+  - *My model from the user's data first:* the image model is told height and weight but still follows the
+    photo. Measurements should take priority, with the figure checked against them before it is saved.
+  - *Measurable try-on quality:* paired photos (really wearing a garment vs its try-on) to score image against
+    image instead of only by eye, and a labelled set well beyond 49 photos.
