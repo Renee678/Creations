@@ -1,5 +1,10 @@
 # Lookmate
 
+> **Try it live:** https://5-161-202-29.sslip.io, access code **`lookinggood`** (asked for on the first upload).
+> Best on a phone, where it can be added to the home screen as an app. To run it yourself, see
+> [Quick start](#quick-start); [Tests](#tests) covers setup and tests, and [AI_WORKFLOW.md](AI_WORKFLOW.md)
+> how it was built with AI.
+
 Turn outfit inspiration from Xiaohongshu, TikTok or Instagram into **affordable look-alikes that suit you**.
 Upload a screenshot: the app identifies each garment, then finds cheaper alternatives in a product catalog,
 ranked by similarity, your style memory, your body shape and your budget, and explains every pick.
