@@ -7,15 +7,21 @@
 - **My idea:** after researching and brainstorming with Claude, I decided to build a personal Look Book you
   shop from, not another search by picture or by item: a personal reference that tells you which colours,
   hairstyles and trends suit you, and keeps the outfits you love.
-- **My part:** product direction, architecture and feature decisions, and the look and feel. From Claude's options I
-  chose the shape of the system (an async job queue so slow AI calls never block a page, plain JS over React,
-  one Compose stack that also runs without keys) and which features to build or cut. I set the visual style (the
-  Xiaohongshu-style flat lays, the Look Book pages, the lilac Favourites closet) and judged every result.
+- **My part, as product owner and AI engineer:**
+  - *System design:* from Claude's options I chose the architecture: an async Redis job queue and worker so
+    slow model calls never block a request, deterministic retrieval and scoring with the LLM limited to
+    perception and curation behind a schema, and one Compose stack that degrades gracefully without keys.
+  - *Model selection:* I compared try-on models (Nano Banana, IDM-VTON, FASHN) on my own photos, picked FASHN
+    in quality mode and Nano Banana Pro for My model, and judged every generated image.
+  - *Environment and deployment:* I set up the API keys and runtime parameters (models, modes, daily quotas,
+    access code), provisioned the Hetzner server and deployed and redeployed the stack with HTTPS.
+  - *Evaluation and QA:* I built and labelled the test set (49 photos, 68 hand-labelled pieces), ran it on
+    the live server, tested every feature by hand, and turned each bug into a regression test.
+  - *Product:* which features to build or cut, and the visual style of the Look Book.
 - **Claude Code's part:** it proposed options with a recommendation, wrote the code and tests, and ran the
-  tools. I reviewed each change, tested every feature on the live site, and turned what I found into fixes
-  with regression tests.
-- **How it is validated:** about 300 automated tests, an evaluation on my own photos with real numbers, and
-  a rule that AI output is never trusted raw.
+  tools. I reviewed each change before it stayed in.
+- **How it is validated:** about 300 automated tests, an evaluation on real data (about 45,000 products from
+  three public datasets), and a rule that AI output is never trusted raw.
 
 ## What the project does
 
@@ -25,9 +31,8 @@ give your colour season, palette, hair and makeup ideas; outfits you love are ke
 **Find dupes** turns an outfit screenshot from Xiaohongshu, TikTok or Instagram into cheaper look-alikes,
 ranked by similarity, body shape, budget and a style memory; a weekly job researches trends.
 
-Under the hood: an Nginx gateway (rate limits, upload cap, request IDs), FastAPI, a reliable Redis job queue
-with a worker (at-least-once delivery, idempotent handlers, backoff retries, crash recovery), Postgres and an
-in-memory vector index. It runs with one `docker compose up`, with or without API keys.
+Under the hood: an Nginx gateway (rate limits, upload cap), FastAPI, a Redis job queue and worker
+(at-least-once, idempotent, retries, crash recovery), Postgres and an in-memory vector index.
 
 ## Why this project
 
@@ -40,18 +45,17 @@ in-memory vector index. It runs with one `docker compose up`, with or without AP
 - **Real system-design and SRE content.** Slow, costly AI calls behind a public endpoint force decisions about
   async processing, retries, idempotency, rate limiting, privacy and graceful degradation.
 
-My first idea was a flash-sale system. I asked Claude for market research, which found hundreds of such
-GitHub projects, many load-tested, so I pivoted to a product with a clearer gap (`docs/market-research.zh.md`,
-`docs/product-plan.zh.md`, written in Chinese during planning; I later changed the plan, e.g. plain JS, no React).
+My first idea was a flash-sale system. Claude's market research found hundreds of load-tested GitHub projects
+like it, so I pivoted to a clearer gap (`docs/market-research.zh.md`, `docs/product-plan.zh.md`, in Chinese).
 
 ## Tools, models and infrastructure
 
 I built a working demo by combining hosted AI services and standard infrastructure, not by training models.
+No other AI coding assistant (Copilot, Cursor) was used.
 
 | Tool | Used for |
 |---|---|
-| **Claude Code** (cloud sessions in a Claude Project), model Claude Opus 5.5 | My development partner: research, options, code, tests, debugging, docs, commits |
-| Claude Code web search; headless Chromium | Competitor and API research; screenshot-based UI review |
+| **Claude Code** (cloud sessions in a Claude Project), model Claude Opus 5.5 | My development partner: research with web search, options, code, tests, debugging, docs, commits |
 | **Anthropic API** (Claude Opus 5.5, in the app) | Photo → structured items (Pydantic schema), colour analysis, weekly trend research with web search, the lookbook stylist |
 | **FASHN API** (tryon-v1.6 for clothes, Try-On Max for shoes) | Virtual try-on on My model, one garment per call |
 | **Replicate** (Google Nano Banana Pro) | Drawing "My model" once per user from one full-body photo; Nano Banana as the try-on fallback |
@@ -60,20 +64,15 @@ I built a working demo by combining hosted AI services and standard infrastructu
 | **Hetzner Cloud** (CPX21, Ashburn) + Caddy | The live demo server; Caddy adds HTTPS; deployed from my Windows PC with one script |
 | **GitHub Actions**, pytest, Playwright | CI runs every test and boots the full stack for a smoke test on each push |
 
-No other AI coding assistant (Copilot, Cursor) was used.
-
 ## How I worked with AI
 
-1. **Research before code.** I gave Claude the assessment and my idea; it surveyed products and open-source
-   projects and drafted a market report and plan. I redirected it twice before any code was written.
-2. **I decide, Claude builds.** At each fork Claude laid out options with a recommendation; I chose the
+1. **I decide, Claude builds.** At each fork Claude laid out options with a recommendation; I chose the
    architecture, the features and the design. Then Claude wrote the module and its tests, ran `pytest` and
    committed in small steps. Design went the same way: Claude drew mockups, I picked and refined them over
    several rounds (the Favourites closet took six) until they looked right to me.
-3. **I was the tester and reviewer.** I used every feature on the live site and on my phone, judged the
-   results by eye, and reported what was wrong with screenshots. Every bug became a fix plus a regression test
-   (unit, or Playwright in `tests/e2e/test_regressions.py`), and I checked each fix live before moving on.
-4. **Guardrails in the repo.** `CLAUDE.md` records my rules (no keys in tracked files, a test with every change,
+2. **I was the tester and reviewer.** I reported what was wrong with screenshots; every bug became a fix plus a
+   regression test (unit, or Playwright in `tests/e2e/test_regressions.py`), and I checked each fix live.
+3. **Guardrails in the repo.** `CLAUDE.md` records my rules (no keys in tracked files, a test with every change,
    retrieval and scoring deterministic), and tests enforce the ones that matter.
 
 ## Where AI significantly helped
@@ -127,6 +126,9 @@ chin. My judgement found the problems; Claude made the fixes fast, and the tests
   candidates the rules already scored; a try-on never draws a garment it has no real photo of.
 - **Evaluation on my own photos** (I labelled them; live server, real catalog; `scripts/run_eval.py`,
   `scripts/run_lookbook_eval.py`, tables in `evals/`):
+  - *The catalog it searches:* about 45,000 women's fashion products from three public datasets that took
+    real searching to find (most fashion sets have no prices or no photos): ASOS (real prices, CDN photos),
+    Polyvore (designer pieces) and Amazon Reviews 2023 (filtered from millions of listings to about 40,000).
   - *Find dupes, 24 photos, 68 hand-labelled pieces:* every piece found (100% category recall); 88% of shown
     dupes had the right type, colour, length and pattern (90 of 102); none outside the price range; 5-7 s
     per photo. Most mistakes were garment type (tank tops read as "halter").
