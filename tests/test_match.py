@@ -347,3 +347,23 @@ def test_why_no_dupes_finds_the_latest_look_with_that_piece(client, runtime, use
     assert item.name and item.category
     with pytest.raises(SystemExit, match="no analysed look"):
         _item_from_look(None, "unicorn onesie")
+
+
+def test_cropped_ankle_jeans_also_take_full_length_jeans():
+    """Renee (2026-10-07): the AI read light blue straight jeans as "cropped ankle length"; the cropped rule then
+    ruled out 106 of the catalog's 108 jeans, since shops rarely say a jean is cropped. Jeans only, one way only."""
+    item = DetectedItem(category="bottom", name="light blue high-rise straight-leg jeans", colour="light blue",
+                        fit="straight-leg, relaxed", details=["light wash denim", "high waist", "five-pocket styling",
+                                                              "cropped ankle length", "button and zip fly"],
+                        style_tags=[], search_query="Light blue wash high-rise straight-leg jeans with relaxed fit "
+                        "and ankle-length cropped hem.", warmth="all-season")
+    target = Target.of(item)
+    assert target.cropped is True and target.subtype == "jeans"
+    assert target.check(_product("k", "Topshop Curve Kort jeans in mid blue", "mid blue", "bottom", "Jeans"))
+    assert target.check(_product("c", "Cropped straight jeans in light wash", "Light Blue", "bottom", "Jeans"))
+    full = Target("bottom", "straight leg jeans", "light blue")
+    assert full.rejection(_product("c2", "Cropped straight jeans in light wash", "Light Blue", "bottom", "Jeans")) \
+        == "cropped", "a full-length jean still never gets a cropped one"
+    trousers = Target("bottom", "cropped wide-leg trousers", "black")
+    assert trousers.rejection(_product("t", "Wide leg trousers", "Black", "bottom", "Trousers")) == "cropped", \
+        "trousers keep the rule: a culotte is not a full-length trouser"

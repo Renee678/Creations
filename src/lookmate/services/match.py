@@ -230,8 +230,11 @@ class Target:
             return "shop label"  # named a "jumper" but filed under Hoodies & Sweatshirts
         if self.length and length(text) != self.length:
             return "length"  # a maxi skirt wants a maxi skirt, not a midi or one of unknown length
-        if self.cropped is not None and bool(CROPPED.search(text.lower())) != self.cropped:
-            return "cropped"  # cropped trousers for cropped, full length (stated or not) for full length
+        if self.cropped is not None and bool(CROPPED.search(text.lower())) != self.cropped and not (
+                self.cropped and self.subtype == "jeans"):
+            # Cropped trousers for cropped, full length (stated or not) for full length. Jeans the AI calls "cropped ankle
+            # length" also take full-length ones: shops rarely say so, and 106 of 108 jeans were ruled out (Renee).
+            return "cropped"
         described = f"{text} {product.description[:600]}"
         theirs = sleeve(described)
         if self.sleeve and theirs not in (None, self.sleeve):
