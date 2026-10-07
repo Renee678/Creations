@@ -20,6 +20,10 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 
 ## Screenshots
 
+**Personal lookbook**: up to three photos of you give your colour season and palette; outfits for each season (or occasion) are built from catalog pieces in your colours, styles and price range, and any mix goes into the fitting room to try on your model. (Faces are covered with stickers here.)
+
+<img src="docs/images/lookbook.jpg" alt="Lookbook tab: three uploaded photos, Bright winter palette, autumn outfits with prices and shop links, and a try-on in the fitting room; faces covered by cat stickers" width="520">
+
 **My model**: one full-body photo becomes a standing figure of you, with your face, skin tone and real proportions from your height and weight, in plain basics on a grey studio background. Every try-on dresses this figure. (The face is covered with a sticker here.)
 
 <img src="docs/images/my-model.jpg" alt="My model card in Profile: a generated full-body figure in a white tank and denim shorts, face covered by a cat sticker" width="520">
