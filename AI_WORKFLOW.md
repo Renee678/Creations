@@ -127,8 +127,8 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
 - **Evaluation on my own photos** (I labelled them; live server, real catalog; `scripts/run_eval.py`,
   `scripts/run_lookbook_eval.py`, tables in `evals/`):
   - *The catalog it searches:* 45,000 women's fashion products on the live server, from three public datasets
-    that took real searching to find (most fashion sets lack prices or photos): ASOS and Polyvore (5,000, real
-    prices and designer pieces) and Amazon Reviews 2023 (40,000, filtered from millions of listings). The
+    that took real searching to find (most fashion sets lack prices or photos): ASOS (2,500, real prices),
+    Polyvore (2,500 designer pieces) and Amazon Reviews 2023 (40,000, filtered from millions of listings). The
     numbers below were measured on the first 5,000 (see correction 5).
   - *Find dupes, 24 photos, 68 hand-labelled pieces:* every piece found (100% category recall); 88% of shown
     dupes had the right type, colour, length and pattern (90 of 102); none outside the price range; 5-7 s
