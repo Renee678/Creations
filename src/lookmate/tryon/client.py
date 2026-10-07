@@ -296,6 +296,11 @@ class NanoBananaTryOn(ReplicateTryOn):
 
 
 FASHN_API = "https://api.fashn.ai/v1"
+# Tops worn open over something, or two pieces in one. Laid over My model's own tank top they let it show through
+# the opening and left a seam under the arm (a cami with a bolero, Renee 2026-10-07), so for these FASHN takes the
+# base clothes off first. Everything else keeps the segmentation-free fit, which keeps the body and skin as they are.
+OPEN_LAYERED = re.compile(r"\b(bolero|shrug|kimono|2[- ]in[- ]1|two[- ]in[- ]one|open[- ]front|layered|"
+                          r"double layer|cape)\b", re.I)
 FASHN_CATEGORIES = {"upper_body": "tops", "lower_body": "bottoms", "dresses": "one-pieces"}
 
 
@@ -357,6 +362,8 @@ class FashnTryOn:
                 "model_image": _data_uri(person, media_type), "garment_image": product,
                 "category": FASHN_CATEGORIES[garment.region], "garment_photo_type": _photo_type(garment),
                 "mode": self.mode, "output_format": "jpeg"}}
+            if garment.region == "upper_body" and OPEN_LAYERED.search(garment.description):
+                body["inputs"]["segmentation_free"] = False
         else:  # shoes: a packshot, which Try-On Max puts on as it is
             body = {"model_name": FASHN_MAX, "inputs": {
                 "model_image": _data_uri(person, media_type), "product_image": product,

@@ -830,3 +830,19 @@ def test_fashn_locks_a_dress_to_one_pieces():
         c.time.sleep = c_sleep
     body = next(x for x in seen if isinstance(x, dict))
     assert body["model_name"] == "tryon-v1.6" and body["inputs"]["category"] == "one-pieces"
+
+
+def test_open_layered_tops_have_the_base_clothes_taken_off_first(monkeypatch):
+    """Renee (2026-10-07): a ribbed cami with a bolero, laid over My model's own tank top, showed the tank top
+    through the opening and a seam under the arm. Open or two-in-one tops are put on with the base clothes
+    segmented out; everything else keeps FASHN's segmentation-free fit."""
+    monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
+    seen = []
+    tryon = FashnTryOn("key", http=fashn_stub(["completed"] * 4, seen))
+    for region, name in [("upper_body", "COLLUSION Plus bolero detail ribbed cami in white"),
+                         ("upper_body", "Satin kimono jacket"),
+                         ("upper_body", "Fine knit cropped cardigan in cream"),
+                         ("lower_body", "Layered tulle skirt")]:
+        tryon.dress(b"person", "image/jpeg", Garment(b"g", "image/jpeg", region, name))
+    flags = [s["inputs"].get("segmentation_free") for s in seen if isinstance(s, dict)]
+    assert flags == [False, False, None, None], "only open or two-in-one tops; a cropped cardigan keeps the default"
