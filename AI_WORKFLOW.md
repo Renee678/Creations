@@ -44,14 +44,21 @@ My first idea was a flash-sale system. I asked Claude for market research, which
 GitHub projects, many load-tested, so I pivoted to a product with a clearer gap (`docs/market-research.zh.md`,
 `docs/product-plan.zh.md`, written in Chinese during planning; I later changed the plan, e.g. plain JS, no React).
 
-## AI tools and models
+## Tools, models and infrastructure
+
+I built a working demo by combining hosted AI services and standard infrastructure, not by training models.
 
 | Tool | Used for |
 |---|---|
-| **Claude Code** (cloud sessions in a Claude Project), model Claude Opus 5.5 | My primary development interface: research, plan, architecture, code, tests, debugging, docs, commits |
+| **Claude Code** (cloud sessions in a Claude Project), model Claude Opus 5.5 | My development partner: research, options, code, tests, debugging, docs, commits |
 | Claude Code web search; headless Chromium | Competitor and API research; screenshot-based UI review |
-| **In the app:** Claude via the Anthropic SDK | Photo → structured items (Pydantic schema), colour analysis, weekly trend research with web search, the lookbook stylist |
-| **In the app:** FASHN; Nano Banana Pro (Replicate) | Virtual try-on, one garment per call; drawing "My model" once per user |
+| **Anthropic API** (Claude Opus 5.5, in the app) | Photo → structured items (Pydantic schema), colour analysis, weekly trend research with web search, the lookbook stylist |
+| **FASHN API** (Try-On Max, quality mode) | Virtual try-on on My model, one garment per call |
+| **Replicate** (Google Nano Banana Pro) | Drawing "My model" once per user from one full-body photo; Nano Banana as the try-on fallback |
+| **BAAI bge-small-en-v1.5** (fastembed, on CPU) | Text embeddings for catalog search, no GPU and no API call |
+| **Docker Compose** | One command runs Nginx, FastAPI, the worker, Redis 7 and Postgres 16, with or without API keys |
+| **Hetzner Cloud** (CPX21, Ashburn) + Caddy | The live demo server; Caddy adds HTTPS; deployed from my Windows PC with one script |
+| **GitHub Actions**, pytest, Playwright | CI runs every test and boots the full stack for a smoke test on each push |
 
 No other AI coding assistant (Copilot, Cursor) was used.
 
