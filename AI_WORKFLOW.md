@@ -53,7 +53,7 @@ I built a working demo by combining hosted AI services and standard infrastructu
 | **Claude Code** (cloud sessions in a Claude Project), model Claude Opus 5.5 | My development partner: research, options, code, tests, debugging, docs, commits |
 | Claude Code web search; headless Chromium | Competitor and API research; screenshot-based UI review |
 | **Anthropic API** (Claude Opus 5.5, in the app) | Photo → structured items (Pydantic schema), colour analysis, weekly trend research with web search, the lookbook stylist |
-| **FASHN API** (Try-On Max, quality mode) | Virtual try-on on My model, one garment per call |
+| **FASHN API** (tryon-v1.6 for clothes, Try-On Max for shoes) | Virtual try-on on My model, one garment per call |
 | **Replicate** (Google Nano Banana Pro) | Drawing "My model" once per user from one full-body photo; Nano Banana as the try-on fallback |
 | **BAAI bge-small-en-v1.5** (fastembed, on CPU) | Text embeddings for catalog search, no GPU and no API call |
 | **Docker Compose** | One command runs Nginx, FastAPI, the worker, Redis 7 and Postgres 16, with or without API keys |
