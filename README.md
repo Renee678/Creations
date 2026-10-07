@@ -18,6 +18,12 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 | **Profile & fit** | Height, weight, age, body shape, preferred styles, budget → rule-based fit guidance |
 | **Trend radar** | A weekly job researches current styles (old money, coquette, …) with Claude web search and links each trend to catalog items |
 
+## Screenshots
+
+**Find dupes**: one outfit photo becomes a section per piece, each with same-type, same-colour picks inside the price range, and a note when nothing in range matches.
+
+<img src="docs/images/find-dupes-results.jpg" alt="Find dupes results: tank tops and light blue jeans within $0-$50, with a note for pieces that have no match in range" width="520">
+
 ## Quick start
 
 Requirements: Docker with Compose v2.
