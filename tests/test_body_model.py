@@ -45,27 +45,30 @@ def run_next_job(runtime):
 
 def test_the_prompt_carries_height_weight_and_no_slimming():
     prompt = model_prompt(165, 55.5)
-    assert "165 cm tall" in prompt and "55.5 kg" in prompt
+    assert "165 cm tall and 55.5 kg" in prompt
     assert "neither slimmer nor heavier" in prompt and "a slim build (BMI 20)" in prompt
-    for must in ("same face, skin tone, hair", "real body shape and proportions", "facing the camera",
+    for must in ("same face, skin tone and hair", "the numbers decide the body's size", "facing the camera",
                  "arms relaxed at the sides", "head to toe", "white tank top", "denim shorts", "white sneakers",
                  "light-grey studio"):
         assert must in prompt, must
     assert "cm tall" not in model_prompt(), "no hints without a profile size"
 
 
-def test_my_model_is_told_the_build_and_not_to_read_it_from_baggy_clothes():
-    """Renee (2026-10-07): 166 cm and 55 kg, photographed in a baggy hoodie, came out heavier than she is. The
-    prompt only said "do not slim"; now it names the build and says loose clothes are not the body."""
+def test_my_model_takes_its_size_from_height_and_weight_not_from_baggy_clothes():
+    """Renee (2026-10-07): 166 cm and 55 kg, photographed in a baggy hoodie, came out heavier than she is. With
+    the profile's height and weight, the numbers decide the body's size; the photo gives face, hair, proportions."""
     from lookmate.tryon.client import build_word
 
     prompt = model_prompt(166, 55)
-    assert "166 cm tall and 55 kg, a slim build (BMI 20): draw that build, not a heavier or slimmer one." in prompt
-    assert "never from the outline of the clothes" in prompt and "Do not slim" not in prompt
+    assert "166 cm tall and 55 kg, a slim build (BMI 20). Draw the typical body of a person of" in prompt
+    assert "the numbers decide the body's size, whatever the photo seems to show" in prompt
+    assert "wide-leg" in prompt and "never draw them wider than the numbers say" in prompt and "Do not slim" not in prompt
     assert [build_word(166, w) for w in (48, 55, 65, 75, 90)] == [
         "a very slim build (BMI 17)", "a slim build (BMI 20)", "an average build (BMI 24)",
         "a curvy, a little fuller build (BMI 27)", "a plus-size build (BMI 33)"]
-    assert "draw that build as it is" in model_prompt(166), "height alone: no build word"
+    alone = model_prompt(166)
+    assert "real body shape and proportions (166 cm tall)" in alone and "BMI" not in alone, "height alone: the photo's body"
+    assert "never from the outline of the clothes" in model_prompt()
 
 
 def test_nano_banana_draws_the_model_in_one_call(monkeypatch):
