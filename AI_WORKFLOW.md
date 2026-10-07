@@ -20,8 +20,8 @@
   - *Product:* which features to build or cut, and the visual style of the Look Book.
 - **Claude Code's part:** it proposed options with a recommendation, wrote the code and tests, and ran the
   tools. I reviewed each change before it stayed in.
-- **How it is validated:** about 300 automated tests, an evaluation on real data (about 45,000 products from
-  three public datasets), and a rule that AI output is never trusted raw.
+- **How it is validated:** about 300 automated tests, an evaluation on real data (5,000 products from public
+  datasets on the live server), and a rule that AI output is never trusted raw.
 
 ## What the project does
 
@@ -126,9 +126,9 @@ chin. My judgement found the problems; Claude made the fixes fast, and the tests
   candidates the rules already scored; a try-on never draws a garment it has no real photo of.
 - **Evaluation on my own photos** (I labelled them; live server, real catalog; `scripts/run_eval.py`,
   `scripts/run_lookbook_eval.py`, tables in `evals/`):
-  - *The catalog it searches:* about 45,000 women's fashion products from three public datasets that took
-    real searching to find (most fashion sets have no prices or no photos): ASOS (real prices, CDN photos),
-    Polyvore (designer pieces) and Amazon Reviews 2023 (filtered from millions of listings to about 40,000).
+  - *The catalog it searches:* 5,000 women's fashion products on the live server, from public datasets that
+    took real searching to find (most fashion sets lack prices or photos): ASOS (real prices, CDN photos) and
+    Polyvore (designer pieces). The importer also takes Amazon Reviews 2023, filtered to up to 40,000 more.
   - *Find dupes, 24 photos, 68 hand-labelled pieces:* every piece found (100% category recall); 88% of shown
     dupes had the right type, colour, length and pattern (90 of 102); none outside the price range; 5-7 s
     per photo. Most mistakes were garment type (tank tops read as "halter").
