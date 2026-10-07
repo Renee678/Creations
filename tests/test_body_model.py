@@ -297,3 +297,11 @@ def test_my_model_wears_no_sunglasses_or_accessories():
     for prompt in (model_prompt(166, 55), model_prompt(), model_prompt(face=True)):
         assert "No sunglasses, glasses, hat, jewellery, bag or other accessories, even if the photo has them" in prompt
         assert "with the eyes visible" in prompt
+
+
+def test_my_model_has_adult_proportions_so_the_height_reads_right():
+    """Renee (2026-10-07): the 166 cm model looked short: about 6 heads tall with short legs. A picture has no
+    absolute size, so the proportions carry the height."""
+    for prompt in (model_prompt(166, 55), model_prompt()):
+        assert "about 7 to 7.5 head heights from the top of the head to the soles" in prompt
+        assert "about half the height" in prompt and "Do not draw the head too large or the legs short" in prompt

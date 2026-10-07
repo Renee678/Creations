@@ -182,6 +182,8 @@ any model in the other images. The result must look like the original photo, onl
 MODEL_PROMPT = """Turn this photo into a clean full-body base photo of the same person, for a virtual fitting room.
 Keep it the same person: the same face, skin tone and hair.
 {body}
+Proportions: a real adult's, about 7 to 7.5 head heights from the top of the head to the soles, legs (hip
+to floor) about half the height. Do not draw the head too large or the legs short: that reads as shorter.
 Pose: facing the camera, standing straight, arms relaxed at the sides, the whole body visible from head to toe.
 Clothes: a plain white tank top, light blue denim shorts and white sneakers, nothing else.
 No sunglasses, glasses, hat, jewellery, bag or other accessories, even if the photo has them: a bare face
@@ -195,7 +197,7 @@ The result must look like this person on an ordinary day, just in basics against
 BODY_FROM_NUMBERS = """Body: they are {height:g} cm tall and {weight:g} kg, {build}. Draw the typical body of a person of
 that height and weight: the numbers decide the body's size, whatever the photo seems to show. Loose tops, wide-leg
 trousers or long skirts hide the waist and legs, so never draw them wider than the numbers say. From the photo take
-only the face, skin tone, hair and the proportions you can see (shoulder width, leg length)."""
+only the face, skin tone, hair and the shoulder width you can see."""
 
 BODY_FROM_PHOTO = """Body: keep their real body shape and proportions{size}. Loose or bulky clothes hide the body:
 judge the build from the face, neck, arms and legs, never from the outline of the clothes."""
