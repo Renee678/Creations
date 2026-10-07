@@ -103,7 +103,7 @@ while the SQLite tests never check lengths. Claude reproduced it on a real Postg
 
 ## How generated code was evaluated
 
-- **Tests as the contract.** 266 unit and integration tests run offline (SQLite, fakeredis, a fake vision
+- **Tests as the contract.** 267 unit and integration tests run offline (SQLite, fakeredis, a fake vision
   model): ranking, fit and colour rules, the queue's failure modes, idempotent uploads, style memory, try-on
   steps. 34 Playwright browser tests replay every bug I reported. A smoke test boots the full Compose stack in
   CI; `scripts/load_test.py` measures latency and the gateway's rate limiting.
