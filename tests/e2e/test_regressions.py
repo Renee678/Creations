@@ -1106,3 +1106,34 @@ def test_my_model_starts_over_from_new_photos_instead_of_regenerating(page):
     assert box.locator("[data-model-pick]").inner_text() == "Choose a full-body photo"
     assert "A clear photo of your face" in box.locator(".model-face").inner_text(), "a new face photo can go too"
     assert page.errors == []
+
+
+def test_a_flat_lay_of_a_top_and_trousers_stands_centred_without_arrows(page):
+    """Renee (2026-10-07): in My Look Book a top and trousers sat right of centre, beside an empty layers column, each
+    with a curved arrow pointing at its label. The board keeps only the columns something sits in; no arrows."""
+    sizes = page.evaluate("""() => {
+      const piece = (id, category) => ({ id, category, name: `${category} piece`, colour: "cream", price: 30,
+                                          image_url: "", shop: null });
+      const box = document.createElement("div");
+      box.style.width = "760px";
+      document.body.appendChild(box);
+      const measure = (pieces) => {
+        box.innerHTML = flatLayHtml(pieces, { book: true });
+        const board = box.querySelector(".board").getBoundingClientRect();
+        const figs = [...box.querySelectorAll(".bk-it")].map((f) => f.getBoundingClientRect());
+        return { columns: getComputedStyle(box.querySelector(".board")).gridTemplateColumns.split(" ").length,
+                 arrows: box.querySelectorAll(".bk-arrow, svg").length,
+                 offsets: figs.map((f) => Math.abs((f.left + f.width / 2) - (board.left + board.width / 2))),
+                 boardCentre: board.left + board.width / 2, boxCentre: box.getBoundingClientRect().left + 380 };
+      };
+      const two = measure([piece("t", "top"), piece("b", "bottom")]);
+      const full = measure([piece("o", "outerwear"), piece("t", "top"), piece("b", "bottom"), piece("g", "bag")]);
+      box.remove();
+      return { two, full };
+    }""")
+    two, full = sizes["two"], sizes["full"]
+    assert two["columns"] == 1 and two["arrows"] == 0
+    assert max(two["offsets"]) < 2, "the top and trousers stand in the middle of the board"
+    assert abs(two["boardCentre"] - two["boxCentre"]) < 2, "and the board in the middle of the page"
+    assert full["columns"] == 3 and full["arrows"] == 0, "a coat and a bag still get their side columns"
+    assert page.errors == []

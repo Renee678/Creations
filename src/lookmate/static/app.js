@@ -657,15 +657,28 @@ const lbProducts = new Map();  // every piece on the lookbook page, for the fitt
 const BOARD_AREA = { outerwear: "1 / 1 / 3 / 2", top: "1 / 2 / 2 / 3", bottom: "2 / 2 / 4 / 3", dress: "1 / 2 / 4 / 3",
   shoes: "3 / 1 / 4 / 2", bag: "2 / 3 / 4 / 4", accessory: "1 / 3 / 2 / 4" };
 
-/** The white flat lay (Lookbook results and Look Book pages): every piece where it sits on the body, each with an
- *  italic label, a curved arrow and a small price line that links to the shop. */
-function flatLayHtml(pieces, { book = false } = {}) {
+const BOARD_WIDTHS = { 1: "1fr", 2: "1.2fr", 3: ".9fr" };
+
+/** Where each piece sits on the board: [row start, column start, row end, column end], using only the columns
+ *  something sits in. A top and trousers alone stand centred, not beside an empty layers column (Renee). */
+function boardLayout(pieces) {
   const cats = new Set(pieces.map((p) => p.category));
   const area = (c) => (c === "shoes" && !cats.has("outerwear") ? "2 / 1 / 4 / 2" : BOARD_AREA[c] || BOARD_AREA.accessory);
-  const twoCols = !cats.has("bag") && !cats.has("accessory");  // nothing for the right-hand column
-  const items = pieces.map((p) => `<figure class="bk-it bp-${esc(p.category)}" style="grid-area:${area(p.category)}">${pieceImg(p)}
-      <figcaption>${ARROW}<span class="bk-lab">${esc(boardLabel(p))}${priceLink(p)}</span>${book ? dotsHtml(p) : ""}</figcaption></figure>`).join("");
-  return `<div class="board flatlay${book ? " bk-board" : ""}${twoCols ? " board-2" : ""}">${items}</div>`;
+  const spans = pieces.map((p) => area(p.category).split("/").map(Number));
+  const used = [...new Set(spans.flatMap(([, c1, , c2]) => Array.from({ length: c2 - c1 }, (_, i) => c1 + i)))].sort();
+  const col = (c) => used.indexOf(c) + 1;
+  return { columns: used.map((c) => BOARD_WIDTHS[c]),
+    areas: spans.map(([r1, c1, r2, c2]) => [r1, col(c1), r2, col(c2 - 1) + 1]) };
+}
+
+/** The white flat lay (Lookbook results and Look Book pages): every piece where it sits on the body, each with an
+ *  italic label under it and a small price line that links to the shop. */
+function flatLayHtml(pieces, { book = false } = {}) {
+  const { columns, areas } = boardLayout(pieces);
+  const width = columns.length === 1 ? "max-width:320px;" : columns.length === 2 ? "max-width:520px;" : "";
+  const items = pieces.map((p, i) => `<figure class="bk-it bp-${esc(p.category)}" style="grid-area:${areas[i].join(" / ")}">${pieceImg(p)}
+      <figcaption><span class="bk-lab">${esc(boardLabel(p))}${priceLink(p)}</span>${book ? dotsHtml(p) : ""}</figcaption></figure>`).join("");
+  return `<div class="board flatlay${book ? " bk-board" : ""}" style="grid-template-columns:${columns.join(" ")};${width}">${items}</div>`;
 }
 
 // Lookbook tab (Renee, feedback #36): an outfit's pieces in one plain row, outer layer first, accessories last.
@@ -884,7 +897,6 @@ function dotsHtml(p) {
     ? `<span class="bk-dots" title="Also in your colours">${p.palette_dots.map((d) => `<i style="background:${esc(d.hex)}" title="${esc(d.colour)}"></i>`).join("")}</span>` : "";
 }
 
-const ARROW = `<svg class="bk-arrow" viewBox="0 0 60 40" aria-hidden="true"><path d="M4 6 Q34 2 52 30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M44 28 L52 31 L53 22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 function pieceImg(p) {
   return p.image_url ? `<img class="zoom" src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'bp-none',textContent:'${esc(p.product_type)}'}))">`
@@ -1080,15 +1092,14 @@ async function drawPageImage(o, view) {
     column(o.pieces.filter((p) => LEFT.has(p.category)), left);
     column(o.pieces.filter((p) => !LEFT.has(p.category)), hx + heroW + gap);
   } else {
-    // The same body map as the flat lay on screen: rows / columns from BOARD_AREA.
-    const cats = new Set(o.pieces.map((p) => p.category));
-    const cols = !cats.has("bag") && !cats.has("accessory") ? 2 : 3;
-    const gridW = cols === 2 ? 760 : 960, x0 = (IMG_W - gridW) / 2, cw = gridW / cols, rh = (bottom - top) / 3;
-    for (const p of o.pieces) {
-      const a = p.category === "shoes" && !cats.has("outerwear") ? "2 / 1 / 4 / 2" : BOARD_AREA[p.category] || BOARD_AREA.accessory;
-      const [r1, c1, r2, c2] = a.split("/").map((n) => Number(n) - 1);
+    // The same body map as the flat lay on screen (boardLayout), centred on the page.
+    const { columns, areas } = boardLayout(o.pieces);
+    const cols = columns.length;
+    const gridW = cols === 1 ? 480 : cols === 2 ? 760 : 960, x0 = (IMG_W - gridW) / 2, cw = gridW / cols, rh = (bottom - top) / 3;
+    o.pieces.forEach((p, i) => {
+      const [r1, c1, r2, c2] = areas[i].map((n) => n - 1);
       drawPiece(ctx, p, photo.get(p.id), x0 + c1 * cw + 8, top + r1 * rh + 8, (c2 - c1) * cw - 16, (r2 - r1) * rh - 16);
-    }
+    });
   }
 
   ctx.strokeStyle = "#e8ddd3"; ctx.beginPath(); ctx.moveTo(90, 1290); ctx.lineTo(IMG_W - 90, 1290); ctx.stroke();

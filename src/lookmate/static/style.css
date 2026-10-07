@@ -385,7 +385,7 @@ body.room-open { padding-bottom: 110px; }
 /* Outfit boards: the whole outfit laid flat on white, every piece labelled by hand */
 .board { display: grid; grid-template-columns: 1fr 1.2fr .9fr; grid-template-rows: repeat(3, auto); gap: 8px 18px;
   align-items: center; justify-items: center; margin: 6px 0 10px; padding: 22px 18px; background: #fff; border-radius: 20px;
-  box-shadow: 0 10px 30px rgba(18, 48, 90, .08); max-width: 720px; }
+  box-shadow: 0 10px 30px rgba(18, 48, 90, .08); max-width: 720px; margin-inline: auto; }
 .bp { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
 .bp img { max-width: 100%; max-height: 210px; object-fit: contain; mix-blend-mode: multiply; }
 .bp-bottom img, .bp-dress img { max-height: 320px; }
@@ -409,7 +409,6 @@ body.room-open { padding-bottom: 110px; }
   .bp-bottom img, .bp-dress img { max-height: 210px; }
   .bp figcaption { font-size: 14px; }
 }
-.board.board-2 { grid-template-columns: 1fr 1.2fr; max-width: 520px; }
 .mo-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 8px 22px; }
 .mo-card .item-head h3 { font-size: 22px; }
 .piece-chips { align-items: center; margin: 14px 0 4px; }
@@ -495,9 +494,8 @@ body.room-open { padding-bottom: 110px; }
 .bk-board { margin-top: 12px; background: transparent; box-shadow: none; }
 .bk-it { margin: 0; display: flex; flex-direction: column; align-items: center; }
 .bk-it img, .bk-it .bp-none { width: 100%; max-height: 220px; object-fit: contain; filter: drop-shadow(0 6px 8px rgba(0,0,0,.12)); }
-.bk-it figcaption { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: start; gap: 4px; width: 100%; margin-top: 4px; }
-.bk-it .bk-dots { grid-column: 2; }
-.bk-arrow { width: 34px; height: 24px; color: #2b2b2b; transform: scaleY(-1) rotate(-10deg); }
+.bk-it figcaption { width: 100%; margin-top: 6px; text-align: center; }
+.bk-it .bk-dots { justify-content: center; }
 .bk-lab { font: italic 500 15px/1.15 "Bodoni Moda", serif; color: #2b2b2b; }
 .bk-lab small { display: block; font: 400 11px/1.6 Jost, sans-serif; font-style: normal; color: #8a8a8a; letter-spacing: .06em; }
 
