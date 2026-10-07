@@ -53,10 +53,16 @@ class Garment:
 def plan_steps(pieces: list[dict], extras: tuple[str, ...] = ()) -> list[dict]:
     """Which pieces of an outfit to render, one model call each, in the order they are put on.
 
-    Every clothing layer: a dress, or the bottom then the top; then the outerwear over it. A cropped top (or a
-    cropped jacket with no top) goes on first and the bottom last. Then the `extras` the model can also draw (FASHN Try-On Max: shoes). At most four calls per outfit.
+    A dress, or the bottom then the top. A jacket is drawn over a dress, or on its own, but not over a top:
+    one step replaces the whole upper body, so it can't go over another top. A cropped top (or a cropped jacket
+    with no top) goes on first and the bottom last. Then the `extras` the model can also draw (FASHN Try-On Max: shoes). At most four calls per outfit.
     """
     by_cat = {p["category"]: p for p in pieces}
+    if "outerwear" in by_cat and "top" in by_cat:
+        # These models swap the whole upper body each step and can't layer: a blazer over a crew-neck jumper came
+        # back as one navy V-neck knit, neither piece (Renee, 2026-10-07). The jacket is left off and pinned
+        # beside the picture with the other pieces the model doesn't draw.
+        by_cat.pop("outerwear")
     if "dress" in by_cat:
         order = ["dress", "outerwear"]
     elif _cropped(by_cat.get("top") or by_cat.get("outerwear")):

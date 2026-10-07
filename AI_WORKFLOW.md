@@ -165,4 +165,8 @@ of 75 outfits, and across 165 pieces none was in a colour to avoid and no outfit
     setting suits every top: drawn over My model's clothes, a bolero-and-cami showed the old tank through its
     open front; with the old clothes removed first, a cropped cardigan got the shop model's jeans waistband
     painted into the gap. So the choice is made per garment: open-front, bolero, shrug, kimono and two-in-one tops
-    take the old top off first, everything else is drawn over it, and a test pins both.
+    take the old top off first, everything else is drawn over it, and a test pins both. Two more came from the
+    wearing order: a cropped top now goes on before the trousers, so their waistband fills the bare waist
+    (old denim-shorts fringe showed there before); and a jacket is no longer drawn over a top, because each
+    step replaces the whole upper body (a blazer over a crew-neck jumper came back as one V-neck knit). The
+    jacket is pinned beside the picture with the shoes and bag, and the caption says so.

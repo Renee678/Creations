@@ -71,15 +71,17 @@ def test_without_a_model_the_photo_comes_back_for_a_collage(client, runtime, use
 
 
 def test_an_outfit_is_rendered_bottom_first_then_the_upper_piece(client, runtime, user, renderer):
-    """Feedback #41: every clothing layer is put on, the jacket over the top; shoes only where the model can."""
+    """Feedback #41: every clothing layer the model can draw is put on; shoes only where the model can. A jacket
+    over a top is left off (Renee, 2026-10-07): one step replaces the whole upper body, so a blazer over a jumper
+    came back as neither. It is pinned beside the picture instead."""
     ids = pick(runtime, "top", "bottom", "outerwear", "shoes")
     tryon_id = request_tryon(client, user["id"], ids).json()["id"]
     assert run_next_job(runtime) == "done"
 
     out = client.get(f"/api/tryons/{tryon_id}").json()
-    assert renderer.calls == ["lower_body", "upper_body", "upper_body"]
-    assert out["result"]["rendered"] is True and out["result"]["rendered_ids"] == [ids[1], ids[0], ids[2]]
-    assert client.get(out["image_url"]).content == PHOTO + b"|lower_body|upper_body|upper_body", \
+    assert renderer.calls == ["lower_body", "upper_body"]
+    assert out["result"]["rendered"] is True and out["result"]["rendered_ids"] == [ids[1], ids[0]]
+    assert client.get(out["image_url"]).content == PHOTO + b"|lower_body|upper_body", \
         "each step builds on the last"
 
 
@@ -164,8 +166,9 @@ def test_plan_steps():
     piece = lambda c: {"category": c}  # noqa: E731
     # Renee's outfit: the jacket used to be dropped when a dress-like piece was in it.
     assert plan_steps([piece("dress"), piece("outerwear"), piece("shoes")]) == [piece("dress"), piece("outerwear")]
-    assert plan_steps([piece("outerwear"), piece("top"), piece("bottom")]) == [
-        piece("bottom"), piece("top"), piece("outerwear")]
+    assert plan_steps([piece("outerwear"), piece("top"), piece("bottom")]) == [piece("bottom"), piece("top")], \
+        "no jacket over a top: the step would replace the top"
+    assert plan_steps([piece("outerwear"), piece("bottom")]) == [piece("bottom"), piece("outerwear")]
     assert plan_steps([piece("dress"), piece("shoes"), piece("bag")], ("shoes",)) == [piece("dress"), piece("shoes")]
     assert plan_steps([piece("shoes"), piece("bag")]) == []
     assert PreviewTryOn().dress(b"x", "image/png", None) == (b"x", "image/png")
@@ -685,7 +688,7 @@ def test_fashn_dresses_my_model_layer_by_layer_with_shoes(client, runtime, user,
     assert make_tryon("", "", "fa-key", "tryon-v1.6").extra_steps == ()
     assert make_tryon("rep-token", "FASHN").name == "nano-banana", "no FASHN key: the Replicate default"
     monkeypatch.setattr("lookmate.tryon.client.time.sleep", lambda s: None)
-    runs, outputs = [], iter([b"after-bottom", b"after-top", b"after-jacket", b"after-shoes"])
+    runs, outputs = [], iter([b"after-bottom", b"after-top", b"after-shoes"])
 
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.path == "/v1/run":
@@ -708,15 +711,15 @@ def test_fashn_dresses_my_model_layer_by_layer_with_shoes(client, runtime, user,
     ids = pick(runtime, "outerwear", "top", "bottom", "shoes", "bag")
     tid = client.post(f"/api/users/{user['id']}/tryons", data={"product_ids": ",".join(ids)}).json()["id"]
     assert run_next_job(runtime) == "done"
-    assert [r["model_name"] for r in runs] == ["tryon-v1.6"] * 3 + ["tryon-max"], "Max for the shoes only"
-    assert [r.get("category") for r in runs] == ["bottoms", "tops", "tops", None], "each step puts on its piece only"
-    assert [r.get("garment_photo_type") for r in runs] == ["auto", "model", "auto", None], "ASOS shoots on a model"
+    assert [r["model_name"] for r in runs] == ["tryon-v1.6"] * 2 + ["tryon-max"], "Max for the shoes only"
+    assert [r.get("category") for r in runs] == ["bottoms", "tops", None], "each step puts on its piece only"
+    assert [r.get("garment_photo_type") for r in runs] == ["auto", "model", None], "ASOS shoots on a model"
     pieces = [base64.b64decode((r.get("garment_image") or r["product_image"]).split(",", 1)[1]) for r in runs]
-    assert pieces == [b"photo:bottom", b"photo:top", b"photo:outerwear", b"photo:shoes"], "wearing order, no bag"
+    assert pieces == [b"photo:bottom", b"photo:top", b"photo:shoes"], "wearing order, no jacket over the top, no bag"
     model_images = [base64.b64decode(r["model_image"].split(",", 1)[1]) for r in runs]
-    assert model_images == [my_model, b"after-bottom", b"after-top", b"after-jacket"]
+    assert model_images == [my_model, b"after-bottom", b"after-top"]
     out = client.get(f"/api/tryons/{tid}").json()
-    assert out["result"]["model"] == "fashn" and out["result"]["rendered_ids"] == [ids[2], ids[1], ids[0], ids[3]]
+    assert out["result"]["model"] == "fashn" and out["result"]["rendered_ids"] == [ids[2], ids[1], ids[3]]
     assert out["result"]["head_paste_skipped"] == "unreadable", "the paste-back was tried on the FASHN path too"
     assert client.get(out["image_url"]).content == b"after-shoes"
 
@@ -858,7 +861,7 @@ def test_a_cropped_top_goes_on_before_the_bottom():
         return {"category": c, "product": SimpleNamespace(name=name, product_type=c)}
 
     top, bottom, coat = piece("top", "ASOS DESIGN cropped cardigan in blue"), piece("bottom"), piece("outerwear")
-    assert plan_steps([top, bottom, coat]) == [top, coat, bottom]
+    assert plan_steps([top, bottom, coat]) == [top, bottom]
     jacket = piece("outerwear", "Crop denim jacket")
     assert plan_steps([bottom, jacket]) == [jacket, bottom]
     long_top = piece("top", "Longline knitted jumper")
