@@ -189,3 +189,19 @@ def test_a_per_garment_try_on_on_my_model_gets_the_head_back_too(client, runtime
     out = _try_on(client, runtime, user, pick(runtime, "top", "bottom"))
     assert out["result"]["head_pasted"] is True and "face_reference" not in out["result"]
     assert pixel(client.get(out["image_url"]).content, (150, 45)) < (90, 90, 90), "her own head and hair"
+
+
+def test_the_pasted_head_stops_at_the_chin_and_leaves_a_high_neckline_alone():
+    """Renee (2026-10-07): a navy dress with a high round neck came back with a blurred, see-through neck: the
+    pasted oval reached the collarbone and laid My model's bare neck over the collar. It now fades out at the chin."""
+    model = person()
+    img = Image.open(io.BytesIO(person(head=(200, 160, 60)))).convert("RGB")
+    ImageDraw.Draw(img).rectangle((120, 400 * 0.165, 180, 400 * 0.24), fill=(20, 30, 70))  # a high navy collar
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    render = buf.getvalue()
+    (out, _), why = paste_head(model, render)
+    assert why == "" and pixel(out, (150, 40)) < (90, 90, 90), "My model's own head is back"
+    for y in (70, 80, 90):  # the collar, below the chin
+        got, want = pixel(out, (150, y)), pixel(render, (150, y))
+        assert max(abs(a - b) for a, b in zip(got, want)) <= 6, f"the render's collar is untouched at y={y}: {got}"

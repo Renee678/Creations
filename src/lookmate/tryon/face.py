@@ -10,7 +10,7 @@ someone else (Renee's chin-length bob came back long). Two deterministic helpers
 
 import io
 
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 FACE_SIZE = 768        # the close-up's longest side, upscaled so the model sees the face in detail
 BG_DIFF = 40           # how far (0-255, any channel) a pixel must be from the backdrop to count as the person
@@ -18,6 +18,7 @@ HEAD_H = 0.17          # head height, top of the hair to the chin, as a share of
 ASPECT_TOLERANCE = 0.06  # covers the image models' own aspect buckets (3:4 comes back 864x1184), not a new crop
 MAX_SHIFT_X = 0.08      # how far the render may move the head (share of the frame) and still get it pasted back
 MAX_SHIFT_Y = 0.05
+CHIN = 0.78            # the chin, as a share of head_box's height (it reaches past the chin, for the close-up)
 
 
 def _open(data: bytes) -> Image.Image:
@@ -91,17 +92,24 @@ def paste_head(model: bytes, result: bytes) -> tuple[tuple[bytes, str] | None, s
     dx, dy = round((rl + rr - l - r) / 2), rt_ - t
     if abs(dx) > dst.width * MAX_SHIFT_X or abs(dy) > dst.height * MAX_SHIFT_Y:
         return None, "moved"  # a pasted head would float beside theirs
-    # The model, moved so its head sits on the render's head, then a feathered oval a little larger than the
-    # head, so the hairline and the neck blend in.
+    # The model, moved so its head sits on the render's head, then a feathered oval over the head that fades out
+    # at the chin. It used to reach the collarbone and laid My model's bare neck, half transparent, over a
+    # dress's high round neckline (Renee, 2026-10-07): below the chin the render's own neck and collar stay.
     moved = dst.copy()
     moved.paste(src, (dx, dy))
     l, t, r, b = l + dx, t + dy, r + dx, b + dy
+    chin = round(t + (b - t) * CHIN)
+    soft = max(2, (r - l) * 0.06)
     pad_x, pad_y = (r - l) * 0.08, (b - t) * 0.04
-    box = (round(l - pad_x), round(t - pad_y), round(r + pad_x), round(b + pad_y))
     mask = Image.new("L", dst.size, 0)
-    ImageDraw.Draw(mask).ellipse(box, fill=255)
-    mask = mask.filter(ImageFilter.GaussianBlur(max(2, (r - l) * 0.06)))
-    dst.paste(moved, (0, 0), mask)
+    ImageDraw.Draw(mask).ellipse((round(l - pad_x), round(t - pad_y), round(r + pad_x), chin), fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(soft))
+    fade = Image.new("L", dst.size, 255)  # full above the chin, nothing below it, a short ramp in between
+    draw, ramp = ImageDraw.Draw(fade), max(2, round(soft * 2))
+    for i in range(ramp):
+        draw.line((0, chin - ramp + i, dst.width, chin - ramp + i), fill=round(255 * (ramp - i) / ramp))
+    draw.rectangle((0, chin, dst.width, dst.height), fill=0)
+    dst.paste(moved, (0, 0), ImageChops.multiply(mask, fade))
     out = io.BytesIO()
     dst.save(out, "JPEG", quality=92)
     return (out.getvalue(), "image/jpeg"), ""
