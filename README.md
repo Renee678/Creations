@@ -20,6 +20,13 @@ suggests hair and makeup, and builds a personal lookbook for every season or occ
 
 ## Screenshots
 
+**My Look Book** (the heart of Lookmate): a personal style book you shop from. *About me* is your colour report: season, palette, colours to keep away from your face, hair and makeup, fit rules and the style DNA learned from what you upload and save. *Favourites* hang in a lilac closet by category. Every saved outfit gets its own page, as a flat lay or *On me* (a Daily Look poster with your try-on), and saves as a 1080x1440 image for Xiaohongshu. (Faces are covered with stickers here.)
+
+<img src="docs/images/look-book-daily-look.jpg" alt="Look Book outfit page, On me view: the two pieces with prices and shop links beside a try-on of the outfit; face covered by a cat sticker" width="460">
+<img src="docs/images/look-book-about-me.jpg" alt="Look Book About me: True (cool) winter, cool undertone, high contrast, palette swatches, colours to keep away from the face, hair, makeup, body and fit, style DNA" width="340">
+
+<img src="docs/images/look-book-favourites.jpg" alt="Look Book Favourites: saved tops, bottoms and outerwear hanging on silver rails in a lilac closet, each with price and shop links" width="520">
+
 **Personal lookbook**: up to three photos of you give your colour season and palette; outfits for each season (or occasion) are built from catalog pieces in your colours, styles and price range, and any mix goes into the fitting room to try on your model. (Faces are covered with stickers here.)
 
 <img src="docs/images/lookbook.jpg" alt="Lookbook tab: three uploaded photos, Bright winter palette, autumn outfits with prices and shop links, and a try-on in the fitting room; faces covered by cat stickers" width="520">
