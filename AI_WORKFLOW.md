@@ -98,8 +98,10 @@ History was not rewritten (the assessment forbids it), so revoking the key is th
 
 **4. Unverified API usage.** Trend research combines structured output with the server-side web search
 tool. This could not be exercised without an API key in the development sandbox, so the code falls back to
-the last good batch or to seed data on any failure. **TODO(Renee):** record the result of the first real
-run with your key (works / needed changes).
+the last good batch or to seed data on any failure. On the live server with a real key it worked: the Trends
+tab shows researched trends with their source links, not the seed. Live testing still caught a quality gap:
+colour-trend cards showed the top search hits whatever their type or colour (bags and beige dresses under
+"tomato red" and "aqua"), so a colour card now keeps only clothes in the trend's colours, with a test.
 
 **5. Rules alone had no taste.** The first lookbook was fully rule-based: fixed outfit formulas, each slot
 filled by vector search and a score, the LLM only reading my photos. Testing it, I got a "Quiet luxury
@@ -113,12 +115,12 @@ scored candidates per slot plus a written definition of each style, picks the mo
 says why in one line. Its answer is validated (an id that wasn't offered keeps the scorer's pick), cached,
 capped per day, and on any error the scorer's picks stand. The project rule in `CLAUDE.md` changed from
 "the LLM only perceives" to "retrieval and scoring stay deterministic; Claude curates the final outfit from
-scored candidates, with a deterministic fallback". **TODO(Renee):** compare a few outfits with and without
-the stylist on the live server.
+scored candidates, with a deterministic fallback". In the lookbook evaluation below the stylist approved 93%
+of 75 outfits, and across 165 pieces none was in a colour to avoid and no outfit had two bright pieces.
 
 ## How generated code was evaluated
 
-- **Tests as the contract.** Over 40 unit and integration tests run fully offline (SQLite, fakeredis, a
+- **Tests as the contract.** Over 290 unit and integration tests run fully offline (SQLite, fakeredis, a
   deterministic fake vision model), covering ranking, fit rules, the queue's failure modes, idempotent
   uploads, style memory, trends and input validation.
 - **End-to-end smoke test** (`scripts/smoke_test.sh`) against the real Compose stack: Postgres, Redis,
@@ -128,6 +130,25 @@ the stylist on the live server.
 - **Deterministic where possible.** Prices, fit guidance, ranking and the style profile are rule-based, so
   their behaviour can be tested exactly. The LLM perceives (photos, trends) and, for lookbooks, only
   chooses among candidates the rules already scored, with a rule-based fallback.
-- **TODO(Renee):** results of the image evaluation set (category recall, attribute accuracy, dupes precision,
-  latency): add photos and labels as in `evals/README.md`, run `python scripts/run_eval.py`, and paste
-  `evals/results.md` here.
+- **Browser tests.** A Playwright suite (`tests/e2e`) replays every bug I reported while clicking through the
+  app; it runs offline in CI and against the deployed site (`LOOKMATE_URL=... make e2e`).
+- **Evaluation on my own photos** (live server, real catalog, Claude; scripts `scripts/run_eval.py` and
+  `scripts/run_lookbook_eval.py`, full tables in `evals/`):
+  - *Find dupes, 24 outfit photos, 68 hand-labelled pieces:* every piece found (100% category recall); 18
+    attribute mistakes, mostly garment type (tank tops read as "halter") and the "cut off at the edge" flag;
+    88% of shown dupes had the right type, colour, length and pattern (90 of 102); none outside the price
+    range; 5-7 s per photo. Photos with no exact match show an honest "not in our catalog" note by design.
+  - *Lookbook, 25 photos of me:* the colour season was stable (winter on 21 of 25), the sub-season was not
+    (cool winter on 11 of 25), and the undertone was cool every time it was read. Warm indoor light mattered
+    more than a clear face. The AI's own photo check judged framing well (96%) but called warm-lit photos
+    "good for colour" too often (52%), so its written caveats are more useful than its yes/no flag.
+    About 27 s per photo for analysis plus lookbook.
+  - *What the numbers missed:* clicking through found matching bugs the labels didn't cover, each fixed with
+    a test: light-blue jeans matched nothing (catalog jeans name their colour by wash, a "Jeans & Jeggings"
+    label read every jean as skinny, and "cropped ankle length" required the word "cropped"), a bracelet
+    returned earrings, and a re-uploaded photo kept results from the old rules. A read-only diagnostic
+    (`python -m lookmate.why_no_dupes`) now shows which rule rejects each candidate.
+  - *Image models, judged by eye:* try-on (FASHN) and "My model" (Nano Banana Pro) can't be scored by a
+    script. On my photos the try-on copied the shop model's skin and jeans waistband into the gaps of a
+    cropped cardigan, and My model came out wider than my profile and added glasses; prompts and settings
+    were changed for each, and "Use my original photo" stays as the most faithful option.
