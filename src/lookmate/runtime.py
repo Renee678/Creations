@@ -113,7 +113,7 @@ def build_runtime(settings: Settings, redis_client: redis.Redis | None = None, i
         trend_researcher=researcher,
         data_dir=data_dir,
         tryon=make_tryon(settings.replicate_api_token, settings.tryon_model, settings.fashn_api_key,
-                         settings.fashn_model),
+                         settings.fashn_model, settings.fashn_mode),
         tryon_queue=JobQueue(client, TRYON_QUEUE),
         model_maker=make_model_maker(settings.replicate_api_token, settings.model_gen_model),
         catalog_version=version,
