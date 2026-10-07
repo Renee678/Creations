@@ -181,27 +181,45 @@ any model in the other images. The result must look like the original photo, onl
 
 MODEL_PROMPT = """Turn this photo into a clean full-body base photo of the same person, for a virtual fitting room.
 Keep it the same person: the same face, skin tone, hair, and their real body shape and proportions. {size}
+Loose or bulky clothes in the photo hide the body: judge the build from the face, neck, arms, legs{numbers},
+never from the outline of the clothes.
 Pose: facing the camera, standing straight, arms relaxed at the sides, the whole body visible from head to toe.
 Clothes: a plain white tank top, light blue denim shorts and white sneakers, nothing else.
 Background: a plain light-grey studio backdrop with soft, even light, like a shop's try-on base model.
-Do not slim, reshape or beautify the body: no thinner waist, longer legs, smaller arms, smoother skin or
-retouched face. The result must look like this person on an ordinary day, just in basics against a plain wall."""
+Draw the body exactly as it is, neither slimmer nor heavier: do not reshape or beautify it, and do not retouch
+the face. The result must look like this person on an ordinary day, just in basics against a plain wall."""
 
 
 MODEL_FACE_LINE = """Image 2 is a close-up of the same person's face: the face in the result must match it exactly
 (eyes, nose, mouth, face shape, skin tone). Do not beautify or change it."""
 
 
+def build_word(height_cm: float, weight_kg: float) -> str:
+    """Height and weight as the plain build an image model can draw: 166 cm and 55 kg is "slim"."""
+    bmi = weight_kg / (height_cm / 100) ** 2
+    word = ("very slim" if bmi < 18.5 else "slim" if bmi < 22 else "average" if bmi < 25
+            else "curvy, a little fuller" if bmi < 30 else "plus-size")
+    return f"{'an' if word[0] in 'aeiou' else 'a'} {word} build (BMI {bmi:.0f})"
+
+
 def model_prompt(height_cm: float | None = None, weight_kg: float | None = None, face: bool = False) -> str:
     """The "My model" prompt, with the profile's height and weight as hints for the body's real size, and
-    with `face`, a line about the face close-up sent as image 2."""
+    with `face`, a line about the face close-up sent as image 2.
+
+    Told only "do not slim", the model drew a 166 cm, 55 kg woman in a baggy hoodie heavier than she is (Renee):
+    the build is now named outright, and loose clothes are not the body."""
     hints = []
     if height_cm:
         hints.append(f"{height_cm:g} cm tall")
     if weight_kg:
         hints.append(f"{weight_kg:g} kg")
-    size = f"For reference they are {' and '.join(hints)}; draw that build as it is." if hints else ""
-    prompt = "\n".join(line.rstrip() for line in MODEL_PROMPT.format(size=size).splitlines())
+    size = f"For reference they are {' and '.join(hints)}" if hints else ""
+    if height_cm and weight_kg:
+        size += f", {build_word(height_cm, weight_kg)}: draw that build, not a heavier or slimmer one."
+    elif hints:
+        size += "; draw that build as it is."
+    numbers = " and the height and weight above" if hints else ""
+    prompt = "\n".join(line.rstrip() for line in MODEL_PROMPT.format(size=size, numbers=numbers).splitlines())
     return f"{prompt}\n{MODEL_FACE_LINE}" if face else prompt
 
 

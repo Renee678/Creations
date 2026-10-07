@@ -46,12 +46,26 @@ def run_next_job(runtime):
 def test_the_prompt_carries_height_weight_and_no_slimming():
     prompt = model_prompt(165, 55.5)
     assert "165 cm tall" in prompt and "55.5 kg" in prompt
-    assert "Do not slim, reshape or beautify the body" in prompt
+    assert "neither slimmer nor heavier" in prompt and "a slim build (BMI 20)" in prompt
     for must in ("same face, skin tone, hair", "real body shape and proportions", "facing the camera",
                  "arms relaxed at the sides", "head to toe", "white tank top", "denim shorts", "white sneakers",
                  "light-grey studio"):
         assert must in prompt, must
     assert "cm tall" not in model_prompt(), "no hints without a profile size"
+
+
+def test_my_model_is_told_the_build_and_not_to_read_it_from_baggy_clothes():
+    """Renee (2026-10-07): 166 cm and 55 kg, photographed in a baggy hoodie, came out heavier than she is. The
+    prompt only said "do not slim"; now it names the build and says loose clothes are not the body."""
+    from lookmate.tryon.client import build_word
+
+    prompt = model_prompt(166, 55)
+    assert "166 cm tall and 55 kg, a slim build (BMI 20): draw that build, not a heavier or slimmer one." in prompt
+    assert "never from the outline of the clothes" in prompt and "Do not slim" not in prompt
+    assert [build_word(166, w) for w in (48, 55, 65, 75, 90)] == [
+        "a very slim build (BMI 17)", "a slim build (BMI 20)", "an average build (BMI 24)",
+        "a curvy, a little fuller build (BMI 27)", "a plus-size build (BMI 33)"]
+    assert "draw that build as it is" in model_prompt(166), "height alone: no build word"
 
 
 def test_nano_banana_draws_the_model_in_one_call(monkeypatch):
@@ -71,7 +85,7 @@ def test_nano_banana_draws_the_model_in_one_call(monkeypatch):
     assert nano.make_model(b"me", "image/jpeg", 170, 62) == (b"JPG", "image/jpeg")
     body = sent[0]["input"]
     assert len(body["image_input"]) == 1 and "170 cm tall and 62 kg" in body["prompt"]
-    assert "Do not slim" in body["prompt"]
+    assert "neither slimmer nor heavier" in body["prompt"]
 
 
 def test_only_a_replicate_token_makes_a_model_maker():
